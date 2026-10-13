@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
-import "@fontsource-variable/unbounded";
-import "@fontsource-variable/onest";
+import "@fontsource-variable/space-grotesk";
+import "@fontsource-variable/manrope";
 import "./globals.css";
 import { content } from "@/config/content";
 
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#eef2f1",
+  themeColor: "#050c0a",
   width: "device-width",
   initialScale: 1,
 };

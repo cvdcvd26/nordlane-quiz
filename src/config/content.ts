@@ -65,10 +65,16 @@ export const content = {
     about: {
       title: "O firmie",
       body: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer posuere erat a ante venenatis dapibus posuere velit aliquet. Donec ullamcorper nulla non metus auctor fringilla.",
+      eyebrow: "Krok 2 z 2 · O firmie",
       facts: [
-        { value: "Lorem", label: "ipsum dolor" },
-        { value: "Sit", label: "amet consectetur" },
-        { value: "Elit", label: "sed do eiusmod" },
+        { value: "12+", label: "Lorem ipsum dolor" },
+        { value: "250", label: "Sit amet consectetur" },
+        { value: "24/7", label: "Sed do eiusmod" },
+      ],
+      values: [
+        { title: "Lorem ipsum", body: "Dolor sit amet, consectetur adipiscing elit sed do eiusmod." },
+        { title: "Consectetur", body: "Tempor incididunt ut labore et dolore magna aliqua enim." },
+        { title: "Adipiscing", body: "Quis nostrud exercitation ullamco laboris nisi ut aliquip." },
       ],
     },
     assignment: {

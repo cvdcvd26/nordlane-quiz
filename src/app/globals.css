@@ -1,28 +1,34 @@
 @import "tailwindcss";
 
-/* Nordlane, "the northern lane": glacier paper, spruce ink, yellow road paint. */
+/*
+ * Nordlane — dark, glassy, mint-lit.
+ * Token names are semantic (paper = page, surface = card, ink = text, paint = accent),
+ * so every component re-themes from here.
+ */
 @theme {
-  --color-paper: #eef2f1;
-  --color-surface: #fbfcfc;
-  --color-ink: #12312b;
-  --color-ink-soft: #2c4a43;
-  --color-slate: #5b6b70;
-  --color-line: #c9d3d2;
-  --color-line-strong: #a9b8b6;
-  --color-paint: #f2c230;
-  --color-paint-deep: #c99a0c;
-  --color-paint-soft: #fbefc4;
-  --color-danger: #b4372b;
-  --color-danger-soft: #f6dfdb;
-  --color-ok: #2f7a55;
+  --color-paper: #050c0a;
+  --color-surface: #0b1613;
+  --color-surface-2: #10201b;
+  --color-ink: #ecf6f2;
+  --color-ink-soft: #b4c6bf;
+  --color-slate: #7d928b;
+  --color-line: #ffffff14;
+  --color-line-strong: #ffffff29;
+  --color-paint: #3ee8b0;
+  --color-paint-deep: #1fc48e;
+  --color-paint-soft: #3ee8b01f;
+  --color-on-paint: #03130d;
+  --color-danger: #ff7a70;
+  --color-danger-soft: #ff7a7019;
+  --color-ok: #3ee8b0;
 
-  --font-display: "Unbounded Variable", "Unbounded", system-ui, sans-serif;
-  --font-sans: "Onest Variable", "Onest", system-ui, sans-serif;
+  --font-display: "Space Grotesk Variable", "Space Grotesk", system-ui, sans-serif;
+  --font-sans: "Manrope Variable", "Manrope", system-ui, sans-serif;
 
   --radius-tile: 1.25rem;
-  --radius-field: 0.75rem;
+  --radius-field: 0.85rem;
 
-  --ease-lane: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-lane: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @layer base {
@@ -30,104 +36,247 @@
     background: var(--color-paper);
     color: var(--color-ink);
     font-family: var(--font-sans);
+    color-scheme: dark;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
   body {
     min-height: 100dvh;
+    position: relative;
+    isolation: isolate;
+  }
+  /* Ambient light: two slow-drifting mint glows. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: -20%;
+    z-index: -2;
+    pointer-events: none;
+    background:
+      radial-gradient(40% 35% at 78% 8%, #20d39a2e, transparent 70%),
+      radial-gradient(45% 40% at 8% 92%, #0fa7882a, transparent 70%),
+      radial-gradient(30% 30% at 50% 50%, #3ee8b00a, transparent 70%);
+    animation: drift 26s ease-in-out infinite alternate;
+  }
+  /* Engineering grid, faded at the edges. */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      linear-gradient(to right, #ffffff08 1px, transparent 1px),
+      linear-gradient(to bottom, #ffffff08 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: radial-gradient(ellipse 80% 70% at 60% 30%, #000 30%, transparent 85%);
   }
   ::selection {
     background: var(--color-paint);
-    color: var(--color-ink);
+    color: var(--color-on-paint);
   }
   :focus-visible {
-    outline: 3px solid var(--color-paint-deep);
+    outline: 2px solid var(--color-paint);
     outline-offset: 3px;
-    border-radius: 6px;
+    border-radius: 8px;
+  }
+  input,
+  textarea,
+  select {
+    color-scheme: dark;
   }
 }
 
 @layer components {
   .display {
     font-family: var(--font-display);
-    letter-spacing: -0.02em;
-    line-height: 1.08;
+    letter-spacing: -0.035em;
+    line-height: 1.04;
   }
   .measure {
     max-width: 62ch;
   }
+
+  /* Glass surface used for cards and panels. */
+  .glass {
+    background: linear-gradient(180deg, #ffffff0d, #ffffff05);
+    border: 1px solid var(--color-line);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow:
+      inset 0 1px 0 #ffffff0f,
+      0 20px 60px -30px #000000cc;
+  }
+
+  /* Small pill label (e.g. "Demo"). */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    border: 1px solid var(--color-line-strong);
+    background: #ffffff08;
+    border-radius: 999px;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.72rem;
+    color: var(--color-ink-soft);
+  }
+  .chip-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--color-paint);
+    box-shadow: 0 0 10px var(--color-paint);
+  }
+
+  .text-glow {
+    background: linear-gradient(100deg, #ffffff 10%, #bff8e4 45%, var(--color-paint) 90%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
   .btn {
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
     min-height: 3rem;
-    padding: 0 1.4rem;
+    padding: 0 1.5rem;
     border-radius: 999px;
-    font-weight: 600;
+    font-weight: 700;
+    letter-spacing: -0.01em;
     transition:
-      background-color 0.15s,
-      color 0.15s,
-      transform 0.15s;
+      background-color 0.2s,
+      color 0.2s,
+      box-shadow 0.3s var(--ease-lane),
+      transform 0.25s var(--ease-lane),
+      border-color 0.2s;
   }
   .btn:active:not(:disabled) {
-    transform: scale(0.98);
+    transform: scale(0.97);
   }
   .btn:disabled {
     cursor: not-allowed;
-    opacity: 0.55;
+    opacity: 0.4;
+    box-shadow: none;
   }
   .btn-primary {
-    background: var(--color-ink);
-    color: var(--color-surface);
+    background: var(--color-paint);
+    color: var(--color-on-paint);
+    box-shadow:
+      0 0 0 1px #3ee8b066,
+      0 10px 30px -8px #3ee8b080;
   }
   .btn-primary:hover:not(:disabled) {
-    background: var(--color-ink-soft);
+    transform: translateY(-1px);
+    box-shadow:
+      0 0 0 1px #3ee8b0aa,
+      0 14px 40px -6px #3ee8b0b3;
   }
   .btn-ghost {
     color: var(--color-ink);
-    border: 1.5px solid var(--color-line-strong);
+    border: 1px solid var(--color-line-strong);
+    background: #ffffff06;
   }
   .btn-ghost:hover:not(:disabled) {
-    border-color: var(--color-ink);
+    border-color: #3ee8b080;
+    background: #3ee8b00f;
   }
+
   .field {
     width: 100%;
-    border: 1.5px solid var(--color-line);
-    background: var(--color-surface);
+    border: 1px solid var(--color-line-strong);
+    background: #ffffff07;
     border-radius: var(--radius-field);
-    padding: 0.7rem 0.9rem;
+    padding: 0.8rem 1rem;
     color: var(--color-ink);
+    transition:
+      border-color 0.2s,
+      box-shadow 0.3s,
+      background-color 0.2s;
+  }
+  .field::placeholder {
+    color: #7d928b;
+  }
+  .field:hover {
+    border-color: #ffffff40;
   }
   .field:focus {
     outline: none;
-    border-color: var(--color-ink);
-    box-shadow: 0 0 0 3px var(--color-paint-soft);
+    border-color: var(--color-paint);
+    background: #3ee8b00a;
+    box-shadow: 0 0 0 4px #3ee8b01f;
+  }
+
+  /* Selectable tile (Tak / Nie). */
+  .tile {
+    position: relative;
+    border-radius: var(--radius-tile);
+    border: 1px solid var(--color-line-strong);
+    background: linear-gradient(180deg, #ffffff0a, #ffffff03);
+    transition:
+      border-color 0.25s,
+      background-color 0.25s,
+      box-shadow 0.35s var(--ease-lane),
+      transform 0.35s var(--ease-lane);
+  }
+  .tile:hover {
+    border-color: #3ee8b066;
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px -20px #3ee8b066;
+  }
+  .tile[aria-checked="true"] {
+    border-color: var(--color-paint);
+    background: linear-gradient(180deg, #3ee8b026, #3ee8b00a);
+    box-shadow:
+      0 0 0 1px #3ee8b0,
+      0 0 40px -6px #3ee8b066,
+      inset 0 1px 0 #ffffff1f;
   }
 }
 
-/* One orchestrated moment: the step change. All other motion responds to an action. */
+/* ---------- Motion ---------- */
+
+@keyframes drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(-3%, 2%, 0) scale(1.08);
+  }
+}
+
+/* Step change: fade, de-blur and rise. */
 @keyframes step-in {
   from {
     opacity: 0;
-    transform: translateY(14px);
+    filter: blur(8px);
+    transform: translateY(18px);
   }
   to {
     opacity: 1;
+    filter: blur(0);
     transform: none;
   }
 }
 .step-enter {
-  animation: step-in 0.55s var(--ease-lane) both;
+  animation: step-in 0.7s var(--ease-lane) both;
+}
+
+/* Staggered reveal inside a step: set --i on each block. */
+.reveal {
+  animation: step-in 0.8s var(--ease-lane) both;
+  animation-delay: calc(var(--i, 0) * 90ms + 80ms);
 }
 
 @keyframes pop {
   0% {
-    transform: scale(0.6);
+    transform: scale(0.5);
     opacity: 0;
   }
   70% {
-    transform: scale(1.12);
+    transform: scale(1.15);
   }
   100% {
     transform: scale(1);
@@ -135,7 +284,7 @@
   }
 }
 .pop {
-  animation: pop 0.35s var(--ease-lane) both;
+  animation: pop 0.45s var(--ease-lane) both;
 }
 
 @keyframes shimmer {
@@ -147,9 +296,21 @@
   }
 }
 .skeleton {
-  background: linear-gradient(90deg, var(--color-line) 25%, var(--color-paper) 50%, var(--color-line) 75%);
+  background: linear-gradient(90deg, #ffffff08 25%, #ffffff14 50%, #ffffff08 75%);
   background-size: 200% 100%;
-  animation: shimmer 1.4s linear infinite;
+  animation: shimmer 1.6s linear infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 #3ee8b066;
+  }
+  100% {
+    box-shadow: 0 0 0 12px #3ee8b000;
+  }
+}
+.pulse {
+  animation: pulse-ring 1.8s ease-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -157,6 +318,7 @@
   *::before,
   *::after {
     animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;

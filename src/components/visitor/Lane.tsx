@@ -2,7 +2,7 @@
 import { content } from "@/config/content";
 
 /**
- * Progress as road markings: the lane is painted yellow up to the current stop.
+ * Progress as a lit lane: a mint beam fills up to the current stop.
  * Vertical on desktop, horizontal on mobile.
  */
 export function Lane({ step }: { step: 0 | 1 | 2 }) {
@@ -20,22 +20,22 @@ export function Lane({ step }: { step: 0 | 1 | 2 }) {
         aria-valuemax={labels.length}
         aria-valuenow={step + 1}
         aria-valuetext={labels[step]}
-        className="relative flex justify-between md:h-[min(56vh,440px)] md:flex-col"
+        className="relative flex justify-between md:h-[min(52vh,420px)] md:flex-col"
       >
-        {/* Unpainted markings: dashed */}
+        {/* Track */}
         <span
           aria-hidden
-          className="absolute top-[13px] right-[14px] left-[14px] h-0 border-t-[3px] border-dashed border-line-strong md:top-[14px] md:right-auto md:bottom-[14px] md:left-[13px] md:h-auto md:border-t-0 md:border-l-[3px]"
+          className="absolute top-[13px] right-[14px] left-[14px] h-px bg-line-strong md:top-[14px] md:right-auto md:bottom-[14px] md:left-[14px] md:h-auto md:w-px"
         />
-        {/* Painted part */}
+        {/* Beam (horizontal / vertical) */}
         <span
           aria-hidden
-          className="absolute top-[12px] left-[14px] h-[5px] rounded-full bg-paint transition-[width] duration-700 ease-(--ease-lane) md:hidden"
+          className="absolute top-[12px] left-[14px] h-[3px] rounded-full bg-gradient-to-r from-paint-deep to-paint shadow-[0_0_14px_#3ee8b0] transition-[width] duration-1000 ease-(--ease-lane) md:hidden"
           style={{ width: `calc((100% - 28px) * ${fraction})` }}
         />
         <span
           aria-hidden
-          className="absolute top-[14px] left-[12px] hidden w-[5px] rounded-full bg-paint transition-[height] duration-700 ease-(--ease-lane) md:block"
+          className="absolute top-[14px] left-[13px] hidden w-[3px] rounded-full bg-gradient-to-b from-paint-deep to-paint shadow-[0_0_14px_#3ee8b0] transition-[height] duration-1000 ease-(--ease-lane) md:block"
           style={{ height: `calc((100% - 28px) * ${fraction})` }}
         />
 
@@ -46,10 +46,10 @@ export function Lane({ step }: { step: 0 | 1 | 2 }) {
               <span
                 aria-hidden
                 className={[
-                  "grid size-[29px] place-items-center rounded-full border-[3px] text-xs font-bold transition-colors duration-300",
-                  state === "done" && "border-ink bg-ink text-paint",
-                  state === "current" && "border-ink bg-paint text-ink",
-                  state === "next" && "border-line-strong bg-paper text-slate",
+                  "grid size-[28px] place-items-center rounded-full text-xs font-bold transition-all duration-500",
+                  state === "done" && "bg-paint text-on-paint shadow-[0_0_16px_#3ee8b099]",
+                  state === "current" && "pulse border border-paint bg-paper text-paint shadow-[0_0_20px_#3ee8b066]",
+                  state === "next" && "border border-line-strong bg-paper text-slate",
                 ]
                   .filter(Boolean)
                   .join(" ")}
@@ -57,7 +57,9 @@ export function Lane({ step }: { step: 0 | 1 | 2 }) {
                 {state === "done" ? "✓" : i + 1}
               </span>
               <span
-                className={`text-xs font-medium md:text-sm ${state === "next" ? "text-slate" : "text-ink"} ${state === "current" ? "md:font-semibold" : ""}`}
+                className={`text-xs font-semibold transition-colors duration-500 md:text-sm ${
+                  state === "next" ? "text-slate" : state === "current" ? "text-ink" : "text-ink-soft"
+                }`}
               >
                 {label}
               </span>

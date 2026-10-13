@@ -119,8 +119,8 @@ export function Uploader({ items, setItems, limits, disabled }: Props) {
           if (!disabled && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
         }}
         className={[
-          "relative rounded-(--radius-tile) border-[3px] border-dashed px-5 py-8 text-center transition-colors sm:py-10",
-          drag ? "border-paint-deep bg-paint-soft" : "border-line-strong bg-surface",
+          "relative rounded-(--radius-tile) border-2 border-dashed px-5 py-10 text-center transition-all duration-300 sm:py-12",
+          drag ? "scale-[1.01] border-paint bg-paint-soft shadow-[0_0_40px_-10px_#3ee8b0]" : "border-line-strong bg-white/[0.02] hover:border-paint/50",
           disabled ? "opacity-60" : "",
         ].join(" ")}
       >
@@ -128,7 +128,7 @@ export function Uploader({ items, setItems, limits, disabled }: Props) {
         <p className="mt-1 text-sm text-slate">{t.limits(limits.maxFiles, maxMb, limits.types.map(typeLabel).join(", "))}</p>
         <button
           type="button"
-          className="btn btn-ghost mt-5 bg-surface"
+          className="btn btn-ghost mt-5"
           onClick={() => input.current?.click()}
           disabled={disabled}
         >
@@ -158,7 +158,7 @@ export function Uploader({ items, setItems, limits, disabled }: Props) {
           {items.map((item) => (
             <li
               key={item.key}
-              className={`pop overflow-hidden rounded-(--radius-field) border-2 bg-surface ${
+              className={`pop overflow-hidden rounded-(--radius-field) border bg-surface ${
                 item.status === "error" ? "border-danger" : "border-line"
               }`}
             >
@@ -166,12 +166,12 @@ export function Uploader({ items, setItems, limits, disabled }: Props) {
                 {/* eslint-disable-next-line @next/next/no-img-element -- private file / object URL preview */}
                 <img src={item.preview} alt="" className="size-full object-cover" />
                 {item.status === "uploading" && (
-                  <div className="absolute inset-x-0 bottom-0 h-1.5 bg-ink/15">
-                    <div className="h-full bg-paint transition-[width]" style={{ width: `${Math.round(item.progress * 100)}%` }} />
+                  <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/10">
+                    <div className="h-full bg-paint shadow-[0_0_10px_#3ee8b0] transition-[width]" style={{ width: `${Math.round(item.progress * 100)}%` }} />
                   </div>
                 )}
                 {item.status === "done" && (
-                  <span className="pop absolute top-2 left-2 grid size-6 place-items-center rounded-full bg-paint text-xs font-bold">
+                  <span className="pop absolute top-2 left-2 grid size-6 place-items-center rounded-full bg-paint text-xs font-bold text-on-paint">
                     ✓
                   </span>
                 )}

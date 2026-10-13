@@ -104,7 +104,7 @@ function Leads() {
         </select>
         <button
           type="button"
-          className="btn btn-ghost bg-surface text-sm"
+          className="btn btn-ghost text-sm"
           onClick={() => setFilters((f) => ({ ...f, sort: f.sort === "desc" ? "asc" : "desc", page: 1 }))}
         >
           {filters.sort === "asc" ? content.admin.list.oldestFirst : content.admin.list.newestFirst}
@@ -117,9 +117,9 @@ function Leads() {
         </p>
       )}
 
-      <div className={`mt-6 overflow-x-auto rounded-(--radius-tile) border-2 border-line bg-surface transition-opacity ${loading ? "opacity-60" : ""}`}>
+      <div className={`mt-6 overflow-x-auto rounded-(--radius-tile) glass transition-opacity ${loading ? "opacity-60" : ""}`}>
         <table className="w-full min-w-[640px] text-left text-sm">
-          <thead className="border-b-2 border-line text-slate">
+          <thead className="border-b border-line text-slate">
             <tr>
               <th className="px-4 py-3 font-medium">{content.admin.list.columns.id}</th>
               <th className="px-4 py-3 font-medium">{content.admin.list.columns.created}</th>
@@ -132,7 +132,7 @@ function Leads() {
           </thead>
           <tbody>
             {data?.items.map((l) => (
-              <tr key={l.id} className="relative border-b border-line last:border-0 hover:bg-paper">
+              <tr key={l.id} className="relative border-b border-line last:border-0 hover:bg-white/[0.03]">
                 <td className="px-4 py-3 font-semibold">
                   <Link href={`/admin/leads/${l.id}`} className="after:absolute after:inset-0 focus-visible:outline-none">
                     #{l.id}
@@ -179,7 +179,7 @@ function Leads() {
         <nav className="mt-6 flex items-center justify-center gap-3" aria-label={content.admin.list.pages}>
           <button
             type="button"
-            className="btn btn-ghost h-10 min-h-0 bg-surface text-sm"
+            className="btn btn-ghost h-10 min-h-0 text-sm"
             disabled={data.page <= 1}
             onClick={() => setFilters((f) => ({ ...f, page: f.page - 1 }))}
           >
@@ -190,7 +190,7 @@ function Leads() {
           </span>
           <button
             type="button"
-            className="btn btn-ghost h-10 min-h-0 bg-surface text-sm"
+            className="btn btn-ghost h-10 min-h-0 text-sm"
             disabled={data.page >= pages}
             onClick={() => setFilters((f) => ({ ...f, page: f.page + 1 }))}
           >

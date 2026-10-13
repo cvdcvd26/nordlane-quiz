@@ -47,6 +47,11 @@ export function QuizApp() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const idem = useRef<string | null>(null);
   const heading = useRef<HTMLDivElement>(null);
+  const autoTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    const t = autoTimer;
+    return () => clearTimeout(t.current);
+  }, []);
 
   const fetchSession = useCallback(
     () =>
@@ -89,6 +94,12 @@ export function QuizApp() {
     setSaving(questionKey);
     try {
       await api("/api/quiz/answer", { method: "PUT", json: { questionKey, answer: value } });
+      // The last missing answer just arrived: if the contact form is valid, move on automatically.
+      const next = { ...answers, [questionKey]: value };
+      if (!allAnswered(answers) && allAnswered(next) && Object.keys(validateContact(contact)).every((k) => !validateContact(contact)[k as keyof ContactDraft])) {
+        clearTimeout(autoTimer.current);
+        autoTimer.current = setTimeout(() => void continueFromIntro(next), 700);
+      }
     } catch (err) {
       setAnswers((a) => {
         const next = { ...a };
@@ -109,7 +120,7 @@ export function QuizApp() {
   };
 
   /** "Dalej" on the first screen: validate, save the contact on the server, then move on. */
-  const continueFromIntro = async () => {
+  const continueFromIntro = async (ans: Record<string, string> = answers) => {
     setAnswerError(null);
     const errors = validateContact(contact);
     setContactErrors(errors);
@@ -118,7 +129,7 @@ export function QuizApp() {
       document.getElementById(`contact-${firstBad}`)?.focus();
       return setAnswerError(content.errors.fixFields);
     }
-    if (!allAnswered(answers)) return setAnswerError(content.errors.answerRequired);
+    if (!allAnswered(ans)) return setAnswerError(content.errors.answerRequired);
     setContinuing(true);
     try {
       await api("/api/contact", { method: "PUT", json: contact });
@@ -156,80 +167,97 @@ export function QuizApp() {
   };
 
   return (
-    <div className="mx-auto min-h-dvh max-w-6xl px-4 pb-16 sm:px-6 md:grid md:grid-cols-[11rem_1fr] md:gap-14 lg:gap-20 lg:px-10">
-      <aside className="sticky top-0 z-20 -mx-4 mb-8 bg-paper/90 px-4 pt-5 pb-4 backdrop-blur sm:-mx-6 sm:px-6 md:static md:mx-0 md:mb-0 md:bg-transparent md:px-0 md:pt-10 md:backdrop-blur-none">
-        <div className="mb-5 flex items-center justify-between md:mb-14 md:block">
-          <p className="display text-base font-bold tracking-tight">{content.brand.name}</p>
-          <p className="rounded-lg border-[1.5px] border-line-strong px-2.5 py-1 text-[0.7rem] leading-snug text-slate md:mt-3 md:inline-block">
-            {content.brand.demoBadge}
+    <div className="min-h-dvh">
+      {/* Top bar */}
+      <header className="sticky top-0 z-30 border-b border-line bg-paper/70 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-10">
+          <p className="flex items-center gap-2.5">
+            <span aria-hidden className="relative grid size-8 place-items-center rounded-full bg-paint/15 ring-1 ring-paint/40">
+              <span className="size-3.5 rounded-full border-[3px] border-paint border-r-transparent" />
+            </span>
+            <span className="display text-[1.05rem] font-bold">{content.brand.name}</span>
           </p>
+          <span className="chip">
+            <span className="chip-dot" aria-hidden />
+            {content.brand.demoBadge}
+          </span>
         </div>
-        <Lane step={step} />
-      </aside>
+        {/* Mobile progress */}
+        <div className="mx-auto max-w-6xl px-4 pb-4 sm:px-6 md:hidden">
+          <Lane step={step} />
+        </div>
+      </header>
 
-      <main ref={heading} className="min-w-0 md:pt-10">
-        {!state && !loadError && (
-          <div aria-busy className="space-y-4">
-            <div className="skeleton h-4 w-24 rounded" />
-            <div className="skeleton h-12 w-3/4 rounded-lg" />
-            <div className="skeleton h-5 w-2/3 rounded" />
-            <div className="mt-10 grid grid-cols-2 gap-4">
-              <div className="skeleton h-44 rounded-(--radius-tile)" />
-              <div className="skeleton h-44 rounded-(--radius-tile)" />
-            </div>
+      <div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6 md:grid md:grid-cols-[10rem_1fr] md:gap-14 lg:gap-20 lg:px-10">
+        <aside className="hidden md:block">
+          <div className="sticky top-28 pt-14">
+            <Lane step={step} />
           </div>
-        )}
+        </aside>
 
-        {loadError && (
-          <div role="alert" className="rounded-(--radius-tile) border-2 border-danger bg-danger-soft p-6">
-            <p className="font-semibold">{loadError}</p>
-            <button type="button" className="btn btn-primary mt-4" onClick={load}>
-              {content.chat.retry}
-            </button>
-          </div>
-        )}
-
-        {state && step === 0 && (
-          <StepQuestion
-            contact={contact}
-            contactErrors={contactErrors}
-            onContactChange={onContactChange}
-            continuing={continuing}
-            answers={answers}
-            saving={saving}
-            error={answerError}
-            onAnswer={choose}
-            onContinue={continueFromIntro}
-          />
-        )}
-
-        {state && step === 1 && (
-          <StepTask
-            items={items}
-            setItems={setItems}
-            limits={state.limits}
-            submitting={submitting}
-            error={submitError}
-            onBack={() => goTo(0)}
-            onSubmit={submit}
-          />
-        )}
-
-        {state && step === 2 && (
-          <section className="step-enter space-y-10" aria-labelledby="done-title">
-            <div>
-              <p className="pop inline-flex items-center gap-2 rounded-full bg-paint px-3.5 py-1.5 text-sm font-semibold" role="status">
-                <span aria-hidden>✓</span> {content.done.status}
-              </p>
-              <h1 id="done-title" className="display mt-5 text-[clamp(1.9rem,4.6vw,3.25rem)] font-semibold">
-                {content.done.title}
-              </h1>
-              <p className="measure mt-4 text-lg leading-relaxed text-ink-soft">{content.done.body}</p>
+        <main ref={heading} className="min-w-0 pt-10 md:pt-14">
+          {!state && !loadError && (
+            <div aria-busy className="space-y-4">
+              <div className="skeleton h-6 w-40 rounded-full" />
+              <div className="skeleton h-14 w-3/4 rounded-xl" />
+              <div className="skeleton h-5 w-2/3 rounded" />
+              <div className="skeleton mt-10 h-56 rounded-(--radius-tile)" />
             </div>
-            <VisitorChat />
-          </section>
-        )}
-      </main>
+          )}
+
+          {loadError && (
+            <div role="alert" className="glass rounded-(--radius-tile) border-danger/50 p-6">
+              <p className="font-semibold text-danger">{loadError}</p>
+              <button type="button" className="btn btn-primary mt-4" onClick={load}>
+                {content.chat.retry}
+              </button>
+            </div>
+          )}
+
+          {state && step === 0 && (
+            <StepQuestion
+              contact={contact}
+              contactErrors={contactErrors}
+              onContactChange={onContactChange}
+              continuing={continuing}
+              answers={answers}
+              saving={saving}
+              error={answerError}
+              onAnswer={choose}
+              onContinue={() => void continueFromIntro()}
+            />
+          )}
+
+          {state && step === 1 && (
+            <StepTask
+              items={items}
+              setItems={setItems}
+              limits={state.limits}
+              submitting={submitting}
+              error={submitError}
+              onBack={() => goTo(0)}
+              onSubmit={submit}
+            />
+          )}
+
+          {state && step === 2 && (
+            <section className="step-enter space-y-10" aria-labelledby="done-title">
+              <div>
+                <p className="chip pop border-paint/50 text-paint" role="status">
+                  <span aria-hidden>✓</span> {content.done.status}
+                </p>
+                <h1 id="done-title" className="display text-glow mt-5 text-[clamp(2.2rem,5vw,3.75rem)] font-bold">
+                  {content.done.title}
+                </h1>
+                <p className="measure mt-4 text-lg leading-relaxed text-ink-soft">{content.done.body}</p>
+              </div>
+              <div className="reveal" style={{ "--i": 2 } as React.CSSProperties}>
+                <VisitorChat />
+              </div>
+            </section>
+          )}
+        </main>
+      </div>
     </div>
   );
 }

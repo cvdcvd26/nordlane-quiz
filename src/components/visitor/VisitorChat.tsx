@@ -113,9 +113,9 @@ export function VisitorChat() {
   const all: LocalMessage[] = [...messages, ...pending];
 
   return (
-    <section aria-labelledby="chat-title" className="rounded-(--radius-tile) border-2 border-line bg-paper/60">
-      <header className="flex items-center gap-3 border-b-2 border-line px-5 py-4">
-        <span aria-hidden className={`size-2.5 rounded-full ${offline ? "bg-danger" : "bg-ok"}`} />
+    <section aria-labelledby="chat-title" className="glass overflow-hidden rounded-(--radius-tile)">
+      <header className="flex items-center gap-3 border-b border-line px-5 py-4">
+        <span aria-hidden className={`size-2.5 rounded-full ${offline ? "bg-danger" : "bg-ok shadow-[0_0_10px_#3ee8b0]"}`} />
         <h2 id="chat-title" className="font-semibold">
           {content.chat.title}
         </h2>
@@ -131,7 +131,7 @@ export function VisitorChat() {
           </div>
         )}
       </div>
-      <div className="border-t-2 border-line p-3">
+      <div className="border-t border-line p-3">
         <Composer
           onSend={send}
           uploadUrl="/api/uploads"

@@ -57,7 +57,7 @@ export default function SettingsPage() {
         </p>
 
         <label className="mt-6 flex items-center gap-3">
-          <input type="checkbox" className="size-5 accent-ink" checked={s.autoMessageEnabled} onChange={(e) => setS({ ...s, autoMessageEnabled: e.target.checked })} />
+          <input type="checkbox" className="size-5 accent-[#3ee8b0]" checked={s.autoMessageEnabled} onChange={(e) => setS({ ...s, autoMessageEnabled: e.target.checked })} />
           <span className="font-medium">{content.admin.settings.enabled}</span>
         </label>
 
@@ -94,7 +94,7 @@ export default function SettingsPage() {
 
         <h2 className="mt-10 text-lg font-semibold">{content.admin.settings.chat}</h2>
         <label className="mt-3 flex items-center gap-3">
-          <input type="checkbox" className="size-5 accent-ink" checked={s.chatAttachmentsEnabled} onChange={(e) => setS({ ...s, chatAttachmentsEnabled: e.target.checked })} />
+          <input type="checkbox" className="size-5 accent-[#3ee8b0]" checked={s.chatAttachmentsEnabled} onChange={(e) => setS({ ...s, chatAttachmentsEnabled: e.target.checked })} />
           <span>{content.admin.settings.attachments}</span>
         </label>
 
@@ -110,7 +110,7 @@ export default function SettingsPage() {
         </div>
       </form>
 
-      <form onSubmit={changePw} className="self-start rounded-(--radius-tile) border-2 border-line bg-surface p-5">
+      <form onSubmit={changePw} className="self-start rounded-(--radius-tile) glass p-5">
         <h2 className="font-semibold">{content.admin.settings.password.title}</h2>
         {(
           [

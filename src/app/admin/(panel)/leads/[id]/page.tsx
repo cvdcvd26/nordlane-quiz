@@ -135,14 +135,14 @@ function Lead() {
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_22rem]">
         {/* Conversation */}
-        <section aria-labelledby="thread" className="self-start rounded-(--radius-tile) border-2 border-line bg-surface">
-          <h2 id="thread" className="border-b-2 border-line px-5 py-4 font-semibold">
+        <section aria-labelledby="thread" className="self-start rounded-(--radius-tile) glass">
+          <h2 id="thread" className="border-b border-line px-5 py-4 font-semibold">
             {content.admin.lead.thread}
           </h2>
-          <div className="max-h-[60vh] min-h-64 overflow-y-auto bg-paper/50 px-4 py-5">
+          <div className="max-h-[60vh] min-h-64 overflow-y-auto bg-black/20 px-4 py-5">
             <MessageList messages={d.messages} viewer="admin" emptyText={content.admin.lead.noMessages} />
           </div>
-          <div className="border-t-2 border-line p-3">
+          <div className="border-t border-line p-3">
             <Composer
               onSend={reply}
               uploadUrl={`/api/admin/leads/${id}/uploads`}
@@ -208,7 +208,7 @@ function Lead() {
               <ul className="mt-3 grid grid-cols-2 gap-2">
                 {d.submission.files.map((f) => (
                   <li key={f.id}>
-                    <a href={f.url} target="_blank" rel="noopener" className="block overflow-hidden rounded-lg border-2 border-line hover:border-ink">
+                    <a href={f.url} target="_blank" rel="noopener" className="block overflow-hidden rounded-lg border border-line hover:border-paint/60">
                       {/* eslint-disable-next-line @next/next/no-img-element -- private file */}
                       <img src={f.url} alt={f.name} className="aspect-[4/3] w-full object-cover" loading="lazy" />
                       <span className="block truncate px-2 py-1 text-xs">
@@ -238,7 +238,7 @@ function Lead() {
                 {content.admin.lead.newNote}
               </label>
               <textarea id="note" className="field min-h-20" value={note} onChange={(e) => setNote(e.target.value)} placeholder={content.admin.lead.newNote} maxLength={5000} />
-              <button type="submit" className="btn btn-ghost mt-2 h-10 min-h-0 bg-surface text-sm" disabled={busy || !note.trim()}>
+              <button type="submit" className="btn btn-ghost mt-2 h-10 min-h-0 text-sm" disabled={busy || !note.trim()}>
                 {content.admin.lead.addNote}
               </button>
             </form>

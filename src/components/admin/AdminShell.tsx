@@ -30,7 +30,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-dvh">
-      <header className="border-b-2 border-line bg-surface">
+      <header className="sticky top-0 z-30 border-b border-line bg-paper/70 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
           <Link href="/admin" className="display text-sm font-bold">
             {content.admin.title}
@@ -41,7 +41,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 key={n.href}
                 href={n.href}
                 aria-current={n.active ? "page" : undefined}
-                className={`rounded-full px-3 py-1.5 text-sm ${n.active ? "bg-ink text-surface" : "text-slate hover:text-ink"}`}
+                className={`rounded-full px-3 py-1.5 text-sm ${n.active ? "bg-paint font-semibold text-on-paint" : "text-slate hover:text-ink"}`}
               >
                 {n.label}
               </Link>

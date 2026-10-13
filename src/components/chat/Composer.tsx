@@ -67,13 +67,13 @@ export function Composer({
   };
 
   return (
-    <div className="rounded-(--radius-tile) border-2 border-line bg-surface p-2 focus-within:border-ink">
+    <div className="rounded-(--radius-tile) border border-line-strong bg-white/[0.03] p-2 transition-[border-color,box-shadow] focus-within:border-paint focus-within:shadow-[0_0_0_4px_#3ee8b01f]">
       {files.length > 0 && (
         <ul className="flex flex-wrap gap-2 px-2 pt-1 pb-2">
           {files.map((f) => (
             <li
               key={f.key}
-              className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs ${f.status === "error" ? "bg-danger-soft text-danger" : "bg-paper"}`}
+              className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs ${f.status === "error" ? "bg-danger-soft text-danger" : "bg-white/5"}`}
               title={f.error}
             >
               <span className="max-w-40 truncate">{f.name}</span>
@@ -90,7 +90,7 @@ export function Composer({
           <>
             <button
               type="button"
-              className="grid size-11 shrink-0 place-items-center rounded-full text-xl text-slate hover:bg-paper hover:text-ink"
+              className="grid size-11 shrink-0 place-items-center rounded-full text-xl text-slate transition-colors hover:bg-white/5 hover:text-paint"
               aria-label={content.chat.attach}
               title={content.chat.attach}
               onClick={() => input.current?.click()}

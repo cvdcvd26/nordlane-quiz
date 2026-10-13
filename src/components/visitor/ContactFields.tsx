@@ -43,7 +43,7 @@ export function ContactFields({ value, errors, onChange }: Props) {
 
   const field = (id: keyof ContactDraft, label: string, required: boolean, input: React.ReactNode) => (
     <div>
-      <label htmlFor={`contact-${id}`} className="block text-sm font-medium">
+      <label htmlFor={`contact-${id}`} className="block text-sm font-medium text-ink-soft">
         {label}
         {required && (
           <span className="text-danger" aria-hidden>
@@ -59,7 +59,7 @@ export function ContactFields({ value, errors, onChange }: Props) {
     </div>
   );
 
-  const cls = (id: keyof ContactDraft) => `field ${errors[id] ? "border-danger" : ""}`;
+  const cls = (id: keyof ContactDraft) => `field ${errors[id] ? "border-danger/70" : ""}`;
   const aria = (id: keyof ContactDraft) => ({
     "aria-invalid": Boolean(errors[id]),
     "aria-describedby": `contact-${id}-err`,
@@ -67,7 +67,7 @@ export function ContactFields({ value, errors, onChange }: Props) {
 
   return (
     <fieldset className="grid gap-x-5 gap-y-1 sm:grid-cols-2">
-      <legend className="mb-4 text-lg font-semibold">{t.title}</legend>
+      <legend className="mb-5 text-lg font-bold">{t.title}</legend>
       {field(
         "name",
         t.name.label,
