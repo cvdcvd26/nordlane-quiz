@@ -2,7 +2,7 @@
 
 > **Portfolio demo.** The brand is fictional; all copy is placeholder. UI language: Polish.
 
-A step-by-step flow: a first screen with contact details (name, Polish phone number with a +48 mask, optional Telegram) and three yes/no questions, then a task (PDF brief + screenshot upload), a delayed automatic message, a built-in chat and an admin panel that turns replies into leads.
+A four-step flow: contact details (name, Polish phone number with a +48 mask, optional Telegram), then three yes/no questions, then the company info and a task (PDF brief + screenshot upload), a delayed automatic message, a built-in chat and an admin panel that turns replies into leads.
 
 **Stack:** Next.js 16 (App Router, TypeScript) · Tailwind CSS 4 · PostgreSQL (Neon) + Drizzle ORM · Vercel Blob (private store) · Upstash QStash (delayed jobs) · Vercel.
 
@@ -11,7 +11,7 @@ A step-by-step flow: a first screen with contact details (name, Polish phone num
 ## How it works
 
 ```
-Step 1: contacts + 3× "Tak / Nie" ──► Step 2: task + PDF + screenshots ──► "Zadanie wysłane" + chat
+Kontakt ──► Pytania (3× "Tak / Nie") ──► Step 2: task + PDF + screenshots ──► "Zadanie wysłane" + chat
                                      │
               POST /api/submit (one transaction):
               submission, files, conversation, scheduled_messages row
