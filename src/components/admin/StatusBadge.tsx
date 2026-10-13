@@ -2,9 +2,9 @@ import { content, type LeadStatus } from "@/config/content";
 
 const tone: Record<LeadStatus, string> = {
   new: "bg-paint text-on-paint",
-  in_progress: "bg-sky-400/15 text-sky-300 ring-1 ring-sky-400/30",
-  awaiting_reply: "bg-amber-400/15 text-amber-300 ring-1 ring-amber-400/30",
-  completed: "bg-ok/15 text-ok",
+  in_progress: "bg-sky/15 text-sky ring-1 ring-sky/30",
+  awaiting_reply: "bg-cyan/10 text-cyan ring-1 ring-cyan/35",
+  completed: "bg-white/5 text-ink-soft ring-1 ring-line-strong",
   rejected: "bg-danger-soft text-danger",
 };
 

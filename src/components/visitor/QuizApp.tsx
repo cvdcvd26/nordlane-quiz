@@ -2,8 +2,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { content, QUESTION_KEYS } from "@/config/content";
 import { api, newId, type PublicFile } from "@/lib/api";
-import { Lane } from "./Lane";
-import { StepQuestion } from "./StepQuestion";
+import { Lane, type Step } from "./Lane";
+import { Backdrop } from "../visual/Backdrop";
+import { StepContact } from "./StepContact";
+import { StepQuestions } from "./StepQuestions";
 import { StepTask } from "./StepTask";
 import { VisitorChat } from "./VisitorChat";
 import { fromServer, type UploadItem } from "./Uploader";
@@ -35,13 +37,14 @@ const readIdem = () => {
 export function QuizApp() {
   const [state, setState] = useState<SessionState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [step, setStep] = useState<0 | 1 | 2>(0);
+  const [step, setStep] = useState<Step>(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [answerError, setAnswerError] = useState<string | null>(null);
   const [contact, setContact] = useState<ContactDraft>({ name: "", phone: "", telegram: "" });
   const [contactErrors, setContactErrors] = useState<ContactErrors>({});
-  const [continuing, setContinuing] = useState(false);
+  const [contactSaving, setContactSaving] = useState(false);
+  const [contactError, setContactError] = useState<string | null>(null);
   const [items, setItems] = useState<UploadItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -62,7 +65,8 @@ export function QuizApp() {
           if (s.contact)
             setContact({ name: s.contact.name, phone: displayPhone(s.contact.phone), telegram: s.contact.telegram ?? "" });
           setItems(s.files.map(fromServer));
-          setStep(s.submission ? 2 : s.contact && allAnswered(s.answers) ? 1 : 0);
+          // Resume where the visitor left off.
+          setStep(s.submission ? 3 : !s.contact ? 0 : allAnswered(s.answers) ? 2 : 1);
         })
         .catch((err: Error) => setLoadError(err.message)),
     [],
@@ -77,7 +81,7 @@ export function QuizApp() {
     void fetchSession();
   }, [fetchSession]);
 
-  const goTo = (next: 0 | 1 | 2) => {
+  const goTo = (next: Step) => {
     setStep(next);
     // Move focus to the new step for keyboard and screen-reader users.
     requestAnimationFrame(() => {
@@ -94,11 +98,11 @@ export function QuizApp() {
     setSaving(questionKey);
     try {
       await api("/api/quiz/answer", { method: "PUT", json: { questionKey, answer: value } });
-      // The last missing answer just arrived: if the contact form is valid, move on automatically.
+      // The last missing answer just arrived: move on to the task automatically.
       const next = { ...answers, [questionKey]: value };
-      if (!allAnswered(answers) && allAnswered(next) && Object.keys(validateContact(contact)).every((k) => !validateContact(contact)[k as keyof ContactDraft])) {
+      if (!allAnswered(answers) && allAnswered(next)) {
         clearTimeout(autoTimer.current);
-        autoTimer.current = setTimeout(() => void continueFromIntro(next), 700);
+        autoTimer.current = setTimeout(() => goTo(2), 700);
       }
     } catch (err) {
       setAnswers((a) => {
@@ -119,26 +123,32 @@ export function QuizApp() {
     if (contactErrors[field] && !validateContact(next)[field]) setContactErrors((er) => ({ ...er, [field]: undefined }));
   };
 
-  /** "Dalej" on the first screen: validate, save the contact on the server, then move on. */
-  const continueFromIntro = async (ans: Record<string, string> = answers) => {
-    setAnswerError(null);
+  /** Step 1 "Dalej": validate, save the contact on the server, then show the questions. */
+  const saveContact = async () => {
+    setContactError(null);
     const errors = validateContact(contact);
     setContactErrors(errors);
     const firstBad = (Object.keys(errors) as (keyof ContactDraft)[]).find((k) => errors[k]);
     if (firstBad) {
       document.getElementById(`contact-${firstBad}`)?.focus();
-      return setAnswerError(content.errors.fixFields);
+      return setContactError(content.errors.fixFields);
     }
-    if (!allAnswered(ans)) return setAnswerError(content.errors.answerRequired);
-    setContinuing(true);
+    setContactSaving(true);
     try {
       await api("/api/contact", { method: "PUT", json: contact });
       goTo(1);
     } catch (err) {
-      setAnswerError((err as Error).message);
+      setContactError((err as Error).message);
     } finally {
-      setContinuing(false);
+      setContactSaving(false);
     }
+  };
+
+  /** Step 2 "Dalej" (if the visitor came back and the answers were already complete). */
+  const continueFromQuestions = () => {
+    if (!allAnswered(answers)) return setAnswerError(content.errors.answerRequired);
+    clearTimeout(autoTimer.current);
+    goTo(2);
   };
 
   const submit = async () => {
@@ -158,7 +168,7 @@ export function QuizApp() {
       try {
         sessionStorage.removeItem(IDEM_KEY);
       } catch {}
-      goTo(2);
+      goTo(3);
     } catch (err) {
       setSubmitError((err as Error).message);
     } finally {
@@ -168,12 +178,13 @@ export function QuizApp() {
 
   return (
     <div className="min-h-dvh">
+      <Backdrop />
       {/* Top bar */}
       <header className="sticky top-0 z-30 border-b border-line bg-paper/70 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-10">
           <p className="flex items-center gap-2.5">
-            <span aria-hidden className="relative grid size-8 place-items-center rounded-full bg-paint/15 ring-1 ring-paint/40">
-              <span className="size-3.5 rounded-full border-[3px] border-paint border-r-transparent" />
+            <span aria-hidden className="relative grid size-8 place-items-center rounded-full bg-gradient-to-br from-cyan/25 to-paint/25 ring-1 ring-paint/50">
+              <span className="size-3.5 rounded-full border-[3px] border-cyan border-r-transparent" />
             </span>
             <span className="display text-[1.05rem] font-bold">{content.brand.name}</span>
           </p>
@@ -215,39 +226,50 @@ export function QuizApp() {
           )}
 
           {state && step === 0 && (
-            <StepQuestion
+            <StepContact
               contact={contact}
-              contactErrors={contactErrors}
-              onContactChange={onContactChange}
-              continuing={continuing}
-              answers={answers}
-              saving={saving}
-              error={answerError}
-              onAnswer={choose}
-              onContinue={() => void continueFromIntro()}
+              errors={contactErrors}
+              onChange={onContactChange}
+              saving={contactSaving}
+              error={contactError}
+              onContinue={() => void saveContact()}
             />
           )}
 
           {state && step === 1 && (
+            <StepQuestions
+              answers={answers}
+              saving={saving}
+              error={answerError}
+              onAnswer={choose}
+              onBack={() => {
+                clearTimeout(autoTimer.current);
+                goTo(0);
+              }}
+              onContinue={continueFromQuestions}
+            />
+          )}
+
+          {state && step === 2 && (
             <StepTask
               items={items}
               setItems={setItems}
               limits={state.limits}
               submitting={submitting}
               error={submitError}
-              onBack={() => goTo(0)}
+              onBack={() => goTo(1)}
               onSubmit={submit}
             />
           )}
 
-          {state && step === 2 && (
+          {state && step === 3 && (
             <section className="step-enter space-y-10" aria-labelledby="done-title">
               <div>
-                <p className="chip pop border-paint/50 text-paint" role="status">
+                <p className="chip pop border-cyan/50 text-cyan" role="status">
                   <span aria-hidden>✓</span> {content.done.status}
                 </p>
-                <h1 id="done-title" className="display text-glow mt-5 text-[clamp(2.2rem,5vw,3.75rem)] font-bold">
-                  {content.done.title}
+                <h1 id="done-title" className="display mt-5 text-[clamp(2.5rem,6vw,4.6rem)] font-bold">
+                  {content.done.title} <span className="accent-text">{content.done.titleAccent}</span>
                 </h1>
                 <p className="measure mt-4 text-lg leading-relaxed text-ink-soft">{content.done.body}</p>
               </div>

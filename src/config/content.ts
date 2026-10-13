@@ -13,12 +13,15 @@ export const content = {
   progress: {
     label: "Postęp",
     stepOf: (step: number, total: number, label: string) => `Etap ${step} z ${total}: ${label}`,
-    steps: ["Pytania", "Zadanie", "Gotowe"],
+    steps: ["Kontakt", "Pytania", "Zadanie", "Gotowe"],
   },
 
   quiz: {
-    eyebrow: "Krok 1 z 2",
-    title: "Lorem ipsum dolor sit amet",
+    eyebrow: "Krok 1 z 3",
+    questionsEyebrow: "Krok 2 z 3",
+    questionsIntro: "Odpowiedz na trzy krótkie pytania. Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+    title: "Lorem ipsum dolor",
+    titleAccent: "sit amet",
     description: "Consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
     questions: [
       {
@@ -53,19 +56,21 @@ export const content = {
       telegram: { label: "Telegram (opcjonalnie)", placeholder: "Wpisz nazwę użytkownika Telegram" },
       required: "wymagane",
     },
-    questionsTitle: "Pytania",
+    questionsTitle: "Trzy krótkie",
+    questionsTitleAccent: "pytania",
     continue: "Dalej",
     saved: "Odpowiedzi zapisane",
     remaining: (n: number) => (n === 1 ? "Pozostało 1 pytanie" : `Pozostały ${n} pytania`),
   },
 
   task: {
-    eyebrow: "Krok 2 z 2",
+    eyebrow: "Krok 3 z 3",
     back: "Wstecz",
     about: {
-      title: "O firmie",
+      title: "O",
+      titleAccent: "firmie",
       body: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer posuere erat a ante venenatis dapibus posuere velit aliquet. Donec ullamcorper nulla non metus auctor fringilla.",
-      eyebrow: "Krok 2 z 2 · O firmie",
+      eyebrow: "Krok 3 z 3 · O firmie",
       facts: [
         { value: "12+", label: "Lorem ipsum dolor" },
         { value: "250", label: "Sit amet consectetur" },
@@ -115,7 +120,8 @@ export const content = {
 
   done: {
     status: "Zadanie wysłane",
-    title: "Lorem ipsum dolor sit amet",
+    title: "Lorem ipsum",
+    titleAccent: "dolor sit amet",
     body: "Consectetur adipiscing elit. Odpowiedź pojawi się na czacie poniżej — możesz zamknąć tę stronę i wrócić później.",
   },
 
@@ -278,6 +284,14 @@ export const content = {
       rejected: "Odrzucony",
     },
     answers: { yes: "Tak", no: "Nie" } as Record<string, string>,
+  },
+
+  network: {
+    labels: [
+      { label: "Status", value: "Online", pos: { top: "6%", left: "-4%" } },
+      { label: "Opóźnienie", value: "24 ms", pos: { top: "44%", right: "-10%" } },
+      { label: "Węzły", value: "128", pos: { bottom: "8%", left: "6%" } },
+    ],
   },
 
   meta: {

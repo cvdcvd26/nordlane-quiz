@@ -67,7 +67,7 @@ export function Composer({
   };
 
   return (
-    <div className="rounded-(--radius-tile) border border-line-strong bg-white/[0.03] p-2 transition-[border-color,box-shadow] focus-within:border-paint focus-within:shadow-[0_0_0_4px_#3ee8b01f]">
+    <div className="rounded-(--radius-tile) border border-line-strong bg-white/[0.03] p-2 transition-[border-color,box-shadow] focus-within:border-paint focus-within:shadow-[0_0_0_4px_#00d9ff1f]">
       {files.length > 0 && (
         <ul className="flex flex-wrap gap-2 px-2 pt-1 pb-2">
           {files.map((f) => (
@@ -90,7 +90,7 @@ export function Composer({
           <>
             <button
               type="button"
-              className="grid size-11 shrink-0 place-items-center rounded-full text-xl text-slate transition-colors hover:bg-white/5 hover:text-paint"
+              className="grid size-11 shrink-0 place-items-center rounded-full text-xl text-slate transition-colors hover:bg-white/5 hover:text-cyan"
               aria-label={content.chat.attach}
               title={content.chat.attach}
               onClick={() => input.current?.click()}

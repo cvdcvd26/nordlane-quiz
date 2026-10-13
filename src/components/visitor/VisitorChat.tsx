@@ -115,7 +115,7 @@ export function VisitorChat() {
   return (
     <section aria-labelledby="chat-title" className="glass overflow-hidden rounded-(--radius-tile)">
       <header className="flex items-center gap-3 border-b border-line px-5 py-4">
-        <span aria-hidden className={`size-2.5 rounded-full ${offline ? "bg-danger" : "bg-ok shadow-[0_0_10px_#3ee8b0]"}`} />
+        <span aria-hidden className={`size-2.5 rounded-full ${offline ? "bg-danger" : "bg-ok shadow-[0_0_10px_#00d9ff]"}`} />
         <h2 id="chat-title" className="font-semibold">
           {content.chat.title}
         </h2>

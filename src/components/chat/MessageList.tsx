@@ -30,8 +30,8 @@ export function MessageList({
       {messages.map((m) => {
         if (m.sender === "system") {
           return (
-            <li key={m.id} className="pop mx-auto max-w-md rounded-(--radius-field) border border-paint/40 bg-paint-soft px-4 py-3 text-sm shadow-[0_0_30px_-12px_#3ee8b0]">
-              <p className="mb-1 flex items-center gap-2 text-xs font-semibold text-paint">
+            <li key={m.id} className="pop mx-auto max-w-md rounded-(--radius-field) border border-paint/40 bg-paint-soft px-4 py-3 text-sm shadow-[0_0_30px_-12px_#00d9ff]">
+              <p className="mb-1 flex items-center gap-2 text-xs font-semibold text-cyan">
                 <span aria-hidden className="chip-dot" />
                 {content.chat.systemLabel}
                 <time className="ml-auto font-normal text-slate" dateTime={m.createdAt}>
@@ -49,7 +49,7 @@ export function MessageList({
             <div className={`max-w-[85%] sm:max-w-[75%] ${m.local === "sending" ? "opacity-70" : ""}`}>
               <div
                 className={`rounded-2xl px-4 py-2.5 ${
-                  mine ? "rounded-br-md bg-paint font-medium text-on-paint shadow-[0_8px_24px_-12px_#3ee8b0]" : "rounded-bl-md border border-line-strong bg-white/[0.04]"
+                  mine ? "rounded-br-md bg-paint font-medium text-on-paint shadow-[0_8px_24px_-12px_#00d9ff]" : "rounded-bl-md border border-line-strong bg-white/[0.04]"
                 } ${m.local === "failed" ? "ring-2 ring-danger" : ""}`}
               >
                 {m.body && <p className="whitespace-pre-wrap break-words leading-relaxed">{m.body}</p>}
@@ -91,7 +91,7 @@ export function MessageList({
                   <>
                     <span className="text-danger">{content.chat.failed}</span>
                     {onRetry && (
-                      <button type="button" className="font-semibold text-paint underline" onClick={() => onRetry(m)}>
+                      <button type="button" className="font-semibold text-cyan underline" onClick={() => onRetry(m)}>
                         {content.chat.retry}
                       </button>
                     )}

@@ -120,7 +120,7 @@ export function Uploader({ items, setItems, limits, disabled }: Props) {
         }}
         className={[
           "relative rounded-(--radius-tile) border-2 border-dashed px-5 py-10 text-center transition-all duration-300 sm:py-12",
-          drag ? "scale-[1.01] border-paint bg-paint-soft shadow-[0_0_40px_-10px_#3ee8b0]" : "border-line-strong bg-white/[0.02] hover:border-paint/50",
+          drag ? "scale-[1.01] border-paint bg-paint-soft shadow-[0_0_40px_-10px_#00d9ff]" : "border-line-strong bg-white/[0.02] hover:border-paint/50",
           disabled ? "opacity-60" : "",
         ].join(" ")}
       >
@@ -167,7 +167,7 @@ export function Uploader({ items, setItems, limits, disabled }: Props) {
                 <img src={item.preview} alt="" className="size-full object-cover" />
                 {item.status === "uploading" && (
                   <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/10">
-                    <div className="h-full bg-paint shadow-[0_0_10px_#3ee8b0] transition-[width]" style={{ width: `${Math.round(item.progress * 100)}%` }} />
+                    <div className="h-full bg-paint shadow-[0_0_10px_#00d9ff] transition-[width]" style={{ width: `${Math.round(item.progress * 100)}%` }} />
                   </div>
                 )}
                 {item.status === "done" && (
