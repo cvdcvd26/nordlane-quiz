@@ -5,7 +5,7 @@
 import { connect, databaseUrl } from "./connect";
 
 async function main() {
-  const url = databaseUrl();
+  const url = databaseUrl(true);
   if (!url) {
     console.warn("[migrate] DATABASE_URL is not set — skipping migrations.");
     return;
