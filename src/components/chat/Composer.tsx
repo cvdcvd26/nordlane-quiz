@@ -1,0 +1,146 @@
+"use client";
+import { useRef, useState } from "react";
+import { content } from "@/config/content";
+import { formatBytes, uploadWithProgress, type PublicFile } from "@/lib/api";
+
+type Attachment = { key: string; name: string; size: number; status: "uploading" | "done" | "error"; file?: PublicFile; error?: string };
+
+/**
+ * Message input: Enter sends, Shift+Enter adds a new line.
+ * Attachments upload immediately; the message is sent with their ids.
+ */
+export function Composer({
+  onSend,
+  uploadUrl,
+  uploadPurpose,
+  accept,
+  attachmentsEnabled,
+  maxFiles,
+  placeholder = content.chat.placeholder,
+}: {
+  onSend: (body: string, files: PublicFile[]) => void | Promise<void>;
+  uploadUrl: string;
+  uploadPurpose?: "chat";
+  accept: string[];
+  attachmentsEnabled: boolean;
+  maxFiles: number;
+  placeholder?: string;
+}) {
+  const [text, setText] = useState("");
+  const [files, setFiles] = useState<Attachment[]>([]);
+  const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const area = useRef<HTMLTextAreaElement>(null);
+
+  const uploading = files.some((f) => f.status === "uploading");
+  const ready = files.filter((f) => f.status === "done" && f.file).map((f) => f.file!);
+  const canSend = !busy && !uploading && (text.trim().length > 0 || ready.length > 0);
+
+  const send = async () => {
+    if (!canSend) return;
+    setBusy(true);
+    try {
+      await onSend(text.trim(), ready);
+      setText("");
+      setFiles([]);
+      area.current?.focus();
+    } catch {
+      // Text stays in the field; the parent shows the error.
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const attach = (list: FileList) => {
+    Array.from(list)
+      .slice(0, Math.max(0, maxFiles - files.length))
+      .forEach((file) => {
+        const key = `${file.name}-${file.size}-${Math.random()}`;
+        setFiles((p) => [...p, { key, name: file.name, size: file.size, status: "uploading" }]);
+        const form = new FormData();
+        form.set("file", file);
+        if (uploadPurpose) form.set("purpose", uploadPurpose);
+        uploadWithProgress<{ file: PublicFile }>(uploadUrl, form, () => {})
+          .promise.then(({ file: saved }) => setFiles((p) => p.map((f) => (f.key === key ? { ...f, status: "done", file: saved } : f))))
+          .catch((err) => setFiles((p) => p.map((f) => (f.key === key ? { ...f, status: "error", error: err.message } : f))));
+      });
+  };
+
+  return (
+    <div className="rounded-(--radius-tile) border-2 border-line bg-surface p-2 focus-within:border-ink">
+      {files.length > 0 && (
+        <ul className="flex flex-wrap gap-2 px-2 pt-1 pb-2">
+          {files.map((f) => (
+            <li
+              key={f.key}
+              className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs ${f.status === "error" ? "bg-danger-soft text-danger" : "bg-paper"}`}
+              title={f.error}
+            >
+              <span className="max-w-40 truncate">{f.name}</span>
+              <span className="text-slate">{f.status === "uploading" ? "…" : f.status === "error" ? "!" : formatBytes(f.size)}</span>
+              <button type="button" aria-label={content.chat.removeAttachment(f.name)} onClick={() => setFiles((p) => p.filter((x) => x.key !== f.key))}>
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex items-end gap-2">
+        {attachmentsEnabled && (
+          <>
+            <button
+              type="button"
+              className="grid size-11 shrink-0 place-items-center rounded-full text-xl text-slate hover:bg-paper hover:text-ink"
+              aria-label={content.chat.attach}
+              title={content.chat.attach}
+              onClick={() => input.current?.click()}
+            >
+              <svg aria-hidden viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M21 11.5 12.5 20a5 5 0 0 1-7-7L14 4.5a3.3 3.3 0 0 1 4.7 4.7L10.2 17.7a1.7 1.7 0 0 1-2.4-2.4L15.5 7.6" />
+              </svg>
+            </button>
+            <input
+              ref={input}
+              type="file"
+              multiple
+              accept={accept.join(",")}
+              className="sr-only"
+              tabIndex={-1}
+              aria-hidden
+              onChange={(e) => {
+                if (e.target.files) attach(e.target.files);
+                e.target.value = "";
+              }}
+            />
+          </>
+        )}
+        <label className="sr-only" htmlFor="composer">
+          {placeholder}
+        </label>
+        <textarea
+          id="composer"
+          ref={area}
+          rows={1}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            e.target.style.height = "auto";
+            e.target.style.height = `${Math.min(e.target.scrollHeight, 180)}px`;
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              void send();
+            }
+          }}
+          placeholder={placeholder}
+          maxLength={4000}
+          className="max-h-44 min-h-11 flex-1 resize-none bg-transparent px-2 py-2.5 outline-none placeholder:text-slate"
+        />
+        <button type="button" className="btn btn-primary h-11 min-h-0 shrink-0 px-5" onClick={send} disabled={!canSend}>
+          {content.chat.send}
+        </button>
+      </div>
+    </div>
+  );
+}

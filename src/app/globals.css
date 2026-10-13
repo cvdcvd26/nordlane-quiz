@@ -1,0 +1,164 @@
+@import "tailwindcss";
+
+/* Nordlane, "the northern lane": glacier paper, spruce ink, yellow road paint. */
+@theme {
+  --color-paper: #eef2f1;
+  --color-surface: #fbfcfc;
+  --color-ink: #12312b;
+  --color-ink-soft: #2c4a43;
+  --color-slate: #5b6b70;
+  --color-line: #c9d3d2;
+  --color-line-strong: #a9b8b6;
+  --color-paint: #f2c230;
+  --color-paint-deep: #c99a0c;
+  --color-paint-soft: #fbefc4;
+  --color-danger: #b4372b;
+  --color-danger-soft: #f6dfdb;
+  --color-ok: #2f7a55;
+
+  --font-display: "Unbounded Variable", "Unbounded", system-ui, sans-serif;
+  --font-sans: "Onest Variable", "Onest", system-ui, sans-serif;
+
+  --radius-tile: 1.25rem;
+  --radius-field: 0.75rem;
+
+  --ease-lane: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+@layer base {
+  html {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    min-height: 100dvh;
+  }
+  ::selection {
+    background: var(--color-paint);
+    color: var(--color-ink);
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-paint-deep);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+}
+
+@layer components {
+  .display {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+    line-height: 1.08;
+  }
+  .measure {
+    max-width: 62ch;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 3rem;
+    padding: 0 1.4rem;
+    border-radius: 999px;
+    font-weight: 600;
+    transition:
+      background-color 0.15s,
+      color 0.15s,
+      transform 0.15s;
+  }
+  .btn:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+  .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+  .btn-primary {
+    background: var(--color-ink);
+    color: var(--color-surface);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--color-ink-soft);
+  }
+  .btn-ghost {
+    color: var(--color-ink);
+    border: 1.5px solid var(--color-line-strong);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    border-color: var(--color-ink);
+  }
+  .field {
+    width: 100%;
+    border: 1.5px solid var(--color-line);
+    background: var(--color-surface);
+    border-radius: var(--radius-field);
+    padding: 0.7rem 0.9rem;
+    color: var(--color-ink);
+  }
+  .field:focus {
+    outline: none;
+    border-color: var(--color-ink);
+    box-shadow: 0 0 0 3px var(--color-paint-soft);
+  }
+}
+
+/* One orchestrated moment: the step change. All other motion responds to an action. */
+@keyframes step-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.step-enter {
+  animation: step-in 0.55s var(--ease-lane) both;
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.pop {
+  animation: pop 0.35s var(--ease-lane) both;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--color-line) 25%, var(--color-paper) 50%, var(--color-line) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

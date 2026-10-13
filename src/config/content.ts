@@ -1,0 +1,286 @@
+/**
+ * All UI copy (Polish). This is a portfolio demo: the brand is fictional and the
+ * content is placeholder. To change any text, edit this file only.
+ */
+export const content = {
+  locale: "pl-PL",
+
+  brand: {
+    name: "Nordlane Studio",
+    demoBadge: "Demo · projekt do portfolio",
+  },
+
+  progress: {
+    label: "Postęp",
+    stepOf: (step: number, total: number, label: string) => `Etap ${step} z ${total}: ${label}`,
+    steps: ["Pytania", "Zadanie", "Gotowe"],
+  },
+
+  quiz: {
+    eyebrow: "Krok 1 z 2",
+    title: "Lorem ipsum dolor sit amet",
+    description: "Consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+    questions: [
+      {
+        key: "q1",
+        text: "Lorem ipsum dolor sit amet, consectetur adipiscing elit?",
+        options: [
+          { value: "yes", label: "Tak" },
+          { value: "no", label: "Nie" },
+        ],
+      },
+      {
+        key: "q2",
+        text: "Sed do eiusmod tempor incididunt ut labore et dolore?",
+        options: [
+          { value: "yes", label: "Tak" },
+          { value: "no", label: "Nie" },
+        ],
+      },
+      {
+        key: "q3",
+        text: "Ut enim ad minim veniam, quis nostrud exercitation?",
+        options: [
+          { value: "yes", label: "Tak" },
+          { value: "no", label: "Nie" },
+        ],
+      },
+    ],
+    contact: {
+      title: "Dane kontaktowe",
+      name: { label: "Imię", placeholder: "Wpisz swoje imię" },
+      phone: { label: "Numer telefonu", placeholder: "+48 000 000 000" },
+      telegram: { label: "Telegram (opcjonalnie)", placeholder: "Wpisz nazwę użytkownika Telegram" },
+      required: "wymagane",
+    },
+    questionsTitle: "Pytania",
+    continue: "Dalej",
+    saved: "Odpowiedzi zapisane",
+    remaining: (n: number) => (n === 1 ? "Pozostało 1 pytanie" : `Pozostały ${n} pytania`),
+  },
+
+  task: {
+    eyebrow: "Krok 2 z 2",
+    back: "Wstecz",
+    about: {
+      title: "O firmie",
+      body: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer posuere erat a ante venenatis dapibus posuere velit aliquet. Donec ullamcorper nulla non metus auctor fringilla.",
+      facts: [
+        { value: "Lorem", label: "ipsum dolor" },
+        { value: "Sit", label: "amet consectetur" },
+        { value: "Elit", label: "sed do eiusmod" },
+      ],
+    },
+    assignment: {
+      title: "Zadanie",
+      body: "Maecenas sed diam eget risus varius blandit sit amet non magna. Cras mattis consectetur purus sit amet fermentum.",
+    },
+    instructions: {
+      title: "Instrukcja",
+      steps: [
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+        "Nullam quis risus eget urna mollis ornare vel eu leo.",
+        "Vestibulum id ligula porta felis euismod semper.",
+      ],
+    },
+    pdf: {
+      title: "Materiały do zadania",
+      fileName: "task-brief.pdf",
+      url: "/task-brief.pdf",
+      meta: "PDF · lorem ipsum",
+      open: "Otwórz",
+      download: "Pobierz",
+    },
+    upload: {
+      title: "Zrzuty ekranu",
+      hint: "Przeciągnij obrazy tutaj lub wybierz pliki",
+      button: "Wybierz pliki",
+      limits: (maxFiles: number, maxMb: number, types: string) =>
+        `Do ${maxFiles} plików · do ${maxMb} MB każdy · ${types}`,
+      uploading: "Przesyłanie…",
+      uploaded: "Przesłano",
+      remove: "Usuń",
+      retry: "Ponów",
+      empty: "Nic jeszcze nie przesłano",
+    },
+    submit: "Wyślij zadanie",
+    submitting: "Wysyłanie…",
+  },
+
+  done: {
+    status: "Zadanie wysłane",
+    title: "Lorem ipsum dolor sit amet",
+    body: "Consectetur adipiscing elit. Odpowiedź pojawi się na czacie poniżej — możesz zamknąć tę stronę i wrócić później.",
+  },
+
+  chat: {
+    title: "Czat",
+    waiting: "Tutaj pojawią się wiadomości. Lorem ipsum dolor sit amet.",
+    placeholder: "Napisz wiadomość…",
+    send: "Wyślij",
+    attach: "Załącz plik",
+    removeAttachment: (name: string) => `Usuń ${name}`,
+    sending: "Wysyłanie…",
+    failed: "Nie wysłano",
+    retry: "Ponów",
+    systemLabel: "Wiadomość automatyczna",
+    adminLabel: "Nordlane",
+    youLabel: "Ty",
+    visitorLabel: "Użytkownik",
+    offline: "Brak połączenia. Spróbujemy ponownie automatycznie.",
+  },
+
+  errors: {
+    generic: "Coś poszło nie tak. Spróbuj ponownie.",
+    network: "Brak połączenia z serwerem. Sprawdź internet i spróbuj ponownie.",
+    answerRequired: "Odpowiedz na wszystkie pytania, aby kontynuować.",
+    nameRequired: "Podaj swoje imię.",
+    nameTooLong: "Imię jest za długie.",
+    phoneRequired: "Podaj numer telefonu.",
+    phoneInvalid: "Wprowadź prawidłowy numer telefonu.",
+    telegramInvalid: "Wprowadź prawidłową nazwę użytkownika Telegram (5–32 znaki: litery, cyfry, podkreślenie).",
+    contactRequired: "Uzupełnij dane kontaktowe.",
+    fixFields: "Popraw zaznaczone pola.",
+    filesRequired: "Prześlij co najmniej jeden zrzut ekranu.",
+    filesPending: "Poczekaj, aż pliki zostaną przesłane.",
+    fileType: "Niedozwolony typ pliku.",
+    fileSize: (maxMb: number) => `Plik jest większy niż ${maxMb} MB.`,
+    fileCount: (max: number) => `Możesz przesłać maksymalnie ${max} plików.`,
+    fileContent: "Zawartość pliku nie odpowiada jego typowi.",
+    fileMissing: "Nie znaleziono pliku lub został już wysłany.",
+    filesMissing: "Nie znaleziono części plików. Prześlij je ponownie.",
+    fileAlreadySent: "Plik został już wysłany.",
+    fileNotProvided: "Nie przesłano pliku.",
+    alreadySubmitted: "Zadanie zostało już wysłane.",
+    attachmentsDisabled: "Załączniki są wyłączone.",
+    badRequest: "Nieprawidłowe żądanie.",
+    unknownQuestion: "Nieznane pytanie.",
+    rateLimited: "Zbyt wiele żądań. Odczekaj chwilę.",
+    messageEmpty: "Wiadomość jest pusta.",
+    messageTooLong: "Wiadomość jest za długa.",
+    notSubmitted: "Najpierw wyślij zadanie.",
+    sessionMissing: "Nie znaleziono sesji. Odśwież stronę.",
+    unauthorized: "Wymagane logowanie.",
+    forbidden: "Brak dostępu.",
+    notFound: "Nie znaleziono.",
+  },
+
+  admin: {
+    title: "Nordlane · Panel",
+    nav: { leads: "Leady", settings: "Ustawienia", sections: "Sekcje", logout: "Wyloguj" },
+    login: {
+      title: "Logowanie do panelu",
+      email: "E-mail",
+      password: "Hasło",
+      submit: "Zaloguj",
+      submitting: "Logowanie…",
+      invalid: "Nieprawidłowy e-mail lub hasło.",
+      invalidEmail: "Nieprawidłowy e-mail.",
+    },
+    list: {
+      title: "Leady",
+      total: (n: number) => `Łącznie: ${n}`,
+      search: "Szukaj",
+      searchPlaceholder: "Szukaj po ID, imieniu, telefonie, wiadomościach i notatkach",
+      status: "Status",
+      allStatuses: "Wszystkie statusy",
+      newestFirst: "Najnowsze najpierw",
+      oldestFirst: "Najstarsze najpierw",
+      columns: {
+        id: "ID",
+        created: "Utworzono",
+        status: "Status",
+        answer: "Odpowiedzi",
+        contact: "Kontakt",
+        lastMessage: "Ostatnia wiadomość",
+        messages: "Wiadomości",
+      },
+      noResults: "Nic nie znaleziono. Zmień wyszukiwanie lub filtr.",
+      empty: "Nie ma jeszcze leadów. Pojawią się, gdy użytkownicy odpowiedzą na czacie.",
+      pages: "Strony",
+      prev: "Wstecz",
+      next: "Dalej",
+      pageOf: (page: number, total: number) => `${page} z ${total}`,
+    },
+    lead: {
+      back: "← Wszystkie leady",
+      toList: "Do listy",
+      title: (id: number) => `Lead #${id}`,
+      status: "Status",
+      meta: (created: string, updated: string, count: number) =>
+        `Utworzono ${created} · zaktualizowano ${updated} · wiadomości: ${count}`,
+      thread: "Korespondencja",
+      noMessages: "Brak wiadomości.",
+      replyPlaceholder: "Odpowiedź dla użytkownika…",
+      contact: "Kontakt",
+      contactName: "Imię",
+      contactPhone: "Telefon",
+      contactTelegram: "Telegram",
+      answers: "Odpowiedzi",
+      submission: "Zadanie",
+      submittedAt: (t: string) => `Wysłano ${t}`,
+      autoMessage: "Wiadomość automatyczna",
+      autoStatus: {
+        pending: "zaplanowana",
+        sending: "w trakcie wysyłki",
+        sent: "wysłana",
+        failed: "błąd",
+        cancelled: "anulowana",
+      } as Record<string, string>,
+      autoAt: (t: string) => `na ${t}`,
+      notes: "Notatki wewnętrzne",
+      notesHint: "Widoczne tylko dla administratora.",
+      newNote: "Nowa notatka",
+      addNote: "Dodaj notatkę",
+      notFound: "Nie znaleziono leada.",
+      noteEmpty: "Notatka jest pusta.",
+      conversationNotFound: "Nie znaleziono rozmowy.",
+    },
+    settings: {
+      title: "Wiadomość automatyczna",
+      intro:
+        "Wysyłana na czat po wysłaniu zadania, po losowym czasie. Na czacie jest oznaczona jako wiadomość automatyczna.",
+      enabled: "Wysyłaj wiadomość automatyczną",
+      text: "Treść wiadomości",
+      delayFrom: "Opóźnienie od, min",
+      delayTo: "do, min",
+      delayHint: "Nowy przedział obowiązuje dla zadań wysłanych po zapisaniu.",
+      delayOrder: "Maksymalne opóźnienie nie może być mniejsze niż minimalne.",
+      chat: "Czat",
+      attachments: "Pozwól użytkownikom załączać pliki",
+      save: "Zapisz ustawienia",
+      saving: "Zapisywanie…",
+      saved: "Ustawienia zapisane.",
+      password: {
+        title: "Zmień hasło",
+        current: "Obecne hasło",
+        next: "Nowe hasło (min. 10 znaków)",
+        repeat: "Powtórz nowe hasło",
+        submit: "Zmień hasło",
+        mismatch: "Nowe hasła nie są takie same.",
+        changed: "Hasło zmienione. Pozostałe sesje zostały zakończone.",
+        wrongCurrent: "Obecne hasło jest nieprawidłowe.",
+        tooShort: "Hasło musi mieć co najmniej 10 znaków.",
+        tooLong: "Hasło jest za długie.",
+      },
+    },
+    statuses: {
+      new: "Nowy",
+      in_progress: "W trakcie",
+      awaiting_reply: "Czeka na odpowiedź",
+      completed: "Zakończony",
+      rejected: "Odrzucony",
+    },
+    answers: { yes: "Tak", no: "Nie" } as Record<string, string>,
+  },
+
+  meta: {
+    title: "Nordlane Studio — zadanie",
+  },
+} as const;
+
+export type QuizQuestion = (typeof content.quiz.questions)[number];
+export const QUESTION_KEYS: string[] = content.quiz.questions.map((q) => q.key);
+
+export type LeadStatus = keyof typeof content.admin.statuses;
+export const LEAD_STATUSES = Object.keys(content.admin.statuses) as LeadStatus[];
