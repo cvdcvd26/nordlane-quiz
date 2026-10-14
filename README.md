@@ -2,7 +2,7 @@
 
 > **Portfolio demo.** The brand is fictional; all copy is placeholder. UI language: Polish.
 
-A four-step flow: contact details (name, Polish phone number with a +48 mask, optional Telegram), then three yes/no questions, then the company info and a task (PDF brief + screenshot upload), a delayed automatic message, a built-in chat and an admin panel that turns replies into leads.
+A four-step flow: contact details (name, Polish phone number with a +48 mask, optional Telegram), then three yes/no questions, then the company info and a task (PDF brief + screenshot upload), a delayed automatic message, a built-in chat and an admin panel with leads, deletion and sound notifications.
 
 **Stack:** Next.js 16 (App Router, TypeScript) · Tailwind CSS 4 · PostgreSQL (Neon) + Drizzle ORM · Vercel Blob (private store) · Upstash QStash (delayed jobs) · Vercel.
 
@@ -20,7 +20,7 @@ Kontakt ──► Pytania (3× "Tak / Nie") ──► Step 2: task + PDF + scree
                                      ▼
               POST /api/jobs/deliver ──► system message in the chat
                                      │
-              Visitor replies ──► exactly one lead is created ──► /admin
+              Contact saved (step 1) ──► exactly one lead ──► /admin
 ```
 
 **Reliable delayed message**
@@ -33,7 +33,11 @@ Kontakt ──► Pytania (3× "Tak / Nie") ──► Step 2: task + PDF + scree
 
 **Contacts.** Name and phone are required, Telegram is optional. The phone field formats as you type or paste (`+48 600 123 456`) and is stored as E.164 (`+48600123456`); Telegram is stored as `@username` or `null`. The same rules run in the browser and on the server.
 
-**Leads.** A lead is created on the visitor's first message after the automatic message was delivered (or on the first message if automatic messages are off). A unique index on `leads.session_id` guarantees one lead per session; every later message belongs to it.
+**Leads.** A lead is created as soon as the visitor saves contact details on the first screen. A unique index on `leads.session_id` guarantees one lead per session; answers, the task and every message belong to it. The list shows the funnel stage (Kontakt → Pytania → Zadanie wysłane). The admin can write before the task is sent; the visitor sees it once the chat opens.
+
+**Deleting leads.** From the lead page (“Usuń lead”) or several at once from the list (checkboxes → “Usuń zaznaczone”), with an inline confirmation. Deletion removes the visitor session, which cascades to contact, answers, submission, conversation, messages, notes and file rows; stored files are deleted from Blob as well.
+
+**Sound notifications.** A short Web Audio chime (no audio files). The visitor hears it when an admin or automatic message arrives; the admin panel polls `/api/admin/activity` every 5 s and plays a chime plus a toast for new leads and new visitor messages on any admin page, and refreshes the open list/lead. Both sides have a speaker button to mute; the choice is remembered per browser. Browsers allow sound only after the first click on the page.
 
 **Security**
 
