@@ -6,6 +6,7 @@ import { LEAD_STATUSES, content } from "@/config/content";
 import { loadMessages, attachFiles, messageSchema } from "./chat";
 import { toPublicFile } from "./uploads";
 import { touchConversation } from "./conversation";
+import { ensureConversation } from "./leads";
 
 const listSchema = z.object({
   q: z.string().trim().max(200).optional().default(""),
@@ -27,6 +28,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
 
   const contactName = sql<string | null>`(select vc.name from visitor_contacts vc where vc.session_id = ${leadSession})`;
   const contactPhone = sql<string | null>`(select vc.phone from visitor_contacts vc where vc.session_id = ${leadSession})`;
+  const submitted = sql<boolean>`exists (select 1 from task_submissions ts where ts.session_id = ${leadSession})`;
 
   // Phone search compares digits only, so "600 123", "+48600123" and "600-123" all match.
   const qDigits = p.q.replace(/\D/g, "");
@@ -62,6 +64,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
         answer,
         contactName,
         contactPhone,
+        submitted,
       })
       .from(L)
       .where(where)
@@ -74,6 +77,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
   return {
     items: rows.map((r) => ({
       ...r,
+      stage: leadStage(r.answer ? r.answer.split(",").length : 0, Boolean(r.submitted)),
       createdAt: r.createdAt.toISOString(),
       lastMessageAt: r.lastMessageAt?.toISOString() ?? null,
     })),
@@ -81,6 +85,13 @@ export async function listLeads(input: Record<string, string | undefined>) {
     page: p.page,
     pageSize: p.pageSize,
   };
+}
+
+/** How far the visitor got: contact left → answering questions → task sent. */
+export type LeadStage = "contact" | "questions" | "submitted";
+function leadStage(answered: number, submitted: boolean): LeadStage {
+  if (submitted) return "submitted";
+  return answered > 0 ? "questions" : "contact";
 }
 
 async function findLead(leadId: number) {
@@ -117,6 +128,7 @@ export async function getLeadDetails(leadId: number) {
       updatedAt: lead.updatedAt.toISOString(),
       messageCount: lead.messageCount,
       lastMessageAt: lead.lastMessageAt?.toISOString() ?? null,
+      stage: leadStage(answers.length, Boolean(submission)),
     },
     contact: contact ?? null,
     answers: content.quiz.questions.map((q) => {
@@ -171,12 +183,8 @@ export async function postAdminMessage(leadId: number, input: unknown) {
   const text = body.trim();
   if (!text && fileIds.length === 0) throw badRequest(content.errors.messageEmpty);
   const lead = await findLead(leadId);
-  const [conv] = await db()
-    .select()
-    .from(schema.conversations)
-    .where(eq(schema.conversations.sessionId, lead.sessionId))
-    .limit(1);
-  if (!conv) throw notFound(content.admin.lead.conversationNotFound);
+  // A lead may exist before the task is sent; the conversation is created on the first reply.
+  const conv = await ensureConversation(db(), lead.sessionId);
 
   const now = new Date();
   await db().transaction(async (tx) => {

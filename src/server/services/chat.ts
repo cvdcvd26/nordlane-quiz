@@ -8,6 +8,7 @@ import { chatConfig, uploadConfig } from "@/config/settings";
 import { content } from "@/config/content";
 import { toPublicFile, type PublicFile } from "./uploads";
 import { touchConversation, refreshLeadStats } from "./conversation";
+import { ensureConversation, ensureLead } from "./leads";
 import { deliverOverdue } from "./delivery";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -61,9 +62,19 @@ export async function loadMessages(conversationId: string, after?: Date): Promis
   }));
 }
 
+/** The chat opens once the task is submitted. */
+async function requireSubmitted(sessionId: string) {
+  const [sub] = await db()
+    .select({ id: schema.taskSubmissions.id })
+    .from(schema.taskSubmissions)
+    .where(eq(schema.taskSubmissions.sessionId, sessionId))
+    .limit(1);
+  if (!sub) throw forbidden(content.errors.notSubmitted);
+}
+
 export async function getVisitorChat(sessionId: string, after?: Date) {
-  const conv = await getConversationBySession(sessionId);
-  if (!conv) throw forbidden(content.errors.notSubmitted);
+  await requireSubmitted(sessionId);
+  const conv = await ensureConversation(db(), sessionId);
   // Backup delivery if the queue missed it.
   await deliverOverdue({ conversationId: conv.id, limit: 3 }).catch(() => {});
   const settings = await getSettings();
@@ -84,8 +95,8 @@ export async function postVisitorMessage(sessionId: string, input: unknown): Pro
   const text = body.trim();
   if (!text && fileIds.length === 0) throw badRequest(content.errors.messageEmpty);
 
-  const conv = await getConversationBySession(sessionId);
-  if (!conv) throw forbidden(content.errors.notSubmitted);
+  await requireSubmitted(sessionId);
+  const conv = await ensureConversation(db(), sessionId);
   const settings = await getSettings();
   if (fileIds.length && !settings.chatAttachmentsEnabled) throw badRequest(content.errors.attachmentsDisabled);
 
@@ -100,15 +111,10 @@ export async function postVisitorMessage(sessionId: string, input: unknown): Pro
 
     await attachFiles(tx, { fileIds, sessionId, messageId: inserted.id, uploadedBy: "visitor" });
 
-    let leadId = conv.leadId;
-    if (!leadId && (await leadEligible(tx, conv.id))) {
-      await tx.insert(schema.leads).values({ sessionId, createdAt: now, updatedAt: now }).onConflictDoNothing();
-      const [lead] = await tx.select().from(schema.leads).where(eq(schema.leads.sessionId, sessionId)).limit(1);
-      leadId = lead.id;
-      await tx.update(schema.conversations).set({ leadId }).where(eq(schema.conversations.id, conv.id));
-      await refreshLeadStats(tx, leadId, conv.id);
-    }
+    // Older visitors without a lead (e.g. data from before this rule) get one now.
+    const leadId = conv.leadId ?? (await ensureLead(tx, sessionId));
     await touchConversation(tx, conv.id, now);
+    await refreshLeadStats(tx, leadId, conv.id);
     return leadId;
   });
 
@@ -121,17 +127,6 @@ export async function postVisitorMessage(sessionId: string, input: unknown): Pro
     list.filter((m) => m.id === msg.id),
   );
   return { message, leadId: leadId ?? null };
-}
-
-async function leadEligible(tx: Tx, conversationId: string) {
-  const [sched] = await tx
-    .select({ status: schema.scheduledMessages.status })
-    .from(schema.scheduledMessages)
-    .where(eq(schema.scheduledMessages.conversationId, conversationId))
-    .limit(1);
-  // No scheduled message (auto messages were off at submission) or it was cancelled → reply counts right away.
-  if (!sched || sched.status === "cancelled") return true;
-  return sched.status === "sent";
 }
 
 export async function attachFiles(

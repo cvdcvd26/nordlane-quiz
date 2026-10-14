@@ -5,11 +5,13 @@ import { useSearchParams } from "next/navigation";
 import { content, LEAD_STATUSES, type LeadStatus } from "@/config/content";
 import { api, formatTime } from "@/lib/api";
 import { StatusBadge } from "@/components/admin/StatusBadge";
+import { StageBadge } from "@/components/admin/StageBadge";
+import { ACTIVITY_EVENT } from "@/components/admin/ActivityNotifier";
 import { formatPhone, nationalDigits } from "@/lib/contact";
 
 const displayPhone = (p: string) => formatPhone(nationalDigits(p));
 
-type Item = { id: number; status: LeadStatus; createdAt: string; lastMessageAt: string | null; messageCount: number; answer: string | null; contactName: string | null; contactPhone: string | null };
+type Item = { id: number; status: LeadStatus; createdAt: string; lastMessageAt: string | null; messageCount: number; answer: string | null; contactName: string | null; contactPhone: string | null; stage: string };
 type ListResponse = { items: Item[]; total: number; page: number; pageSize: number };
 type Filters = { q: string; status: string; sort: "desc" | "asc"; page: number };
 
@@ -44,6 +46,11 @@ function Leads() {
   const [data, setData] = useState<ListResponse | null>(null);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
   const key = toParams(filters);
   const loading = loadedKey !== key;
 
@@ -63,7 +70,46 @@ function Leads() {
     return () => {
       cancelled = true;
     };
-  }, [key]);
+  }, [key, reload]);
+
+  // New lead / message anywhere → refresh the list.
+  useEffect(() => {
+    const onActivity = () => setReload((n) => n + 1);
+    window.addEventListener(ACTIVITY_EVENT, onActivity);
+    return () => window.removeEventListener(ACTIVITY_EVENT, onActivity);
+  }, []);
+
+  const pageIds = data?.items.map((l) => l.id) ?? [];
+  const allOnPage = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const toggleOne = (id: number) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const toggleAll = () =>
+    setSelected((s) => {
+      const n = new Set(s);
+      pageIds.forEach((id) => (allOnPage ? n.delete(id) : n.add(id)));
+      return n;
+    });
+
+  const deleteSelected = async () => {
+    setDeleting(true);
+    try {
+      const { deleted } = await api<{ deleted: number }>("/api/admin/leads", { method: "DELETE", json: { ids: [...selected] } });
+      setSelected(new Set());
+      setConfirming(false);
+      setFlash(content.admin.list.deleted(deleted));
+      setTimeout(() => setFlash(null), 4000);
+      setReload((n) => n + 1);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Debounced search.
   useEffect(() => {
@@ -111,6 +157,48 @@ function Leads() {
         </button>
       </div>
 
+      {selected.size > 0 && (
+        <div className="glass pop mt-4 flex flex-wrap items-center gap-3 rounded-(--radius-field) px-4 py-3 text-sm">
+          <span className="font-semibold">{content.admin.list.selected(selected.size)}</span>
+          {confirming ? (
+            <>
+              <span className="text-ink-soft">{content.admin.list.confirmDeleteMany(selected.size)}</span>
+              <div className="ml-auto flex gap-2">
+                <button type="button" className="btn btn-ghost h-9 min-h-0 px-4 text-sm" onClick={() => setConfirming(false)} disabled={deleting}>
+                  {content.admin.list.cancel}
+                </button>
+                <button
+                  type="button"
+                  className="btn h-9 min-h-0 bg-danger px-4 text-sm text-paper hover:brightness-110"
+                  onClick={() => void deleteSelected()}
+                  disabled={deleting}
+                >
+                  {deleting ? content.admin.lead.deleting : content.admin.list.confirmYes}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="ml-auto flex gap-2">
+              <button type="button" className="btn btn-ghost h-9 min-h-0 px-4 text-sm" onClick={() => setSelected(new Set())}>
+                {content.admin.list.clearSelection}
+              </button>
+              <button
+                type="button"
+                className="btn h-9 min-h-0 border border-danger/60 px-4 text-sm text-danger hover:bg-danger-soft"
+                onClick={() => setConfirming(true)}
+              >
+                {content.admin.list.deleteSelected}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      {flash && (
+        <p role="status" className="pop mt-4 text-sm text-cyan">
+          {flash}
+        </p>
+      )}
+
       {error && (
         <p role="alert" className="mt-6 rounded-(--radius-field) bg-danger-soft p-4 text-danger">
           {error}
@@ -118,12 +206,23 @@ function Leads() {
       )}
 
       <div className={`mt-6 overflow-x-auto rounded-(--radius-tile) glass transition-opacity ${loading ? "opacity-60" : ""}`}>
-        <table className="w-full min-w-[640px] text-left text-sm">
+        <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="border-b border-line text-slate">
             <tr>
+              <th className="w-10 py-3 pl-4">
+                <input
+                  type="checkbox"
+                  className="size-4 accent-[#168bff]"
+                  aria-label={content.admin.list.selectAll}
+                  checked={allOnPage}
+                  onChange={toggleAll}
+                  disabled={!pageIds.length}
+                />
+              </th>
               <th className="px-4 py-3 font-medium">{content.admin.list.columns.id}</th>
               <th className="px-4 py-3 font-medium">{content.admin.list.columns.created}</th>
               <th className="px-4 py-3 font-medium">{content.admin.list.columns.status}</th>
+              <th className="px-4 py-3 font-medium">{content.admin.list.columns.stage}</th>
               <th className="px-4 py-3 font-medium">{content.admin.list.columns.answer}</th>
               <th className="px-4 py-3 font-medium">{content.admin.list.columns.contact}</th>
               <th className="px-4 py-3 font-medium">{content.admin.list.columns.lastMessage}</th>
@@ -132,7 +231,16 @@ function Leads() {
           </thead>
           <tbody>
             {data?.items.map((l) => (
-              <tr key={l.id} className="relative border-b border-line last:border-0 hover:bg-white/[0.03]">
+              <tr key={l.id} className={`relative border-b border-line last:border-0 hover:bg-white/[0.03] ${selected.has(l.id) ? "bg-paint/[0.06]" : ""}`}>
+                <td className="relative z-10 w-10 py-3 pl-4">
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-[#168bff]"
+                    aria-label={content.admin.list.selectOne(l.id)}
+                    checked={selected.has(l.id)}
+                    onChange={() => toggleOne(l.id)}
+                  />
+                </td>
                 <td className="px-4 py-3 font-semibold">
                   <Link href={`/admin/leads/${l.id}`} className="after:absolute after:inset-0 focus-visible:outline-none">
                     #{l.id}
@@ -141,6 +249,9 @@ function Leads() {
                 <td className="px-4 py-3 whitespace-nowrap">{formatTime(l.createdAt)}</td>
                 <td className="px-4 py-3">
                   <StatusBadge status={l.status} />
+                </td>
+                <td className="px-4 py-3">
+                  <StageBadge stage={l.stage} />
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">{l.answer ? l.answer.split(",").map((x) => content.admin.answers[x] ?? x).join(" · ") : "—"}</td>
                 <td className="px-4 py-3">
@@ -159,14 +270,14 @@ function Leads() {
             ))}
             {data && data.items.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-slate">
+                <td colSpan={9} className="px-4 py-12 text-center text-slate">
                   {filters.q || filters.status ? content.admin.list.noResults : content.admin.list.empty}
                 </td>
               </tr>
             )}
             {!data && !error && (
               <tr>
-                <td colSpan={7} className="p-4">
+                <td colSpan={9} className="p-4">
                   <div className="skeleton h-24 rounded-lg" />
                 </td>
               </tr>

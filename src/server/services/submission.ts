@@ -9,6 +9,7 @@ import { content } from "@/config/content";
 import { uploadConfig } from "@/config/settings";
 import { allAnswered, getAnswers } from "./quiz";
 import { getContact } from "./contact";
+import { ensureConversation, ensureLead } from "./leads";
 
 export const submitSchema = z.object({
   idempotencyKey: z.string().min(16).max(100),
@@ -58,12 +59,9 @@ export async function submitTask(sessionId: string, input: unknown): Promise<Sub
       throw badRequest(content.errors.filesMissing, "files_missing");
     }
 
-    await tx.insert(schema.conversations).values({ sessionId }).onConflictDoNothing();
-    const [conversation] = await tx
-      .select()
-      .from(schema.conversations)
-      .where(eq(schema.conversations.sessionId, sessionId))
-      .limit(1);
+    await ensureLead(tx, sessionId);
+    const conversation = await ensureConversation(tx, sessionId);
+    await tx.update(schema.leads).set({ updatedAt: new Date() }).where(eq(schema.leads.sessionId, sessionId));
 
     let scheduled: typeof schema.scheduledMessages.$inferSelect | null = null;
     if (settings.autoMessageEnabled) {

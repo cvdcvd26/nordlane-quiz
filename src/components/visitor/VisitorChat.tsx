@@ -5,6 +5,8 @@ import { chatConfig, uploadConfig } from "@/config/settings";
 import { api, newId, type ChatMessage, type PublicFile } from "@/lib/api";
 import { MessageList, type LocalMessage } from "../chat/MessageList";
 import { Composer } from "../chat/Composer";
+import { SoundToggle } from "../ui/SoundToggle";
+import { playChime } from "@/lib/sound";
 
 type ChatResponse = { messages: ChatMessage[]; attachmentsEnabled: boolean };
 
@@ -19,6 +21,19 @@ export function VisitorChat() {
   const [offline, setOffline] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const last = useRef<string | undefined>(undefined);
+  // Ids already shown; the chime plays only for admin/system messages that arrive after the first load.
+  const known = useRef<Set<string> | null>(null);
+  const soundOn = useRef(true);
+
+  const notify = useCallback((incoming: ChatMessage[]) => {
+    if (known.current === null) {
+      known.current = new Set(incoming.map((m) => m.id));
+      return;
+    }
+    const fresh = incoming.filter((m) => !known.current!.has(m.id));
+    fresh.forEach((m) => known.current!.add(m.id));
+    if (soundOn.current && fresh.some((m) => m.sender !== "visitor")) playChime("message");
+  }, []);
 
   const merge = useCallback((incoming: ChatMessage[]) => {
     if (!incoming.length) return;
@@ -37,6 +52,7 @@ export function VisitorChat() {
     try {
       const q = last.current ? `?after=${encodeURIComponent(last.current)}` : "";
       const res = await api<ChatResponse>(`/api/chat${q}`);
+      notify(res.messages);
       merge(res.messages);
       setAttachments(res.attachmentsEnabled);
       setOffline(false);
@@ -45,7 +61,7 @@ export function VisitorChat() {
     } finally {
       setLoaded(true);
     }
-  }, [merge]);
+  }, [merge, notify]);
 
   useEffect(() => {
     void poll();
@@ -71,6 +87,7 @@ export function VisitorChat() {
           method: "POST",
           json: { clientMessageId: m.clientMessageId, body: m.body, fileIds: m.files.map((f) => f.id) },
         });
+        known.current?.add(res.message.id);
         merge([res.message]);
         setOffline(false);
       } catch (err) {
@@ -120,6 +137,13 @@ export function VisitorChat() {
           {content.chat.title}
         </h2>
         {offline && <span className="ml-auto text-xs text-danger">{content.chat.offline}</span>}
+        <SoundToggle
+          scope="visitor"
+          labelOn={content.chat.soundOn}
+          labelOff={content.chat.soundOff}
+          onChange={(v) => (soundOn.current = v)}
+          className={offline ? "" : "ml-auto"}
+        />
       </header>
       <div className="max-h-[55vh] min-h-48 overflow-y-auto px-4 py-5 sm:px-5">
         {loaded ? (

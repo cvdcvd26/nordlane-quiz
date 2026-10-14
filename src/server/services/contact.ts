@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db, schema } from "@/db";
 import { content } from "@/config/content";
 import { normalizePhone, normalizeTelegram } from "@/lib/contact";
+import { ensureLead } from "./leads";
 
 const e = content.errors;
 
@@ -33,10 +34,15 @@ export type Contact = { name: string; phone: string; telegram: string | null };
 export async function saveContact(sessionId: string, input: unknown): Promise<Contact> {
   const c = contactSchema.parse(input);
   const now = new Date();
-  await db()
-    .insert(schema.visitorContacts)
-    .values({ sessionId, ...c })
-    .onConflictDoUpdate({ target: schema.visitorContacts.sessionId, set: { ...c, updatedAt: now } });
+  await db().transaction(async (tx) => {
+    await tx
+      .insert(schema.visitorContacts)
+      .values({ sessionId, ...c })
+      .onConflictDoUpdate({ target: schema.visitorContacts.sessionId, set: { ...c, updatedAt: now } });
+    // The lead is created as soon as contact details are saved.
+    const leadId = await ensureLead(tx, sessionId);
+    await tx.update(schema.leads).set({ updatedAt: now }).where(eq(schema.leads.id, leadId));
+  });
   return c;
 }
 

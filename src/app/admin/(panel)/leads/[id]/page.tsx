@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { content, LEAD_STATUSES, type LeadStatus } from "@/config/content";
 import { uploadConfig } from "@/config/settings";
@@ -8,10 +8,12 @@ import { api, formatBytes, formatTime, newId, type ChatMessage, type PublicFile 
 import { MessageList } from "@/components/chat/MessageList";
 import { Composer } from "@/components/chat/Composer";
 import { StatusBadge } from "@/components/admin/StatusBadge";
+import { StageBadge } from "@/components/admin/StageBadge";
+import { ACTIVITY_EVENT } from "@/components/admin/ActivityNotifier";
 import { formatPhone, nationalDigits } from "@/lib/contact";
 
 type Details = {
-  lead: { id: number; status: LeadStatus; createdAt: string; updatedAt: string; messageCount: number; lastMessageAt: string | null };
+  lead: { id: number; status: LeadStatus; createdAt: string; updatedAt: string; messageCount: number; lastMessageAt: string | null; stage: string };
   contact: { name: string; phone: string; telegram: string | null } | null;
   answers: { question: string; answer: string; updatedAt: string | null }[];
   submission: {
@@ -41,6 +43,9 @@ function Lead() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const router = useRouter();
 
   const load = useCallback(() => {
     api<Details>(`/api/admin/leads/${id}`)
@@ -54,7 +59,11 @@ function Lead() {
   useEffect(() => {
     load();
     const t = setInterval(() => document.visibilityState === "visible" && load(), 8000);
-    return () => clearInterval(t);
+    window.addEventListener(ACTIVITY_EVENT, load);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener(ACTIVITY_EVENT, load);
+    };
   }, [load]);
 
   if (error && !d)
@@ -91,6 +100,17 @@ function Lead() {
     }
   };
 
+  const remove = async () => {
+    setDeleting(true);
+    try {
+      await api(`/api/admin/leads/${id}`, { method: "DELETE" });
+      router.replace("/admin");
+    } catch (e) {
+      setError((e as Error).message);
+      setDeleting(false);
+    }
+  };
+
   const reply = async (body: string, files: PublicFile[]) => {
     setSendError(null);
     try {
@@ -113,6 +133,7 @@ function Lead() {
       <div className="mt-3 flex flex-wrap items-center gap-4">
         <h1 className="text-2xl font-semibold">{content.admin.lead.title(d.lead.id)}</h1>
         <StatusBadge status={d.lead.status} />
+        <StageBadge stage={d.lead.stage} />
         <label className="ml-auto flex items-center gap-2 text-sm">
           <span className="text-slate">{content.admin.lead.status}</span>
           <select className="field w-auto py-2" value={d.lead.status} disabled={busy} onChange={(e) => setStatus(e.target.value)}>
@@ -123,7 +144,30 @@ function Lead() {
             ))}
           </select>
         </label>
+        <button
+          type="button"
+          className="btn h-10 min-h-0 border border-danger/60 px-4 text-sm text-danger hover:bg-danger-soft"
+          onClick={() => setConfirmDelete(true)}
+          disabled={deleting}
+        >
+          {content.admin.lead.delete}
+        </button>
       </div>
+      {confirmDelete && (
+        <div role="alertdialog" aria-labelledby="del-q" className="pop mt-4 flex flex-wrap items-center gap-3 rounded-(--radius-field) border border-danger/40 bg-danger-soft px-4 py-3 text-sm">
+          <p id="del-q" className="flex-1">
+            {content.admin.lead.confirmDelete(d.lead.id)}
+          </p>
+          <div className="flex gap-2">
+            <button type="button" className="btn btn-ghost h-9 min-h-0 px-4 text-sm" onClick={() => setConfirmDelete(false)} disabled={deleting}>
+              {content.admin.list.cancel}
+            </button>
+            <button type="button" className="btn h-9 min-h-0 bg-danger px-4 text-sm text-paper hover:brightness-110" onClick={() => void remove()} disabled={deleting}>
+              {deleting ? content.admin.lead.deleting : content.admin.list.confirmYes}
+            </button>
+          </div>
+        </div>
+      )}
       <p className="mt-2 text-sm text-slate">
         {content.admin.lead.meta(formatTime(d.lead.createdAt), formatTime(d.lead.updatedAt), d.lead.messageCount)}
       </p>
@@ -140,7 +184,11 @@ function Lead() {
             {content.admin.lead.thread}
           </h2>
           <div className="max-h-[60vh] min-h-64 overflow-y-auto bg-black/20 px-4 py-5">
-            <MessageList messages={d.messages} viewer="admin" emptyText={content.admin.lead.noMessages} />
+            <MessageList
+              messages={d.messages}
+              viewer="admin"
+              emptyText={d.submission ? content.admin.lead.noMessages : content.admin.lead.noSubmissionYet}
+            />
           </div>
           <div className="border-t border-line p-3">
             <Composer

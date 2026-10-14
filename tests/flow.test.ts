@@ -10,6 +10,7 @@ import { submitTask } from "@/server/services/submission";
 import { deliverScheduledMessage, deliverOverdue } from "@/server/services/delivery";
 import { getVisitorChat, postVisitorMessage } from "@/server/services/chat";
 import { listLeads, getLeadDetails, postAdminMessage, addLeadNote, updateLeadStatus } from "@/server/services/admin";
+import { deleteLeads, adminActivity } from "@/server/services/leads";
 import { updateSettings, getSettings, pickDelayMs } from "@/server/settings";
 import { defaultSettings } from "@/config/settings";
 
@@ -177,29 +178,98 @@ describe("automatic message", () => {
 });
 
 describe("chat and leads", () => {
-  it("lead is created on the first reply after the auto message; later messages go to the same lead", async () => {
-    const { sid, sched } = await submittedVisitor();
+  it("lead is created right after the contact screen and goes through the stages", async () => {
+    const sid = await newSession(env.db);
+    await saveContact(sid, contact);
+    const [lead] = await env.db.select().from(schema.leads).where(eq(schema.leads.sessionId, sid));
+    expect(lead).toBeDefined();
+    const stage = async () => (await listLeads({ q: String(lead.id) })).items.find((i) => i.id === lead.id)?.stage;
+    expect(await stage()).toBe("contact");
 
-    // Before the auto message the reply is stored, but there is no lead yet.
+    // Saving the contact again (going back to step 1) does not create a second lead.
+    await saveContact(sid, { ...contact, name: "Anna Nowak" });
+    expect(await env.db.select().from(schema.leads).where(eq(schema.leads.sessionId, sid))).toHaveLength(1);
+
+    await saveAnswer(sid, "q1", "yes");
+    expect(await stage()).toBe("questions");
+    await saveAnswer(sid, "q2", "no");
+    await saveAnswer(sid, "q3", "yes");
+    const f = await uploadFile({ sessionId: sid, purpose: "submission", uploadedBy: "visitor", file: png() });
+    await submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id] });
+    expect(await stage()).toBe("submitted");
+
+    const [conv] = await env.db.select().from(schema.conversations).where(eq(schema.conversations.sessionId, sid));
+    expect(conv.leadId).toBe(lead.id);
+  });
+
+  it("visitor messages go to the existing lead, before and after the auto message, without duplicates", async () => {
+    const { sid, sched } = await submittedVisitor();
+    const [lead] = await env.db.select().from(schema.leads).where(eq(schema.leads.sessionId, sid));
+
     const early = await postVisitorMessage(sid, { clientMessageId: randomUUID(), body: "Wczesne pytanie" });
-    expect(early.leadId).toBeNull();
+    expect(early.leadId).toBe(lead.id);
 
     await deliverScheduledMessage(sched.id, new Date(sched.scheduledFor.getTime() + 1000));
-    const first = await postVisitorMessage(sid, { clientMessageId: randomUUID(), body: "Dzień dobry" });
-    expect(first.leadId).toBeTypeOf("number");
-
     const cid = randomUUID();
     const second = await postVisitorMessage(sid, { clientMessageId: cid, body: "Jeszcze jedno pytanie" });
     const retry = await postVisitorMessage(sid, { clientMessageId: cid, body: "Jeszcze jedno pytanie" });
-    expect(second.leadId).toBe(first.leadId);
+    expect(second.leadId).toBe(lead.id);
     expect(retry.message.id).toBe(second.message.id);
 
     const leads = await env.db.select().from(schema.leads).where(eq(schema.leads.sessionId, sid));
     expect(leads).toHaveLength(1);
-    expect(leads[0].messageCount).toBe(4); // early + system + 2 (retry not counted)
+    expect(leads[0].messageCount).toBe(3); // early + system + 1 (retry not counted)
 
     const chat = await getVisitorChat(sid);
-    expect(chat.messages.map((m) => m.sender)).toEqual(["visitor", "system", "visitor", "visitor"]);
+    expect(chat.messages.map((m) => m.sender)).toEqual(["visitor", "system", "visitor"]);
+  });
+
+  it("admin can write before the task is sent; the visitor sees it once the chat opens", async () => {
+    const sid = await newSession(env.db);
+    await saveContact(sid, contact);
+    const [lead] = await env.db.select().from(schema.leads).where(eq(schema.leads.sessionId, sid));
+    await postAdminMessage(lead.id, { clientMessageId: randomUUID(), body: "Dzień dobry, jest Pan/Pani?" });
+    await expect(getVisitorChat(sid)).rejects.toThrow(); // chat opens after submission
+    await answerAll(sid);
+    const f = await uploadFile({ sessionId: sid, purpose: "submission", uploadedBy: "visitor", file: png() });
+    await submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id] });
+    const chat = await getVisitorChat(sid);
+    expect(chat.messages.map((m) => m.body)).toContain("Dzień dobry, jest Pan/Pani?");
+  });
+
+  it("deleting leads removes all visitor data and stored files", async () => {
+    const a = await submittedVisitor();
+    const b = await submittedVisitor();
+    const leadOf = async (sid: string) => (await env.db.select().from(schema.leads).where(eq(schema.leads.sessionId, sid)))[0].id;
+    const [idA, idB] = [await leadOf(a.sid), await leadOf(b.sid)];
+    await postVisitorMessage(a.sid, { clientMessageId: randomUUID(), body: "Do usunięcia" });
+    await addLeadNote(idA, { body: "notatka" });
+    const keys = (await env.db.select().from(schema.files).where(eq(schema.files.sessionId, a.sid))).map((f) => f.storageKey);
+    expect(keys.length).toBeGreaterThan(0);
+    keys.forEach((k) => expect(env.blobs.has(k)).toBe(true));
+
+    expect(await deleteLeads([idA, 999_999])).toEqual({ deleted: 1 });
+
+    for (const t of [schema.leads, schema.visitorContacts, schema.quizAnswers, schema.taskSubmissions, schema.conversations, schema.files] as const)
+      expect(await env.db.select().from(t).where(eq(t.sessionId, a.sid))).toHaveLength(0);
+    expect(await env.db.select().from(schema.leadNotes).where(eq(schema.leadNotes.leadId, idA))).toHaveLength(0);
+    keys.forEach((k) => expect(env.blobs.has(k)).toBe(false));
+    await expect(getLeadDetails(idA)).rejects.toThrow();
+    // The other lead is untouched.
+    expect((await getLeadDetails(idB)).lead.id).toBe(idB);
+  });
+
+  it("activity feed reports new leads and new visitor messages since a moment", async () => {
+    const since = new Date(Date.now() - 1000);
+    const { sid } = await submittedVisitor();
+    const [lead] = await env.db.select().from(schema.leads).where(eq(schema.leads.sessionId, sid));
+    await postVisitorMessage(sid, { clientMessageId: randomUUID(), body: "Halo?" });
+    const act = await adminActivity(since);
+    expect(act.leads.some((l) => l.id === lead.id && l.name === "Anna")).toBe(true);
+    expect(act.messages.some((m) => m.leadId === lead.id && m.preview === "Halo?")).toBe(true);
+    const later = await adminActivity(new Date(Date.now() + 60_000));
+    expect(later.leads).toHaveLength(0);
+    expect(later.messages).toHaveLength(0);
   });
 
   it("admin sees files and messages, reply reaches the visitor, notes do not", async () => {

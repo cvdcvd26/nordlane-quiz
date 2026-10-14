@@ -4,9 +4,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { content } from "@/config/content";
 import { api, ApiError } from "@/lib/api";
+import { SoundToggle } from "../ui/SoundToggle";
+import { ActivityNotifier } from "./ActivityNotifier";
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const [email, setEmail] = useState<string | null>(null);
+  const [soundOn, setSoundOn] = useState(true);
   const path = usePathname();
   const router = useRouter();
 
@@ -48,6 +51,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm text-slate">
+            <SoundToggle scope="admin" labelOn={content.admin.notify.soundOn} labelOff={content.admin.notify.soundOff} onChange={setSoundOn} />
             <span className="hidden sm:inline">{email}</span>
             <button type="button" onClick={logout} className="underline hover:text-ink">
               {content.admin.nav.logout}
@@ -56,6 +60,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">{email ? children : <div className="skeleton h-40 rounded-(--radius-tile)" aria-busy />}</div>
+      {email && <ActivityNotifier soundOn={soundOn} />}
     </div>
   );
 }
