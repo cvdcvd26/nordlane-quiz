@@ -37,6 +37,10 @@ Kontakt ──► Pytania (3× "Tak / Nie") ──► Step 2: task + PDF + scree
 
 **Deleting leads.** From the lead page (“Usuń lead”) or several at once from the list (checkboxes → “Usuń zaznaczone”), with an inline confirmation. Deletion removes the visitor session, which cascades to contact, answers, submission, conversation, messages, notes and file rows; stored files are deleted from Blob as well.
 
+**Review.** On the task step the worker also writes a review (required, 10–3000 characters; the draft survives a reload). It is saved with the submission (`task_submissions.review`, migration `0002_review.sql`), shown in its own “Opinia / Отзыв / Review” block on the lead page and included in the admin search.
+
+**Admin languages.** The admin panel is available in Polish, Russian and English (PL / RU / EN switch in the header and on the login page). The first visit picks the browser language; the choice is remembered per browser. Copy lives in `src/config/admin-i18n.ts` (Polish comes from `content.ts`; TypeScript checks that every language has the same keys). Server error messages are translated in the panel. The visitor site stays Polish.
+
 **Sound notifications.** A short Web Audio chime (no audio files). The visitor hears it when an admin or automatic message arrives; the admin panel polls `/api/admin/activity` every 5 s and plays a chime plus a toast for new leads and new visitor messages on any admin page, and refreshes the open list/lead. Both sides have a speaker button to mute; the choice is remembered per browser. Browsers allow sound only after the first click on the page.
 
 **Security**
