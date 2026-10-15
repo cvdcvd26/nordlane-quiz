@@ -1,0 +1,1 @@
+ALTER TABLE "task_submissions" ADD COLUMN "review" text;

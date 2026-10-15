@@ -74,6 +74,8 @@ export const taskSubmissions = pgTable(
     id: id(),
     sessionId: uuid("session_id").notNull().references(() => visitorSessions.id, { onDelete: "cascade" }),
     idempotencyKey: text("idempotency_key").notNull(),
+    /** The worker's written review, sent together with the screenshots. */
+    review: text("review"),
     submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

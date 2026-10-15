@@ -6,7 +6,7 @@ import { getSettings, pickDelayMs } from "../settings";
 import { queue } from "../queue";
 import { log } from "../log";
 import { content } from "@/config/content";
-import { uploadConfig } from "@/config/settings";
+import { reviewConfig, uploadConfig } from "@/config/settings";
 import { allAnswered, getAnswers } from "./quiz";
 import { getContact } from "./contact";
 import { ensureConversation, ensureLead } from "./leads";
@@ -14,6 +14,11 @@ import { ensureConversation, ensureLead } from "./leads";
 export const submitSchema = z.object({
   idempotencyKey: z.string().min(16).max(100),
   fileIds: z.array(z.string().uuid()).min(1, content.errors.filesRequired).max(uploadConfig.maxFilesPerSubmission),
+  review: z
+    .string({ error: content.errors.reviewRequired })
+    .trim()
+    .min(reviewConfig.minLength, content.errors.reviewRequired)
+    .max(reviewConfig.maxLength, content.errors.reviewTooLong),
 });
 
 export type SubmitResult = { submissionId: string; submittedAt: string; duplicate: boolean };
@@ -24,7 +29,7 @@ export type SubmitResult = { submissionId: string; submittedAt: string; duplicat
  * Repeated calls (double click, retry after a timeout) return the same submission.
  */
 export async function submitTask(sessionId: string, input: unknown): Promise<SubmitResult> {
-  const { idempotencyKey, fileIds } = submitSchema.parse(input);
+  const { idempotencyKey, fileIds, review } = submitSchema.parse(input);
 
   const existing = await findSubmission(sessionId);
   if (existing) return { ...existing, duplicate: true };
@@ -37,7 +42,7 @@ export async function submitTask(sessionId: string, input: unknown): Promise<Sub
   const result = await db().transaction(async (tx) => {
     const [submission] = await tx
       .insert(schema.taskSubmissions)
-      .values({ sessionId, idempotencyKey })
+      .values({ sessionId, idempotencyKey, review })
       .onConflictDoNothing()
       .returning();
     if (!submission) return null; // a concurrent request won the race

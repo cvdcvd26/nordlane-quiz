@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { content } from "@/config/content";
+import { useAdminI18n } from "./i18n";
 import { api } from "@/lib/api";
 import { playChime } from "@/lib/sound";
 
@@ -10,7 +10,7 @@ type Activity = {
   leads: { id: number; name: string | null; at: string }[];
   messages: { leadId: number; name: string | null; preview: string; at: string }[];
 };
-type Toast = { key: string; leadId: number; title: string; preview?: string };
+type Toast = { key: string; kind: "lead" | "message"; leadId: number; name: string | null; preview?: string };
 
 /** Fired after new activity so the open list / lead page reloads immediately. */
 export const ACTIVITY_EVENT = "nl-admin-activity";
@@ -21,6 +21,7 @@ const POLL_MS = 5000;
  * Works on every admin page, while the tab is open (also in the background).
  */
 export function ActivityNotifier({ soundOn }: { soundOn: boolean }) {
+  const { t: dict } = useAdminI18n();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const since = useRef<string | null>(null);
   const seen = useRef(new Set<string>());
@@ -44,13 +45,13 @@ export function ActivityNotifier({ soundOn }: { soundOn: boolean }) {
           const key = `lead-${l.id}`;
           if (seen.current.has(key)) continue;
           seen.current.add(key);
-          fresh.push({ key, leadId: l.id, title: content.admin.notify.newLead(l.id, l.name) });
+          fresh.push({ key, kind: "lead", leadId: l.id, name: l.name });
         }
         for (const m of res.messages) {
           const key = `msg-${m.leadId}-${m.at}`;
           if (seen.current.has(key)) continue;
           seen.current.add(key);
-          fresh.push({ key, leadId: m.leadId, title: content.admin.notify.newMessage(m.leadId, m.name), preview: m.preview });
+          fresh.push({ key, kind: "message", leadId: m.leadId, name: m.name, preview: m.preview });
         }
         if (!fresh.length) return;
         if (sound.current) playChime(res.leads.length ? "lead" : "message");
@@ -76,15 +77,15 @@ export function ActivityNotifier({ soundOn }: { soundOn: boolean }) {
           <div className="flex items-start gap-3">
             <span aria-hidden className="mt-1.5 size-2 shrink-0 rounded-full bg-cyan shadow-[0_0_10px_#00d9ff]" />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold">{t.title}</p>
+              <p className="text-sm font-semibold">{t.kind === "lead" ? dict.ui.notify.newLead(t.leadId, t.name) : dict.ui.notify.newMessage(t.leadId, t.name)}</p>
               {t.preview && <p className="mt-1 line-clamp-2 text-sm text-ink-soft">{t.preview}</p>}
               <Link href={`/admin/leads/${t.leadId}`} className="mt-2 inline-block text-sm font-semibold text-sky hover:underline">
-                {content.admin.notify.open} →
+                {dict.ui.notify.open} →
               </Link>
             </div>
             <button
               type="button"
-              aria-label={content.admin.notify.close}
+              aria-label={dict.ui.notify.close}
               onClick={() => setToasts((x) => x.filter((y) => y.key !== t.key))}
               className="text-slate hover:text-ink"
             >

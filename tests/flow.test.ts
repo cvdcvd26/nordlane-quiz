@@ -24,6 +24,7 @@ const png = (name = "shot.png") => ({ name, type: "image/png", buffer: PNG });
 const answerAll = async (sid: string, v = "yes") => {
   for (const k of ["q1", "q2", "q3"]) await saveAnswer(sid, k, v);
 };
+const REVIEW = "Zadanie było jasne, wszystko działa.";
 const contact = { name: "Anna", phone: "600 123 456", telegram: "" };
 
 async function submittedVisitor() {
@@ -31,7 +32,7 @@ async function submittedVisitor() {
   await saveContact(sid, contact);
   await answerAll(sid);
   const f = await uploadFile({ sessionId: sid, purpose: "submission", uploadedBy: "visitor", file: png() });
-  const res = await submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id] });
+  const res = await submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id], review: REVIEW });
   const [sched] = await env.db
     .select()
     .from(schema.scheduledMessages)
@@ -108,26 +109,39 @@ describe("task submission", () => {
     const f = await uploadFile({ sessionId: sid, purpose: "submission", uploadedBy: "visitor", file: png() });
     const key = randomUUID();
     const [r1, r2] = await Promise.all([
-      submitTask(sid, { idempotencyKey: key, fileIds: [f.id] }),
-      submitTask(sid, { idempotencyKey: key, fileIds: [f.id] }),
+      submitTask(sid, { idempotencyKey: key, fileIds: [f.id], review: REVIEW }),
+      submitTask(sid, { idempotencyKey: key, fileIds: [f.id], review: REVIEW }),
     ]);
     expect(r1.submissionId).toBe(r2.submissionId);
     const subs = await env.db.select().from(schema.taskSubmissions).where(eq(schema.taskSubmissions.sessionId, sid));
     expect(subs).toHaveLength(1);
   });
 
+  it("requires a written review and shows it to the admin; the review is searchable", async () => {
+    const sid = await newSession(env.db);
+    await saveContact(sid, contact);
+    await answerAll(sid);
+    const f = await uploadFile({ sessionId: sid, purpose: "submission", uploadedBy: "visitor", file: png() });
+    await expect(submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id] })).rejects.toThrow(/opinię/);
+    await expect(submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id], review: "  krótko " })).rejects.toThrow(/opinię/);
+    await submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id], review: "  Unikalna opinia o zadaniu zebra  " });
+    const [lead] = await env.db.select().from(schema.leads).where(eq(schema.leads.sessionId, sid));
+    expect((await getLeadDetails(lead.id)).submission?.review).toBe("Unikalna opinia o zadaniu zebra");
+    expect((await listLeads({ q: "zebra" })).items.map((i) => i.id)).toEqual([lead.id]);
+  });
+
   it("is not submitted without contact details, without all answers, or with a foreign file", async () => {
     const sid = await newSession(env.db);
     const f = await uploadFile({ sessionId: sid, purpose: "submission", uploadedBy: "visitor", file: png() });
-    await expect(submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id] })).rejects.toThrow(/dane kontaktowe/);
+    await expect(submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id], review: REVIEW })).rejects.toThrow(/dane kontaktowe/);
     await saveContact(sid, contact);
     await saveAnswer(sid, "q1", "yes"); // only one of three answers
-    await expect(submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id] })).rejects.toThrow(/wszystkie pytania/);
+    await expect(submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id], review: REVIEW })).rejects.toThrow(/wszystkie pytania/);
 
     const other = await newSession(env.db);
     await saveContact(other, contact);
     await answerAll(other);
-    await expect(submitTask(other, { idempotencyKey: randomUUID(), fileIds: [f.id] })).rejects.toThrow(/części plików/);
+    await expect(submitTask(other, { idempotencyKey: randomUUID(), fileIds: [f.id], review: REVIEW })).rejects.toThrow(/części plików/);
     expect(await env.db.select().from(schema.taskSubmissions).where(eq(schema.taskSubmissions.sessionId, other))).toHaveLength(0);
   });
 
@@ -195,7 +209,7 @@ describe("chat and leads", () => {
     await saveAnswer(sid, "q2", "no");
     await saveAnswer(sid, "q3", "yes");
     const f = await uploadFile({ sessionId: sid, purpose: "submission", uploadedBy: "visitor", file: png() });
-    await submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id] });
+    await submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id], review: REVIEW });
     expect(await stage()).toBe("submitted");
 
     const [conv] = await env.db.select().from(schema.conversations).where(eq(schema.conversations.sessionId, sid));
@@ -232,7 +246,7 @@ describe("chat and leads", () => {
     await expect(getVisitorChat(sid)).rejects.toThrow(); // chat opens after submission
     await answerAll(sid);
     const f = await uploadFile({ sessionId: sid, purpose: "submission", uploadedBy: "visitor", file: png() });
-    await submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id] });
+    await submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id], review: REVIEW });
     const chat = await getVisitorChat(sid);
     expect(chat.messages.map((m) => m.body)).toContain("Dzień dobry, jest Pan/Pani?");
   });

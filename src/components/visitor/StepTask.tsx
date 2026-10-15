@@ -1,5 +1,6 @@
 "use client";
 import { content } from "@/config/content";
+import { reviewConfig } from "@/config/settings";
 import { Uploader, type UploadItem } from "./Uploader";
 import { Reveal } from "../visual/Reveal";
 import { NetworkOrbit } from "../visual/NetworkOrbit";
@@ -10,13 +11,16 @@ type Props = {
   limits: { maxFiles: number; maxFileSizeBytes: number; types: string[] };
   submitting: boolean;
   error: string | null;
+  review: string;
+  onReviewChange: (v: string) => void;
+  reviewError: string | null;
   onBack: () => void;
   onSubmit: () => void;
 };
 
 const delay = (i: number) => ({ "--i": i }) as React.CSSProperties;
 
-export function StepTask({ items, setItems, limits, submitting, error, onBack, onSubmit }: Props) {
+export function StepTask({ items, setItems, limits, submitting, error, review, onReviewChange, reviewError, onBack, onSubmit }: Props) {
   const t = content.task;
   return (
     <section aria-labelledby="about-title">
@@ -115,6 +119,33 @@ export function StepTask({ items, setItems, limits, submitting, error, onBack, o
       <Reveal className="glass mt-6 rounded-(--radius-tile) p-5 sm:p-8">
         <h2 className="mb-5 text-lg font-bold">{t.upload.title}</h2>
         <Uploader items={items} setItems={setItems} limits={limits} disabled={submitting} />
+      </Reveal>
+
+      {/* 4. Review */}
+      <Reveal className="glass mt-6 rounded-(--radius-tile) p-5 sm:p-8">
+        <h2 className="text-lg font-bold">
+          <label htmlFor="review">{t.review.title}</label>
+        </h2>
+        <p id="review-hint" className="mt-1 text-sm text-ink-soft">
+          {t.review.hint}
+        </p>
+        <textarea
+          id="review"
+          className="field mt-4 min-h-36 resize-y"
+          placeholder={t.review.placeholder}
+          value={review}
+          maxLength={reviewConfig.maxLength}
+          onChange={(e) => onReviewChange(e.target.value)}
+          disabled={submitting}
+          aria-invalid={reviewError ? true : undefined}
+          aria-describedby={reviewError ? "review-hint review-error" : "review-hint"}
+        />
+        <div className="mt-2 flex items-start gap-3 text-xs">
+          <p id="review-error" className="text-danger" role={reviewError ? "alert" : undefined}>
+            {reviewError}
+          </p>
+          <span className="ml-auto text-slate tabular-nums">{t.review.counter(review.length, reviewConfig.maxLength)}</span>
+        </div>
       </Reveal>
 
       <Reveal className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:items-center">

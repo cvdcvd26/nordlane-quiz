@@ -2,12 +2,14 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { content } from "@/config/content";
 import { api, ApiError } from "@/lib/api";
 import { SoundToggle } from "../ui/SoundToggle";
 import { ActivityNotifier } from "./ActivityNotifier";
+import { LangSwitch } from "./i18n";
+import { useAdminI18n } from "@/components/admin/i18n";
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
+  const { t } = useAdminI18n();
   const [email, setEmail] = useState<string | null>(null);
   const [soundOn, setSoundOn] = useState(true);
   const path = usePathname();
@@ -27,8 +29,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   };
 
   const nav = [
-    { href: "/admin", label: content.admin.nav.leads, active: path === "/admin" || path.startsWith("/admin/leads") },
-    { href: "/admin/settings", label: content.admin.nav.settings, active: path.startsWith("/admin/settings") },
+    { href: "/admin", label: t.ui.nav.leads, active: path === "/admin" || path.startsWith("/admin/leads") },
+    { href: "/admin/settings", label: t.ui.nav.settings, active: path.startsWith("/admin/settings") },
   ];
 
   return (
@@ -36,9 +38,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-30 border-b border-line bg-paper/70 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
           <Link href="/admin" className="display text-sm font-bold">
-            {content.admin.title}
+            {t.ui.title}
           </Link>
-          <nav className="flex gap-1" aria-label={content.admin.nav.sections}>
+          <nav className="flex gap-1" aria-label={t.ui.nav.sections}>
             {nav.map((n) => (
               <Link
                 key={n.href}
@@ -51,10 +53,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm text-slate">
-            <SoundToggle scope="admin" labelOn={content.admin.notify.soundOn} labelOff={content.admin.notify.soundOff} onChange={setSoundOn} />
+            <LangSwitch />
+            <SoundToggle scope="admin" labelOn={t.ui.notify.soundOn} labelOff={t.ui.notify.soundOff} onChange={setSoundOn} />
             <span className="hidden sm:inline">{email}</span>
             <button type="button" onClick={logout} className="underline hover:text-ink">
-              {content.admin.nav.logout}
+              {t.ui.nav.logout}
             </button>
           </div>
         </div>

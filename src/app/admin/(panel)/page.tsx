@@ -2,12 +2,13 @@
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { content, LEAD_STATUSES, type LeadStatus } from "@/config/content";
-import { api, formatTime } from "@/lib/api";
+import { LEAD_STATUSES, type LeadStatus } from "@/config/content";
+import { api } from "@/lib/api";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { StageBadge } from "@/components/admin/StageBadge";
 import { ACTIVITY_EVENT } from "@/components/admin/ActivityNotifier";
 import { formatPhone, nationalDigits } from "@/lib/contact";
+import { useAdminI18n } from "@/components/admin/i18n";
 
 const displayPhone = (p: string) => formatPhone(nationalDigits(p));
 
@@ -40,6 +41,7 @@ export default function LeadsPage() {
 }
 
 function Leads() {
+  const { t, time, err: tErr } = useAdminI18n();
   const searchParams = useSearchParams();
   const [filters, setFiltersRaw] = useState<Filters>(() => fromParams(new URLSearchParams(searchParams.toString())));
   const [query, setQuery] = useState(filters.q);
@@ -65,12 +67,12 @@ function Leads() {
         setData(d);
         setError(null);
       })
-      .catch((e) => !cancelled && setError(e.message))
+      .catch((e) => !cancelled && setError(tErr(e)))
       .finally(() => !cancelled && setLoadedKey(key));
     return () => {
       cancelled = true;
     };
-  }, [key, reload]);
+  }, [key, reload, tErr]);
 
   // New lead / message anywhere → refresh the list.
   useEffect(() => {
@@ -101,11 +103,11 @@ function Leads() {
       const { deleted } = await api<{ deleted: number }>("/api/admin/leads", { method: "DELETE", json: { ids: [...selected] } });
       setSelected(new Set());
       setConfirming(false);
-      setFlash(content.admin.list.deleted(deleted));
+      setFlash(t.ui.list.deleted(deleted));
       setTimeout(() => setFlash(null), 4000);
       setReload((n) => n + 1);
     } catch (e) {
-      setError((e as Error).message);
+      setError(tErr(e));
     } finally {
       setDeleting(false);
     }
@@ -123,17 +125,17 @@ function Leads() {
   return (
     <div>
       <div className="flex flex-wrap items-end gap-4">
-        <h1 className="text-2xl font-semibold">{content.admin.list.title}</h1>
-        {data && <span className="pb-1 text-sm text-slate">{content.admin.list.total(data.total)}</span>}
+        <h1 className="text-2xl font-semibold">{t.ui.list.title}</h1>
+        {data && <span className="pb-1 text-sm text-slate">{t.ui.list.total(data.total)}</span>}
       </div>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
         <label className="sr-only" htmlFor="q">
-          {content.admin.list.search}
+          {t.ui.list.search}
         </label>
-        <input id="q" className="field" placeholder={content.admin.list.searchPlaceholder} value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input id="q" className="field" placeholder={t.ui.list.searchPlaceholder} value={query} onChange={(e) => setQuery(e.target.value)} />
         <label className="sr-only" htmlFor="status">
-          {content.admin.list.status}
+          {t.ui.list.status}
         </label>
         <select
           id="status"
@@ -141,10 +143,10 @@ function Leads() {
           value={filters.status}
           onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value, page: 1 }))}
         >
-          <option value="">{content.admin.list.allStatuses}</option>
+          <option value="">{t.ui.list.allStatuses}</option>
           {LEAD_STATUSES.map((s) => (
             <option key={s} value={s}>
-              {content.admin.statuses[s]}
+              {t.ui.statuses[s]}
             </option>
           ))}
         </select>
@@ -153,19 +155,19 @@ function Leads() {
           className="btn btn-ghost text-sm"
           onClick={() => setFilters((f) => ({ ...f, sort: f.sort === "desc" ? "asc" : "desc", page: 1 }))}
         >
-          {filters.sort === "asc" ? content.admin.list.oldestFirst : content.admin.list.newestFirst}
+          {filters.sort === "asc" ? t.ui.list.oldestFirst : t.ui.list.newestFirst}
         </button>
       </div>
 
       {selected.size > 0 && (
         <div className="glass pop mt-4 flex flex-wrap items-center gap-3 rounded-(--radius-field) px-4 py-3 text-sm">
-          <span className="font-semibold">{content.admin.list.selected(selected.size)}</span>
+          <span className="font-semibold">{t.ui.list.selected(selected.size)}</span>
           {confirming ? (
             <>
-              <span className="text-ink-soft">{content.admin.list.confirmDeleteMany(selected.size)}</span>
+              <span className="text-ink-soft">{t.ui.list.confirmDeleteMany(selected.size)}</span>
               <div className="ml-auto flex gap-2">
                 <button type="button" className="btn btn-ghost h-9 min-h-0 px-4 text-sm" onClick={() => setConfirming(false)} disabled={deleting}>
-                  {content.admin.list.cancel}
+                  {t.ui.list.cancel}
                 </button>
                 <button
                   type="button"
@@ -173,21 +175,21 @@ function Leads() {
                   onClick={() => void deleteSelected()}
                   disabled={deleting}
                 >
-                  {deleting ? content.admin.lead.deleting : content.admin.list.confirmYes}
+                  {deleting ? t.ui.lead.deleting : t.ui.list.confirmYes}
                 </button>
               </div>
             </>
           ) : (
             <div className="ml-auto flex gap-2">
               <button type="button" className="btn btn-ghost h-9 min-h-0 px-4 text-sm" onClick={() => setSelected(new Set())}>
-                {content.admin.list.clearSelection}
+                {t.ui.list.clearSelection}
               </button>
               <button
                 type="button"
                 className="btn h-9 min-h-0 border border-danger/60 px-4 text-sm text-danger hover:bg-danger-soft"
                 onClick={() => setConfirming(true)}
               >
-                {content.admin.list.deleteSelected}
+                {t.ui.list.deleteSelected}
               </button>
             </div>
           )}
@@ -213,20 +215,20 @@ function Leads() {
                 <input
                   type="checkbox"
                   className="size-4 accent-[#168bff]"
-                  aria-label={content.admin.list.selectAll}
+                  aria-label={t.ui.list.selectAll}
                   checked={allOnPage}
                   onChange={toggleAll}
                   disabled={!pageIds.length}
                 />
               </th>
-              <th className="px-4 py-3 font-medium">{content.admin.list.columns.id}</th>
-              <th className="px-4 py-3 font-medium">{content.admin.list.columns.created}</th>
-              <th className="px-4 py-3 font-medium">{content.admin.list.columns.status}</th>
-              <th className="px-4 py-3 font-medium">{content.admin.list.columns.stage}</th>
-              <th className="px-4 py-3 font-medium">{content.admin.list.columns.answer}</th>
-              <th className="px-4 py-3 font-medium">{content.admin.list.columns.contact}</th>
-              <th className="px-4 py-3 font-medium">{content.admin.list.columns.lastMessage}</th>
-              <th className="px-4 py-3 text-right font-medium">{content.admin.list.columns.messages}</th>
+              <th className="px-4 py-3 font-medium">{t.ui.list.columns.id}</th>
+              <th className="px-4 py-3 font-medium">{t.ui.list.columns.created}</th>
+              <th className="px-4 py-3 font-medium">{t.ui.list.columns.status}</th>
+              <th className="px-4 py-3 font-medium">{t.ui.list.columns.stage}</th>
+              <th className="px-4 py-3 font-medium">{t.ui.list.columns.answer}</th>
+              <th className="px-4 py-3 font-medium">{t.ui.list.columns.contact}</th>
+              <th className="px-4 py-3 font-medium">{t.ui.list.columns.lastMessage}</th>
+              <th className="px-4 py-3 text-right font-medium">{t.ui.list.columns.messages}</th>
             </tr>
           </thead>
           <tbody>
@@ -236,7 +238,7 @@ function Leads() {
                   <input
                     type="checkbox"
                     className="size-4 accent-[#168bff]"
-                    aria-label={content.admin.list.selectOne(l.id)}
+                    aria-label={t.ui.list.selectOne(l.id)}
                     checked={selected.has(l.id)}
                     onChange={() => toggleOne(l.id)}
                   />
@@ -246,14 +248,14 @@ function Leads() {
                     #{l.id}
                   </Link>
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap">{formatTime(l.createdAt)}</td>
+                <td className="px-4 py-3 whitespace-nowrap">{time(l.createdAt)}</td>
                 <td className="px-4 py-3">
                   <StatusBadge status={l.status} />
                 </td>
                 <td className="px-4 py-3">
                   <StageBadge stage={l.stage} />
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap">{l.answer ? l.answer.split(",").map((x) => content.admin.answers[x] ?? x).join(" · ") : "—"}</td>
+                <td className="px-4 py-3 whitespace-nowrap">{l.answer ? l.answer.split(",").map((x) => t.ui.answers[x] ?? x).join(" · ") : "—"}</td>
                 <td className="px-4 py-3">
                   {l.contactName ? (
                     <>
@@ -264,14 +266,14 @@ function Leads() {
                     "—"
                   )}
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap">{l.lastMessageAt ? formatTime(l.lastMessageAt) : "—"}</td>
+                <td className="px-4 py-3 whitespace-nowrap">{l.lastMessageAt ? time(l.lastMessageAt) : "—"}</td>
                 <td className="px-4 py-3 text-right tabular-nums">{l.messageCount}</td>
               </tr>
             ))}
             {data && data.items.length === 0 && (
               <tr>
                 <td colSpan={9} className="px-4 py-12 text-center text-slate">
-                  {filters.q || filters.status ? content.admin.list.noResults : content.admin.list.empty}
+                  {filters.q || filters.status ? t.ui.list.noResults : t.ui.list.empty}
                 </td>
               </tr>
             )}
@@ -287,17 +289,17 @@ function Leads() {
       </div>
 
       {data && pages > 1 && (
-        <nav className="mt-6 flex items-center justify-center gap-3" aria-label={content.admin.list.pages}>
+        <nav className="mt-6 flex items-center justify-center gap-3" aria-label={t.ui.list.pages}>
           <button
             type="button"
             className="btn btn-ghost h-10 min-h-0 text-sm"
             disabled={data.page <= 1}
             onClick={() => setFilters((f) => ({ ...f, page: f.page - 1 }))}
           >
-            {content.admin.list.prev}
+            {t.ui.list.prev}
           </button>
           <span className="text-sm text-slate">
-            {content.admin.list.pageOf(data.page, pages)}
+            {t.ui.list.pageOf(data.page, pages)}
           </span>
           <button
             type="button"
@@ -305,7 +307,7 @@ function Leads() {
             disabled={data.page >= pages}
             onClick={() => setFilters((f) => ({ ...f, page: f.page + 1 }))}
           >
-            {content.admin.list.next}
+            {t.ui.list.next}
           </button>
         </nav>
       )}

@@ -2,23 +2,25 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
-import { content, LEAD_STATUSES, type LeadStatus } from "@/config/content";
+import { LEAD_STATUSES, type LeadStatus } from "@/config/content";
 import { uploadConfig } from "@/config/settings";
-import { api, formatBytes, formatTime, newId, type ChatMessage, type PublicFile } from "@/lib/api";
+import { api, formatBytes, newId, type ChatMessage, type PublicFile } from "@/lib/api";
 import { MessageList } from "@/components/chat/MessageList";
 import { Composer } from "@/components/chat/Composer";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { StageBadge } from "@/components/admin/StageBadge";
 import { ACTIVITY_EVENT } from "@/components/admin/ActivityNotifier";
 import { formatPhone, nationalDigits } from "@/lib/contact";
+import { useAdminI18n } from "@/components/admin/i18n";
 
 type Details = {
   lead: { id: number; status: LeadStatus; createdAt: string; updatedAt: string; messageCount: number; lastMessageAt: string | null; stage: string };
   contact: { name: string; phone: string; telegram: string | null } | null;
-  answers: { question: string; answer: string; updatedAt: string | null }[];
+  answers: { question: string; answer: string; value: string | null; updatedAt: string | null }[];
   submission: {
     id: string;
     submittedAt: string;
+    review: string | null;
     files: PublicFile[];
     autoMessage: { status: string; scheduledFor: string; sentAt: string | null; attempts: number; lastError: string | null } | null;
   } | null;
@@ -26,7 +28,6 @@ type Details = {
   notes: { id: string; body: string; createdAt: string }[];
 };
 
-const autoStatus = content.admin.lead.autoStatus;
 
 export default function LeadPage() {
   return (
@@ -37,6 +38,7 @@ export default function LeadPage() {
 }
 
 function Lead() {
+  const { t, time, err: tErr } = useAdminI18n();
   const { id } = useParams<{ id: string }>();
   const [d, setD] = useState<Details | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,8 +55,8 @@ function Lead() {
         setD(r);
         setError(null);
       })
-      .catch((e) => setError(e.message));
-  }, [id]);
+      .catch((e) => setError(tErr(e)));
+  }, [id, tErr]);
 
   useEffect(() => {
     load();
@@ -69,7 +71,7 @@ function Lead() {
   if (error && !d)
     return (
       <p role="alert" className="rounded-(--radius-field) bg-danger-soft p-4 text-danger">
-        {error} <Link href="/admin" className="underline">{content.admin.lead.toList}</Link>
+        {error} <Link href="/admin" className="underline">{t.ui.lead.toList}</Link>
       </p>
     );
   if (!d) return <div className="skeleton h-64 rounded-(--radius-tile)" aria-busy />;
@@ -79,7 +81,7 @@ function Lead() {
     try {
       setD(await api<Details>(`/api/admin/leads/${id}`, { method: "PATCH", json: { status } }));
     } catch (e) {
-      setError((e as Error).message);
+      setError(tErr(e));
     } finally {
       setBusy(false);
     }
@@ -94,7 +96,7 @@ function Lead() {
       setD((prev) => prev && { ...prev, notes: [n, ...prev.notes] });
       setNote("");
     } catch (err) {
-      setError((err as Error).message);
+      setError(tErr(err));
     } finally {
       setBusy(false);
     }
@@ -106,7 +108,7 @@ function Lead() {
       await api(`/api/admin/leads/${id}`, { method: "DELETE" });
       router.replace("/admin");
     } catch (e) {
-      setError((e as Error).message);
+      setError(tErr(e));
       setDeleting(false);
     }
   };
@@ -120,7 +122,7 @@ function Lead() {
       });
       setD((prev) => prev && { ...prev, messages });
     } catch (e) {
-      setSendError((e as Error).message);
+      setSendError(tErr(e));
       throw e;
     }
   };
@@ -128,18 +130,18 @@ function Lead() {
   return (
     <div>
       <Link href="/admin" className="text-sm text-slate underline hover:text-ink">
-        {content.admin.lead.back}
+        {t.ui.lead.back}
       </Link>
       <div className="mt-3 flex flex-wrap items-center gap-4">
-        <h1 className="text-2xl font-semibold">{content.admin.lead.title(d.lead.id)}</h1>
+        <h1 className="text-2xl font-semibold">{t.ui.lead.title(d.lead.id)}</h1>
         <StatusBadge status={d.lead.status} />
         <StageBadge stage={d.lead.stage} />
         <label className="ml-auto flex items-center gap-2 text-sm">
-          <span className="text-slate">{content.admin.lead.status}</span>
+          <span className="text-slate">{t.ui.lead.status}</span>
           <select className="field w-auto py-2" value={d.lead.status} disabled={busy} onChange={(e) => setStatus(e.target.value)}>
             {LEAD_STATUSES.map((s) => (
               <option key={s} value={s}>
-                {content.admin.statuses[s]}
+                {t.ui.statuses[s]}
               </option>
             ))}
           </select>
@@ -150,26 +152,26 @@ function Lead() {
           onClick={() => setConfirmDelete(true)}
           disabled={deleting}
         >
-          {content.admin.lead.delete}
+          {t.ui.lead.delete}
         </button>
       </div>
       {confirmDelete && (
         <div role="alertdialog" aria-labelledby="del-q" className="pop mt-4 flex flex-wrap items-center gap-3 rounded-(--radius-field) border border-danger/40 bg-danger-soft px-4 py-3 text-sm">
           <p id="del-q" className="flex-1">
-            {content.admin.lead.confirmDelete(d.lead.id)}
+            {t.ui.lead.confirmDelete(d.lead.id)}
           </p>
           <div className="flex gap-2">
             <button type="button" className="btn btn-ghost h-9 min-h-0 px-4 text-sm" onClick={() => setConfirmDelete(false)} disabled={deleting}>
-              {content.admin.list.cancel}
+              {t.ui.list.cancel}
             </button>
             <button type="button" className="btn h-9 min-h-0 bg-danger px-4 text-sm text-paper hover:brightness-110" onClick={() => void remove()} disabled={deleting}>
-              {deleting ? content.admin.lead.deleting : content.admin.list.confirmYes}
+              {deleting ? t.ui.lead.deleting : t.ui.list.confirmYes}
             </button>
           </div>
         </div>
       )}
       <p className="mt-2 text-sm text-slate">
-        {content.admin.lead.meta(formatTime(d.lead.createdAt), formatTime(d.lead.updatedAt), d.lead.messageCount)}
+        {t.ui.lead.meta(time(d.lead.createdAt), time(d.lead.updatedAt), d.lead.messageCount)}
       </p>
       {error && (
         <p role="alert" className="mt-4 text-sm text-danger">
@@ -181,13 +183,15 @@ function Lead() {
         {/* Conversation */}
         <section aria-labelledby="thread" className="self-start rounded-(--radius-tile) glass">
           <h2 id="thread" className="border-b border-line px-5 py-4 font-semibold">
-            {content.admin.lead.thread}
+            {t.ui.lead.thread}
           </h2>
           <div className="max-h-[60vh] min-h-64 overflow-y-auto bg-black/20 px-4 py-5">
             <MessageList
               messages={d.messages}
               viewer="admin"
-              emptyText={d.submission ? content.admin.lead.noMessages : content.admin.lead.noSubmissionYet}
+              text={t.chat}
+              locale={t.locale}
+              emptyText={d.submission ? t.ui.lead.noMessages : t.ui.lead.noSubmissionYet}
             />
           </div>
           <div className="border-t border-line p-3">
@@ -197,7 +201,9 @@ function Lead() {
               accept={[...uploadConfig.adminAttachmentTypes]}
               attachmentsEnabled
               maxFiles={uploadConfig.maxFilesPerMessage}
-              placeholder={content.admin.lead.replyPlaceholder}
+              placeholder={t.ui.lead.replyPlaceholder}
+              text={t.chat}
+              translateError={tErr}
             />
             {sendError && <p className="mt-2 text-sm text-danger">{sendError}</p>}
           </div>
@@ -205,18 +211,18 @@ function Lead() {
 
         <aside className="space-y-8">
           <section>
-            <h2 className="font-semibold">{content.admin.lead.contact}</h2>
+            <h2 className="font-semibold">{t.ui.lead.contact}</h2>
             {d.contact ? (
               <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-                <dt className="text-slate">{content.admin.lead.contactName}</dt>
+                <dt className="text-slate">{t.ui.lead.contactName}</dt>
                 <dd className="font-semibold">{d.contact.name}</dd>
-                <dt className="text-slate">{content.admin.lead.contactPhone}</dt>
+                <dt className="text-slate">{t.ui.lead.contactPhone}</dt>
                 <dd>
                   <a href={`tel:${d.contact.phone}`} className="font-semibold underline-offset-2 hover:underline">
                     {formatPhone(nationalDigits(d.contact.phone))}
                   </a>
                 </dd>
-                <dt className="text-slate">{content.admin.lead.contactTelegram}</dt>
+                <dt className="text-slate">{t.ui.lead.contactTelegram}</dt>
                 <dd>
                   {d.contact.telegram ? (
                     <a
@@ -238,12 +244,12 @@ function Lead() {
           </section>
 
           <section>
-            <h2 className="font-semibold">{content.admin.lead.answers}</h2>
+            <h2 className="font-semibold">{t.ui.lead.answers}</h2>
             <dl className="mt-3 space-y-3 text-sm">
               {d.answers.map((a) => (
                 <div key={a.question}>
                   <dt className="text-slate">{a.question}</dt>
-                  <dd className="mt-0.5 font-semibold">{a.answer}</dd>
+                  <dd className="mt-0.5 font-semibold">{a.value ? (t.ui.answers[a.value] ?? a.value) : "—"}</dd>
                 </div>
               ))}
             </dl>
@@ -251,8 +257,21 @@ function Lead() {
 
           {d.submission && (
             <section>
-              <h2 className="font-semibold">{content.admin.lead.submission}</h2>
-              <p className="mt-1 text-sm text-slate">{content.admin.lead.submittedAt(formatTime(d.submission.submittedAt))}</p>
+              <h2 className="font-semibold">{t.ui.lead.review}</h2>
+              {d.submission.review ? (
+                <blockquote className="mt-3 rounded-(--radius-field) border border-line bg-surface-2 p-4 text-sm leading-relaxed whitespace-pre-wrap">
+                  {d.submission.review}
+                </blockquote>
+              ) : (
+                <p className="mt-2 text-sm text-slate">{t.ui.lead.noReview}</p>
+              )}
+            </section>
+          )}
+
+          {d.submission && (
+            <section>
+              <h2 className="font-semibold">{t.ui.lead.submission}</h2>
+              <p className="mt-1 text-sm text-slate">{t.ui.lead.submittedAt(time(d.submission.submittedAt))}</p>
               <ul className="mt-3 grid grid-cols-2 gap-2">
                 {d.submission.files.map((f) => (
                   <li key={f.id}>
@@ -268,10 +287,10 @@ function Lead() {
               </ul>
               {d.submission.autoMessage && (
                 <p className="mt-3 text-xs text-slate">
-                  {content.admin.lead.autoMessage}: {autoStatus[d.submission.autoMessage.status] ?? d.submission.autoMessage.status}
+                  {t.ui.lead.autoMessage}: {t.ui.lead.autoStatus[d.submission.autoMessage.status] ?? d.submission.autoMessage.status}
                   {d.submission.autoMessage.sentAt
-                    ? ` ${formatTime(d.submission.autoMessage.sentAt)}`
-                    : ` ${content.admin.lead.autoAt(formatTime(d.submission.autoMessage.scheduledFor))}`}
+                    ? ` ${time(d.submission.autoMessage.sentAt)}`
+                    : ` ${t.ui.lead.autoAt(time(d.submission.autoMessage.scheduledFor))}`}
                   {d.submission.autoMessage.lastError && <span className="block text-danger">{d.submission.autoMessage.lastError}</span>}
                 </p>
               )}
@@ -279,15 +298,15 @@ function Lead() {
           )}
 
           <section>
-            <h2 className="font-semibold">{content.admin.lead.notes}</h2>
-            <p className="mt-1 text-xs text-slate">{content.admin.lead.notesHint}</p>
+            <h2 className="font-semibold">{t.ui.lead.notes}</h2>
+            <p className="mt-1 text-xs text-slate">{t.ui.lead.notesHint}</p>
             <form onSubmit={addNote} className="mt-3">
               <label className="sr-only" htmlFor="note">
-                {content.admin.lead.newNote}
+                {t.ui.lead.newNote}
               </label>
-              <textarea id="note" className="field min-h-20" value={note} onChange={(e) => setNote(e.target.value)} placeholder={content.admin.lead.newNote} maxLength={5000} />
+              <textarea id="note" className="field min-h-20" value={note} onChange={(e) => setNote(e.target.value)} placeholder={t.ui.lead.newNote} maxLength={5000} />
               <button type="submit" className="btn btn-ghost mt-2 h-10 min-h-0 text-sm" disabled={busy || !note.trim()}>
-                {content.admin.lead.addNote}
+                {t.ui.lead.addNote}
               </button>
             </form>
             <ul className="mt-4 space-y-3">
@@ -295,7 +314,7 @@ function Lead() {
                 <li key={n.id} className="border-l-[3px] border-paint pl-3 text-sm">
                   <p className="whitespace-pre-wrap">{n.body}</p>
                   <time className="text-xs text-slate" dateTime={n.createdAt}>
-                    {formatTime(n.createdAt)}
+                    {time(n.createdAt)}
                   </time>
                 </li>
               ))}

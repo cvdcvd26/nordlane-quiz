@@ -13,6 +13,9 @@ export const uploadConfig = {
   maxFilesPerMessage: 3,
 } as const;
 
+/** Review written on the task step. */
+export const reviewConfig = { minLength: 10, maxLength: 3000 } as const;
+
 export const chatConfig = {
   pollIntervalMs: 4000,
   maxMessageLength: 4000,

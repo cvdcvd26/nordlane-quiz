@@ -46,6 +46,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
         sql`exists (select 1 from messages m join conversations c on c.id = m.conversation_id
           where c.session_id = ${leadSession} and m.body ilike ${like})`,
         sql`exists (select 1 from lead_notes n where n.lead_id = ${leadIdCol} and n.body ilike ${like})`,
+        sql`exists (select 1 from task_submissions ts where ts.session_id = ${leadSession} and ts.review ilike ${like})`,
         sql`exists (select 1 from visitor_contacts vc where vc.session_id = ${leadSession}
           and (vc.name ilike ${like} or vc.telegram ilike ${like} or ${phoneMatch}))`,
       )!,
@@ -136,6 +137,7 @@ export async function getLeadDetails(leadId: number) {
       return {
         question: q.text,
         answer: a ? (content.admin.answers[a.answer] ?? a.answer) : "—",
+        value: a?.answer ?? null,
         updatedAt: a?.updatedAt.toISOString() ?? null,
       };
     }),
@@ -143,6 +145,7 @@ export async function getLeadDetails(leadId: number) {
       ? {
           id: submission.id,
           submittedAt: submission.submittedAt.toISOString(),
+          review: submission.review,
           files: submissionFiles.map(toPublicFile),
           autoMessage: scheduled
             ? {

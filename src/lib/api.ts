@@ -63,11 +63,11 @@ export function formatBytes(n: number) {
   return `${(n / 1024 / 1024).toFixed(1).replace(".", ",")} MB`;
 }
 
-export function formatTime(iso: string) {
+export function formatTime(iso: string, locale: string = content.locale) {
   const d = new Date(iso);
   const today = new Date();
   const sameDay = d.toDateString() === today.toDateString();
-  return d.toLocaleString(content.locale, sameDay ? { hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString(locale, sameDay ? { hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 export type PublicFile = { id: string; name: string; mime: string; size: number; url: string };

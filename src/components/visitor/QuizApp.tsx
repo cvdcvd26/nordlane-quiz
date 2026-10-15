@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { content, QUESTION_KEYS } from "@/config/content";
+import { reviewConfig } from "@/config/settings";
 import { api, newId, type PublicFile } from "@/lib/api";
 import { Lane, type Step } from "./Lane";
 import { Backdrop } from "../visual/Backdrop";
@@ -22,6 +23,15 @@ type SessionState = {
 const allAnswered = (a: Record<string, string>) => QUESTION_KEYS.every((k) => Boolean(a[k]));
 
 const IDEM_KEY = "nl_submit_key";
+const REVIEW_KEY = "nl_review_draft";
+const readReview = () => {
+  try {
+    return sessionStorage.getItem(REVIEW_KEY) ?? "";
+  } catch {
+    return "";
+  }
+};
+
 const readIdem = () => {
   try {
     const existing = sessionStorage.getItem(IDEM_KEY);
@@ -48,6 +58,19 @@ export function QuizApp() {
   const [items, setItems] = useState<UploadItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Draft survives a reload within the tab.
+  const [review, setReviewRaw] = useState(readReview);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const setReview = (v: string) => {
+    setReviewRaw(v);
+    if (reviewError && v.trim().length >= reviewConfig.minLength) {
+      setReviewError(null);
+      setSubmitError(null);
+    }
+    try {
+      sessionStorage.setItem(REVIEW_KEY, v);
+    } catch {}
+  };
   const idem = useRef<string | null>(null);
   const heading = useRef<HTMLDivElement>(null);
   const autoTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -156,17 +179,23 @@ export function QuizApp() {
     if (items.some((i) => i.status === "uploading")) return setSubmitError(content.errors.filesPending);
     const ready = items.filter((i) => i.status === "done" && i.serverId);
     if (ready.length === 0) return setSubmitError(content.errors.filesRequired);
+    if (review.trim().length < reviewConfig.minLength) {
+      setReviewError(content.errors.reviewRequired);
+      document.getElementById("review")?.focus();
+      return setSubmitError(content.errors.fixFields);
+    }
     idem.current ??= readIdem();
     setSubmitting(true);
     try {
       const res = await api<{ submissionId: string; submittedAt: string }>("/api/submit", {
         method: "POST",
-        json: { idempotencyKey: idem.current, fileIds: ready.map((i) => i.serverId) },
+        json: { idempotencyKey: idem.current, fileIds: ready.map((i) => i.serverId), review: review.trim() },
       });
       setState((s) => (s ? { ...s, submission: { id: res.submissionId, submittedAt: res.submittedAt } } : s));
       setItems(ready);
       try {
         sessionStorage.removeItem(IDEM_KEY);
+        sessionStorage.removeItem(REVIEW_KEY);
       } catch {}
       goTo(3);
     } catch (err) {
@@ -257,6 +286,9 @@ export function QuizApp() {
               limits={state.limits}
               submitting={submitting}
               error={submitError}
+              review={review}
+              onReviewChange={setReview}
+              reviewError={reviewError}
               onBack={() => goTo(1)}
               onSubmit={submit}
             />

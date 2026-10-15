@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { content } from "@/config/content";
 import { formatBytes, formatTime, type ChatMessage } from "@/lib/api";
 
+export type ChatText = { [K in "systemLabel" | "youLabel" | "visitorLabel" | "adminLabel" | "sending" | "failed" | "retry"]: string };
 export type LocalMessage = ChatMessage & { local?: "sending" | "failed" };
 
 /** Shared message feed. `viewer` decides whose messages sit on the right. */
@@ -11,11 +12,16 @@ export function MessageList({
   viewer,
   onRetry,
   emptyText,
+  text = content.chat,
+  locale = content.locale,
 }: {
   messages: LocalMessage[];
   viewer: "visitor" | "admin";
   onRetry?: (m: LocalMessage) => void;
   emptyText: string;
+  /** Labels; the admin panel passes its own language. */
+  text?: ChatText;
+  locale?: string;
 }) {
   const end = useRef<HTMLDivElement>(null);
   const count = messages.length;
@@ -33,9 +39,9 @@ export function MessageList({
             <li key={m.id} className="pop mx-auto max-w-md rounded-(--radius-field) border border-paint/40 bg-paint-soft px-4 py-3 text-sm shadow-[0_0_30px_-12px_#00d9ff]">
               <p className="mb-1 flex items-center gap-2 text-xs font-semibold text-cyan">
                 <span aria-hidden className="chip-dot" />
-                {content.chat.systemLabel}
+                {text.systemLabel}
                 <time className="ml-auto font-normal text-slate" dateTime={m.createdAt}>
-                  {formatTime(m.createdAt)}
+                  {formatTime(m.createdAt, locale)}
                 </time>
               </p>
               <p className="whitespace-pre-wrap leading-relaxed">{m.body}</p>
@@ -43,7 +49,7 @@ export function MessageList({
           );
         }
         const mine = m.sender === viewer;
-        const who = m.sender === "visitor" ? (viewer === "visitor" ? content.chat.youLabel : content.chat.visitorLabel) : content.chat.adminLabel;
+        const who = m.sender === "visitor" ? (viewer === "visitor" ? text.youLabel : text.visitorLabel) : text.adminLabel;
         return (
           <li key={m.clientMessageId || m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
             <div className={`max-w-[85%] sm:max-w-[75%] ${m.local === "sending" ? "opacity-70" : ""}`}>
@@ -86,18 +92,18 @@ export function MessageList({
               <p className={`mt-1 flex gap-2 text-xs text-slate ${mine ? "justify-end" : ""}`}>
                 <span>{who}</span>
                 {m.local === "sending" ? (
-                  <span>{content.chat.sending}</span>
+                  <span>{text.sending}</span>
                 ) : m.local === "failed" ? (
                   <>
-                    <span className="text-danger">{content.chat.failed}</span>
+                    <span className="text-danger">{text.failed}</span>
                     {onRetry && (
                       <button type="button" className="font-semibold text-cyan underline" onClick={() => onRetry(m)}>
-                        {content.chat.retry}
+                        {text.retry}
                       </button>
                     )}
                   </>
                 ) : (
-                  <time dateTime={m.createdAt}>{formatTime(m.createdAt)}</time>
+                  <time dateTime={m.createdAt}>{formatTime(m.createdAt, locale)}</time>
                 )}
               </p>
             </div>

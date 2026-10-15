@@ -1,4 +1,5 @@
-import { content, type LeadStatus } from "@/config/content";
+import { type LeadStatus } from "@/config/content";
+import { useAdminI18n } from "@/components/admin/i18n";
 
 const tone: Record<LeadStatus, string> = {
   new: "bg-paint text-on-paint",
@@ -9,5 +10,6 @@ const tone: Record<LeadStatus, string> = {
 };
 
 export function StatusBadge({ status }: { status: LeadStatus }) {
-  return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap ${tone[status]}`}>{content.admin.statuses[status]}</span>;
+  const { t } = useAdminI18n();
+  return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap ${tone[status]}`}>{t.ui.statuses[status]}</span>;
 }

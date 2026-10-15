@@ -16,7 +16,9 @@ export function Composer({
   accept,
   attachmentsEnabled,
   maxFiles,
-  placeholder = content.chat.placeholder,
+  text: labels = content.chat,
+  placeholder = labels.placeholder,
+  translateError = (e: Error) => e.message,
 }: {
   onSend: (body: string, files: PublicFile[]) => void | Promise<void>;
   uploadUrl: string;
@@ -25,6 +27,9 @@ export function Composer({
   attachmentsEnabled: boolean;
   maxFiles: number;
   placeholder?: string;
+  /** Labels; the admin panel passes its own language. */
+  text?: { placeholder: string; send: string; attach: string; removeAttachment: (name: string) => string };
+  translateError?: (e: Error) => string;
 }) {
   const [text, setText] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
@@ -62,7 +67,7 @@ export function Composer({
         if (uploadPurpose) form.set("purpose", uploadPurpose);
         uploadWithProgress<{ file: PublicFile }>(uploadUrl, form, () => {})
           .promise.then(({ file: saved }) => setFiles((p) => p.map((f) => (f.key === key ? { ...f, status: "done", file: saved } : f))))
-          .catch((err) => setFiles((p) => p.map((f) => (f.key === key ? { ...f, status: "error", error: err.message } : f))));
+          .catch((err) => setFiles((p) => p.map((f) => (f.key === key ? { ...f, status: "error", error: translateError(err) } : f))));
       });
   };
 
@@ -78,7 +83,7 @@ export function Composer({
             >
               <span className="max-w-40 truncate">{f.name}</span>
               <span className="text-slate">{f.status === "uploading" ? "…" : f.status === "error" ? "!" : formatBytes(f.size)}</span>
-              <button type="button" aria-label={content.chat.removeAttachment(f.name)} onClick={() => setFiles((p) => p.filter((x) => x.key !== f.key))}>
+              <button type="button" aria-label={labels.removeAttachment(f.name)} onClick={() => setFiles((p) => p.filter((x) => x.key !== f.key))}>
                 ×
               </button>
             </li>
@@ -91,8 +96,8 @@ export function Composer({
             <button
               type="button"
               className="grid size-11 shrink-0 place-items-center rounded-full text-xl text-slate transition-colors hover:bg-white/5 hover:text-cyan"
-              aria-label={content.chat.attach}
-              title={content.chat.attach}
+              aria-label={labels.attach}
+              title={labels.attach}
               onClick={() => input.current?.click()}
             >
               <svg aria-hidden viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -138,7 +143,7 @@ export function Composer({
           className="max-h-44 min-h-11 flex-1 resize-none bg-transparent px-2 py-2.5 outline-none placeholder:text-slate"
         />
         <button type="button" className="btn btn-primary h-11 min-h-0 shrink-0 px-5" onClick={send} disabled={!canSend}>
-          {content.chat.send}
+          {labels.send}
         </button>
       </div>
     </div>
