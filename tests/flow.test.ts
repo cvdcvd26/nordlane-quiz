@@ -9,7 +9,7 @@ import { uploadFile, deletePendingFile, getReadableFile } from "@/server/service
 import { submitTask } from "@/server/services/submission";
 import { deliverScheduledMessage, deliverOverdue } from "@/server/services/delivery";
 import { getVisitorChat, postVisitorMessage } from "@/server/services/chat";
-import { listLeads, getLeadDetails, postAdminMessage, addLeadNote, updateLeadStatus } from "@/server/services/admin";
+import { listLeads, listReviews, getLeadDetails, postAdminMessage, addLeadNote, updateLeadStatus } from "@/server/services/admin";
 import { deleteLeads, adminActivity } from "@/server/services/leads";
 import { updateSettings, getSettings, pickDelayMs } from "@/server/settings";
 import { defaultSettings } from "@/config/settings";
@@ -128,6 +128,12 @@ describe("task submission", () => {
     const [lead] = await env.db.select().from(schema.leads).where(eq(schema.leads.sessionId, sid));
     expect((await getLeadDetails(lead.id)).submission?.review).toBe("Unikalna opinia o zadaniu zebra");
     expect((await listLeads({ q: "zebra" })).items.map((i) => i.id)).toEqual([lead.id]);
+
+    const reviews = await listReviews({ q: "zebra" });
+    expect(reviews.total).toBe(1);
+    expect(reviews.items[0]).toMatchObject({ leadId: lead.id, name: "Anna", review: "Unikalna opinia o zadaniu zebra", status: "new" });
+    expect((await listReviews({ q: "Anna" })).total).toBeGreaterThanOrEqual(1);
+    expect((await listReviews({ q: "nie-ma-takiej-opinii" })).total).toBe(0);
   });
 
   it("is not submitted without contact details, without all answers, or with a foreign file", async () => {
@@ -198,7 +204,7 @@ describe("chat and leads", () => {
     const [lead] = await env.db.select().from(schema.leads).where(eq(schema.leads.sessionId, sid));
     expect(lead).toBeDefined();
     const stage = async () => (await listLeads({ q: String(lead.id) })).items.find((i) => i.id === lead.id)?.stage;
-    expect(await stage()).toBe("contact");
+    expect(await stage()).toBe("questions"); // contact saved → the visitor is on the questions screen
 
     // Saving the contact again (going back to step 1) does not create a second lead.
     await saveContact(sid, { ...contact, name: "Anna Nowak" });
@@ -208,6 +214,7 @@ describe("chat and leads", () => {
     expect(await stage()).toBe("questions");
     await saveAnswer(sid, "q2", "no");
     await saveAnswer(sid, "q3", "yes");
+    expect(await stage()).toBe("task");
     const f = await uploadFile({ sessionId: sid, purpose: "submission", uploadedBy: "visitor", file: png() });
     await submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id], review: REVIEW });
     expect(await stage()).toBe("submitted");

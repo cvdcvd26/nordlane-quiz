@@ -69,14 +69,14 @@ export function useAdminI18n() {
 export function LangSwitch({ className = "" }: { className?: string }) {
   const { lang, t } = useAdminI18n();
   return (
-    <div role="group" aria-label={t.langSwitch} className={`inline-flex rounded-full border border-line p-0.5 text-xs font-semibold ${className}`}>
+    <div role="group" aria-label={t.langSwitch} className={`inline-flex h-8 rounded-md border border-adm-line-strong bg-adm-surface p-0.5 text-[12px] font-semibold ${className}`}>
       {ADMIN_LANGS.map((l) => (
         <button
           key={l}
           type="button"
           aria-pressed={lang === l}
           onClick={() => setAdminLang(l)}
-          className={`rounded-full px-2.5 py-1 transition ${lang === l ? "bg-paint text-on-paint" : "text-slate hover:text-ink"}`}
+          className={`rounded-[4px] px-2 transition-colors ${lang === l ? "bg-adm-ink text-white" : "text-adm-ink-2 hover:text-adm-ink"}`}
         >
           {adminDicts[l].langName}
         </button>

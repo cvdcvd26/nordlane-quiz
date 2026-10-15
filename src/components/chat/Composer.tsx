@@ -19,6 +19,7 @@ export function Composer({
   text: labels = content.chat,
   placeholder = labels.placeholder,
   translateError = (e: Error) => e.message,
+  appearance = "visitor",
 }: {
   onSend: (body: string, files: PublicFile[]) => void | Promise<void>;
   uploadUrl: string;
@@ -30,7 +31,9 @@ export function Composer({
   /** Labels; the admin panel passes its own language. */
   text?: { placeholder: string; send: string; attach: string; removeAttachment: (name: string) => string };
   translateError?: (e: Error) => string;
+  appearance?: "visitor" | "admin";
 }) {
+  const adm = appearance === "admin";
   const [text, setText] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
@@ -72,17 +75,25 @@ export function Composer({
   };
 
   return (
-    <div className="rounded-(--radius-tile) border border-line-strong bg-white/[0.03] p-2 transition-[border-color,box-shadow] focus-within:border-paint focus-within:shadow-[0_0_0_4px_#00d9ff1f]">
+    <div
+      className={
+        adm
+          ? "rounded-lg border border-adm-line-strong bg-adm-surface p-1.5 transition-[border-color,box-shadow] focus-within:border-adm-accent focus-within:shadow-[0_0_0_3px_#0f6fd626]"
+          : "rounded-(--radius-tile) border border-line-strong bg-white/[0.03] p-2 transition-[border-color,box-shadow] focus-within:border-paint focus-within:shadow-[0_0_0_4px_#00d9ff1f]"
+      }
+    >
       {files.length > 0 && (
         <ul className="flex flex-wrap gap-2 px-2 pt-1 pb-2">
           {files.map((f) => (
             <li
               key={f.key}
-              className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs ${f.status === "error" ? "bg-danger-soft text-danger" : "bg-white/5"}`}
+              className={`flex items-center gap-2 px-3 py-1 text-xs ${adm ? "rounded-md" : "rounded-full"} ${
+                f.status === "error" ? (adm ? "bg-adm-red-bg text-adm-red" : "bg-danger-soft text-danger") : adm ? "bg-adm-subtle" : "bg-white/5"
+              }`}
               title={f.error}
             >
               <span className="max-w-40 truncate">{f.name}</span>
-              <span className="text-slate">{f.status === "uploading" ? "…" : f.status === "error" ? "!" : formatBytes(f.size)}</span>
+              <span className={adm ? "text-adm-ink-3" : "text-slate"}>{f.status === "uploading" ? "…" : f.status === "error" ? "!" : formatBytes(f.size)}</span>
               <button type="button" aria-label={labels.removeAttachment(f.name)} onClick={() => setFiles((p) => p.filter((x) => x.key !== f.key))}>
                 ×
               </button>
@@ -95,7 +106,11 @@ export function Composer({
           <>
             <button
               type="button"
-              className="grid size-11 shrink-0 place-items-center rounded-full text-xl text-slate transition-colors hover:bg-white/5 hover:text-cyan"
+              className={
+                adm
+                  ? "grid size-9 shrink-0 place-items-center rounded-md text-adm-ink-3 transition-colors hover:bg-adm-subtle hover:text-adm-ink"
+                  : "grid size-11 shrink-0 place-items-center rounded-full text-xl text-slate transition-colors hover:bg-white/5 hover:text-cyan"
+              }
               aria-label={labels.attach}
               title={labels.attach}
               onClick={() => input.current?.click()}
@@ -140,9 +155,11 @@ export function Composer({
           }}
           placeholder={placeholder}
           maxLength={4000}
-          className="max-h-44 min-h-11 flex-1 resize-none bg-transparent px-2 py-2.5 outline-none placeholder:text-slate"
+          className={`max-h-44 flex-1 resize-none bg-transparent px-2 outline-none ${
+            adm ? "min-h-9 py-2 text-[13.5px] placeholder:text-adm-ink-3" : "min-h-11 py-2.5 placeholder:text-slate"
+          }`}
         />
-        <button type="button" className="btn btn-primary h-11 min-h-0 shrink-0 px-5" onClick={send} disabled={!canSend}>
+        <button type="button" className={adm ? "adm-btn adm-btn-primary h-9 shrink-0 px-4" : "btn btn-primary h-11 min-h-0 shrink-0 px-5"} onClick={send} disabled={!canSend}>
           {labels.send}
         </button>
       </div>

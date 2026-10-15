@@ -31,6 +31,31 @@
   --radius-field: 0.85rem;
 
   --ease-lane: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* ---- Admin panel (light, restrained). Prefixed adm- so the visitor theme is untouched. ---- */
+  --color-adm-bg: #f6f6f3;
+  --color-adm-surface: #ffffff;
+  --color-adm-subtle: #f1f1ed;
+  --color-adm-line: #e4e3de;
+  --color-adm-line-strong: #d1d0c9;
+  --color-adm-ink: #17191c;
+  --color-adm-ink-2: #4c525a;
+  --color-adm-ink-3: #7c828a;
+  /* Brand blue (#168bff) darkened to pass WCAG AA on white. */
+  --color-adm-accent: #0f6fd6;
+  --color-adm-accent-hover: #0b5fb8;
+  --color-adm-accent-soft: #e9f2fd;
+  /* Semantic: statuses and feedback only. */
+  --color-adm-blue: #0b5fb8;
+  --color-adm-blue-bg: #e9f2fd;
+  --color-adm-amber: #8a5000;
+  --color-adm-amber-bg: #fcf1dc;
+  --color-adm-violet: #5a3ec0;
+  --color-adm-violet-bg: #efebfc;
+  --color-adm-green: #1d7238;
+  --color-adm-green-bg: #e5f3e9;
+  --color-adm-red: #b42318;
+  --color-adm-red-bg: #fcebe9;
 }
 
 @layer base {
@@ -243,6 +268,227 @@
     box-shadow:
       0 0 0 1px #00d9ff,
       0 0 26px -8px #00d9ff99;
+  }
+}
+
+/* ---------- Admin panel ---------- */
+
+html:has(.adm) {
+  background: var(--color-adm-bg);
+  color-scheme: light;
+}
+html:has(.adm) body::before {
+  display: none;
+}
+
+@layer components {
+  .adm {
+    min-height: 100dvh;
+    background: var(--color-adm-bg);
+    color: var(--color-adm-ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
+    color-scheme: light;
+  }
+  .adm ::selection {
+    background: #cfe3fb;
+    color: inherit;
+  }
+  .adm :focus-visible {
+    outline: 2px solid var(--color-adm-accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  .adm input,
+  .adm textarea,
+  .adm select {
+    color-scheme: light;
+  }
+
+  /* Buttons: 32px, 6px radius, one primary per view. */
+  .adm-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    height: 2rem;
+    padding: 0 0.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--color-adm-line-strong);
+    background: var(--color-adm-surface);
+    color: var(--color-adm-ink);
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition:
+      background-color 0.12s,
+      border-color 0.12s,
+      color 0.12s;
+  }
+  .adm-btn:hover:not(:disabled) {
+    background: var(--color-adm-subtle);
+  }
+  .adm-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .adm-btn-primary {
+    background: var(--color-adm-accent);
+    border-color: var(--color-adm-accent);
+    color: #fff;
+  }
+  .adm-btn-primary:hover:not(:disabled) {
+    background: var(--color-adm-accent-hover);
+    border-color: var(--color-adm-accent-hover);
+  }
+  .adm-btn-danger {
+    color: var(--color-adm-red);
+  }
+  .adm-btn-danger:hover:not(:disabled) {
+    background: var(--color-adm-red-bg);
+    border-color: #efc2bd;
+  }
+  .adm-btn-danger-solid {
+    background: var(--color-adm-red);
+    border-color: var(--color-adm-red);
+    color: #fff;
+  }
+  .adm-btn-danger-solid:hover:not(:disabled) {
+    background: #96190f;
+    border-color: #96190f;
+  }
+  .adm-btn-quiet {
+    border-color: transparent;
+    background: transparent;
+    color: var(--color-adm-ink-2);
+  }
+  .adm-btn-quiet:hover:not(:disabled) {
+    color: var(--color-adm-ink);
+  }
+  .adm-btn-sm {
+    height: 1.75rem;
+    padding: 0 0.6rem;
+    font-size: 12.5px;
+  }
+
+  /* Inputs */
+  .adm-input {
+    width: 100%;
+    height: 2rem;
+    padding: 0 0.625rem;
+    border-radius: 6px;
+    border: 1px solid var(--color-adm-line-strong);
+    background: var(--color-adm-surface);
+    color: var(--color-adm-ink);
+    font-size: 13.5px;
+    transition:
+      border-color 0.12s,
+      box-shadow 0.12s;
+  }
+  textarea.adm-input {
+    height: auto;
+    padding: 0.5rem 0.625rem;
+    line-height: 1.5;
+  }
+  select.adm-input {
+    padding-right: 1.75rem;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%237c828a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    background-size: 14px;
+  }
+  .adm-input::placeholder {
+    color: var(--color-adm-ink-3);
+  }
+  .adm-input:hover {
+    border-color: #bdbcb4;
+  }
+  .adm-input:focus {
+    outline: none;
+    border-color: var(--color-adm-accent);
+    box-shadow: 0 0 0 3px #0f6fd626;
+  }
+  .adm-input[aria-invalid="true"] {
+    border-color: var(--color-adm-red);
+  }
+  .adm-check {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--color-adm-accent);
+  }
+
+  .adm-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-adm-ink);
+  }
+  .adm-help {
+    font-size: 12.5px;
+    color: var(--color-adm-ink-3);
+  }
+
+  /* Containers: 8px radius, 1px border, no shadow. */
+  .adm-panel {
+    background: var(--color-adm-surface);
+    border: 1px solid var(--color-adm-line);
+    border-radius: 8px;
+  }
+  .adm-section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--color-adm-ink);
+  }
+
+  /* Tables */
+  .adm-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13.5px;
+  }
+  .adm-table th {
+    height: 2.25rem;
+    padding: 0 0.75rem;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-adm-ink-3);
+    background: var(--color-adm-subtle);
+    border-bottom: 1px solid var(--color-adm-line);
+    white-space: nowrap;
+  }
+  .adm-table td {
+    height: 3.25rem;
+    padding: 0.4rem 0.75rem;
+    border-bottom: 1px solid var(--color-adm-line);
+    vertical-align: middle;
+  }
+  .adm-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  .adm-table tbody tr:hover td {
+    background: #fafaf8;
+  }
+
+  .adm-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    height: 1.375rem;
+    padding: 0 0.45rem;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .adm-skeleton {
+    background: linear-gradient(90deg, #eeeee9 25%, #e5e5df 50%, #eeeee9 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+    border-radius: 6px;
   }
 }
 

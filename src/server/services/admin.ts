@@ -2,7 +2,7 @@ import { and, asc, desc, eq, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { badRequest, notFound } from "../errors";
-import { LEAD_STATUSES, content } from "@/config/content";
+import { LEAD_STATUSES, QUESTION_KEYS, content } from "@/config/content";
 import { loadMessages, attachFiles, messageSchema } from "./chat";
 import { toPublicFile } from "./uploads";
 import { touchConversation } from "./conversation";
@@ -79,6 +79,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
     items: rows.map((r) => ({
       ...r,
       stage: leadStage(r.answer ? r.answer.split(",").length : 0, Boolean(r.submitted)),
+      answered: r.answer ? r.answer.split(",").length : 0,
       createdAt: r.createdAt.toISOString(),
       lastMessageAt: r.lastMessageAt?.toISOString() ?? null,
     })),
@@ -88,11 +89,14 @@ export async function listLeads(input: Record<string, string | undefined>) {
   };
 }
 
-/** How far the visitor got: contact left → answering questions → task sent. */
-export type LeadStage = "contact" | "questions" | "submitted";
+/**
+ * Which of the four visitor screens the person is on: Kontakt → Pytania → Zadanie → Gotowe.
+ * A lead exists only after the contact screen, so the earliest stage is "questions".
+ */
+export type LeadStage = "questions" | "task" | "submitted";
 function leadStage(answered: number, submitted: boolean): LeadStage {
   if (submitted) return "submitted";
-  return answered > 0 ? "questions" : "contact";
+  return answered >= QUESTION_KEYS.length ? "task" : "questions";
 }
 
 async function findLead(leadId: number) {
@@ -130,6 +134,7 @@ export async function getLeadDetails(leadId: number) {
       messageCount: lead.messageCount,
       lastMessageAt: lead.lastMessageAt?.toISOString() ?? null,
       stage: leadStage(answers.length, Boolean(submission)),
+      answered: answers.length,
     },
     contact: contact ?? null,
     answers: content.quiz.questions.map((q) => {
@@ -207,3 +212,45 @@ export async function getLeadSessionId(leadId: number) {
   return (await findLead(leadId)).sessionId;
 }
 
+
+const reviewsSchema = z.object({
+  q: z.string().trim().max(200).optional().default(""),
+  page: z.coerce.number().int().min(1).optional().default(1),
+  pageSize: z.coerce.number().int().min(5).max(100).optional().default(20),
+});
+
+/** Reviews written with the task, newest first, with the employee and lead they belong to. */
+export async function listReviews(input: Record<string, string | undefined>) {
+  const p = reviewsSchema.parse({ ...input, q: input.q || undefined });
+  const like = `%${p.q.replace(/[%_\\]/g, "\\$&")}%`;
+  const where = p.q
+    ? sql`ts.review is not null and (ts.review ilike ${like} or vc.name ilike ${like})`
+    : sql`ts.review is not null`;
+  const from = sql`from task_submissions ts
+    join leads l on l.session_id = ts.session_id
+    left join visitor_contacts vc on vc.session_id = ts.session_id
+    where ${where}`;
+  type Row = { id: string; review: string; submitted_at: string | Date; lead_id: number | string; status: string; name: string | null; phone: string | null };
+  // execute() returns { rows } on every driver used here (neon, node-postgres, PGlite).
+  const run = async <T>(q: SQL) => ((await db().execute(q)) as unknown as { rows: T[] }).rows;
+  const [rows, [{ total }]] = await Promise.all([
+    run<Row>(sql`select ts.id, ts.review, ts.submitted_at, l.id as lead_id, l.status, vc.name, vc.phone ${from}
+      order by ts.submitted_at desc, ts.id
+      limit ${p.pageSize} offset ${(p.page - 1) * p.pageSize}`),
+    run<{ total: number }>(sql`select count(*)::int as total ${from}`),
+  ]);
+  return {
+    items: rows.map((r) => ({
+      id: r.id,
+      review: r.review,
+      submittedAt: new Date(r.submitted_at).toISOString(),
+      leadId: Number(r.lead_id),
+      status: r.status as (typeof LEAD_STATUSES)[number],
+      name: r.name,
+      phone: r.phone,
+    })),
+    total: Number(total),
+    page: p.page,
+    pageSize: p.pageSize,
+  };
+}

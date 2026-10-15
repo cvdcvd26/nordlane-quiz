@@ -2,17 +2,29 @@
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { LEAD_STATUSES, type LeadStatus } from "@/config/content";
+import { ChevronLeft, ChevronRight, Search, Trash2 } from "lucide-react";
+import { LEAD_STATUSES, QUESTION_KEYS, type LeadStatus } from "@/config/content";
 import { api } from "@/lib/api";
-import { StatusBadge } from "@/components/admin/StatusBadge";
-import { StageBadge } from "@/components/admin/StageBadge";
 import { ACTIVITY_EVENT } from "@/components/admin/ActivityNotifier";
+import { EmptyState, ErrorState, PageHeader, SkeletonRows, StageTrack, StatusSelect } from "@/components/admin/ui";
+import { toast } from "@/components/admin/toast";
 import { formatPhone, nationalDigits } from "@/lib/contact";
 import { useAdminI18n } from "@/components/admin/i18n";
 
 const displayPhone = (p: string) => formatPhone(nationalDigits(p));
 
-type Item = { id: number; status: LeadStatus; createdAt: string; lastMessageAt: string | null; messageCount: number; answer: string | null; contactName: string | null; contactPhone: string | null; stage: string };
+type Item = {
+  id: number;
+  status: LeadStatus;
+  createdAt: string;
+  lastMessageAt: string | null;
+  messageCount: number;
+  answer: string | null;
+  contactName: string | null;
+  contactPhone: string | null;
+  stage: string;
+  answered: number;
+};
 type ListResponse = { items: Item[]; total: number; page: number; pageSize: number };
 type Filters = { q: string; status: string; sort: "desc" | "asc"; page: number };
 
@@ -32,9 +44,11 @@ const toParams = (f: Filters) => {
   return params.toString();
 };
 
+const COLS = 8;
+
 export default function LeadsPage() {
   return (
-    <Suspense fallback={<div className="skeleton h-64 rounded-(--radius-tile)" aria-busy />}>
+    <Suspense fallback={<div className="adm-skeleton h-64" aria-busy />}>
       <Leads />
     </Suspense>
   );
@@ -42,8 +56,9 @@ export default function LeadsPage() {
 
 function Leads() {
   const { t, time, err: tErr } = useAdminI18n();
+  const L = t.ui.list;
   const searchParams = useSearchParams();
-  const [filters, setFiltersRaw] = useState<Filters>(() => fromParams(new URLSearchParams(searchParams.toString())));
+  const [filters, setFilters] = useState<Filters>(() => fromParams(new URLSearchParams(searchParams.toString())));
   const [query, setQuery] = useState(filters.q);
   const [data, setData] = useState<ListResponse | null>(null);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
@@ -52,11 +67,9 @@ function Leads() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [flash, setFlash] = useState<string | null>(null);
+  const [saving, setSaving] = useState<number | null>(null);
   const key = toParams(filters);
-  const loading = loadedKey !== key;
-
-  const setFilters = (fn: (f: Filters) => Filters) => setFiltersRaw((f) => fn(f));
+  const loading = loadedKey !== `${key}#${reload}`;
 
   useEffect(() => {
     window.history.replaceState(null, "", `/admin${key ? `?${key}` : ""}`);
@@ -68,7 +81,7 @@ function Leads() {
         setError(null);
       })
       .catch((e) => !cancelled && setError(tErr(e)))
-      .finally(() => !cancelled && setLoadedKey(key));
+      .finally(() => !cancelled && setLoadedKey(`${key}#${reload}`));
     return () => {
       cancelled = true;
     };
@@ -80,6 +93,13 @@ function Leads() {
     window.addEventListener(ACTIVITY_EVENT, onActivity);
     return () => window.removeEventListener(ACTIVITY_EVENT, onActivity);
   }, []);
+
+  // Debounced search.
+  useEffect(() => {
+    if (query === filters.q) return;
+    const timer = setTimeout(() => setFilters((f) => ({ ...f, q: query, page: 1 })), 350);
+    return () => clearTimeout(timer);
+  }, [query, filters.q]);
 
   const pageIds = data?.items.map((l) => l.id) ?? [];
   const allOnPage = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
@@ -97,220 +117,196 @@ function Leads() {
       return n;
     });
 
+  const changeStatus = async (id: number, status: LeadStatus) => {
+    const prev = data;
+    setSaving(id);
+    setData((d) => d && { ...d, items: d.items.map((i) => (i.id === id ? { ...i, status } : i)) });
+    try {
+      await api(`/api/admin/leads/${id}`, { method: "PATCH", json: { status } });
+      toast({ kind: "success", title: t.ui.workflow.statusChanged(id, t.ui.statuses[status]) });
+    } catch (e) {
+      setData(prev);
+      toast({ kind: "error", title: tErr(e) });
+    } finally {
+      setSaving(null);
+    }
+  };
+
   const deleteSelected = async () => {
     setDeleting(true);
     try {
       const { deleted } = await api<{ deleted: number }>("/api/admin/leads", { method: "DELETE", json: { ids: [...selected] } });
       setSelected(new Set());
       setConfirming(false);
-      setFlash(t.ui.list.deleted(deleted));
-      setTimeout(() => setFlash(null), 4000);
+      toast({ kind: "success", title: L.deleted(deleted) });
       setReload((n) => n + 1);
     } catch (e) {
-      setError(tErr(e));
+      toast({ kind: "error", title: tErr(e) });
     } finally {
       setDeleting(false);
     }
   };
 
-  // Debounced search.
-  useEffect(() => {
-    if (query === filters.q) return;
-    const t = setTimeout(() => setFiltersRaw((f) => ({ ...f, q: query, page: 1 })), 350);
-    return () => clearTimeout(t);
-  }, [query, filters.q]);
-
   const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
+  const from = data && data.total ? (data.page - 1) * data.pageSize + 1 : 0;
+  const to = data ? Math.min(data.total, data.page * data.pageSize) : 0;
 
   return (
     <div>
-      <div className="flex flex-wrap items-end gap-4">
-        <h1 className="text-2xl font-semibold">{t.ui.list.title}</h1>
-        {data && <span className="pb-1 text-sm text-slate">{t.ui.list.total(data.total)}</span>}
-      </div>
+      <PageHeader title={L.title} meta={data ? L.total(data.total) : undefined} description={L.description} />
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
-        <label className="sr-only" htmlFor="q">
-          {t.ui.list.search}
-        </label>
-        <input id="q" className="field" placeholder={t.ui.list.searchPlaceholder} value={query} onChange={(e) => setQuery(e.target.value)} />
-        <label className="sr-only" htmlFor="status">
-          {t.ui.list.status}
-        </label>
-        <select
-          id="status"
-          className="field sm:w-48"
-          value={filters.status}
-          onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value, page: 1 }))}
-        >
-          <option value="">{t.ui.list.allStatuses}</option>
-          {LEAD_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {t.ui.statuses[s]}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="btn btn-ghost text-sm"
-          onClick={() => setFilters((f) => ({ ...f, sort: f.sort === "desc" ? "asc" : "desc", page: 1 }))}
-        >
-          {filters.sort === "asc" ? t.ui.list.oldestFirst : t.ui.list.newestFirst}
-        </button>
-      </div>
-
-      {selected.size > 0 && (
-        <div className="glass pop mt-4 flex flex-wrap items-center gap-3 rounded-(--radius-field) px-4 py-3 text-sm">
-          <span className="font-semibold">{t.ui.list.selected(selected.size)}</span>
-          {confirming ? (
+      {/* Toolbar or bulk actions */}
+      <div className="adm-panel">
+        <div className="flex min-h-12 flex-wrap items-center gap-2 border-b border-adm-line px-3 py-2">
+          {selected.size > 0 ? (
             <>
-              <span className="text-ink-soft">{t.ui.list.confirmDeleteMany(selected.size)}</span>
-              <div className="ml-auto flex gap-2">
-                <button type="button" className="btn btn-ghost h-9 min-h-0 px-4 text-sm" onClick={() => setConfirming(false)} disabled={deleting}>
-                  {t.ui.list.cancel}
-                </button>
-                <button
-                  type="button"
-                  className="btn h-9 min-h-0 bg-danger px-4 text-sm text-paper hover:brightness-110"
-                  onClick={() => void deleteSelected()}
-                  disabled={deleting}
-                >
-                  {deleting ? t.ui.lead.deleting : t.ui.list.confirmYes}
-                </button>
-              </div>
+              <span className="text-[13px] font-semibold">{L.selected(selected.size)}</span>
+              {confirming ? (
+                <>
+                  <span className="text-[13px] text-adm-ink-2">{L.confirmDeleteMany(selected.size)}</span>
+                  <div className="ml-auto flex gap-2">
+                    <button type="button" className="adm-btn" onClick={() => setConfirming(false)} disabled={deleting}>
+                      {L.cancel}
+                    </button>
+                    <button type="button" className="adm-btn adm-btn-danger-solid" onClick={() => void deleteSelected()} disabled={deleting}>
+                      {deleting ? t.ui.lead.deleting : L.confirmYes}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="ml-auto flex gap-2">
+                  <button type="button" className="adm-btn adm-btn-quiet" onClick={() => setSelected(new Set())}>
+                    {L.clearSelection}
+                  </button>
+                  <button type="button" className="adm-btn adm-btn-danger" onClick={() => setConfirming(true)}>
+                    <Trash2 aria-hidden className="size-3.5" />
+                    {L.deleteSelected}
+                  </button>
+                </div>
+              )}
             </>
           ) : (
-            <div className="ml-auto flex gap-2">
-              <button type="button" className="btn btn-ghost h-9 min-h-0 px-4 text-sm" onClick={() => setSelected(new Set())}>
-                {t.ui.list.clearSelection}
+            <>
+              <div className="relative min-w-52 flex-1 sm:max-w-sm">
+                <Search aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-adm-ink-3" />
+                <label className="sr-only" htmlFor="q">
+                  {L.search}
+                </label>
+                <input id="q" type="search" className="adm-input pl-8" placeholder={L.searchPlaceholder} value={query} onChange={(e) => setQuery(e.target.value)} />
+              </div>
+              <label className="sr-only" htmlFor="status">
+                {L.status}
+              </label>
+              <select
+                id="status"
+                className="adm-input w-auto"
+                value={filters.status}
+                onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value, page: 1 }))}
+              >
+                <option value="">{L.allStatuses}</option>
+                {LEAD_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {t.ui.statuses[s]}
+                  </option>
+                ))}
+              </select>
+              <label className="sr-only" htmlFor="sort">
+                {L.sortLabel}
+              </label>
+              <select
+                id="sort"
+                className="adm-input w-auto"
+                value={filters.sort}
+                onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value as Filters["sort"], page: 1 }))}
+              >
+                <option value="desc">{L.newestFirst}</option>
+                <option value="asc">{L.oldestFirst}</option>
+              </select>
+            </>
+          )}
+        </div>
+
+        {error && (
+          <div className="p-3">
+            <ErrorState text={error} onRetry={() => setReload((n) => n + 1)} />
+          </div>
+        )}
+
+        <div className={`overflow-x-auto transition-opacity ${loading && data ? "opacity-60" : ""}`}>
+          <table className="adm-table min-w-[880px]">
+            <thead>
+              <tr>
+                <th className="w-10">
+                  <input type="checkbox" className="adm-check" aria-label={L.selectAll} checked={allOnPage} onChange={toggleAll} disabled={!pageIds.length} />
+                </th>
+                <th>{L.columns.contact}</th>
+                <th>{L.columns.stage}</th>
+                <th>{L.columns.status}</th>
+                <th>{L.columns.answer}</th>
+                <th>{L.columns.lastMessage}</th>
+                <th className="text-right">{L.columns.messages}</th>
+                <th>{L.columns.created}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {!data && !error && <SkeletonRows cols={COLS} />}
+              {data?.items.map((l) => (
+                <tr key={l.id} className={`relative ${selected.has(l.id) ? "[&>td]:bg-adm-accent-soft" : ""}`}>
+                  <td className="relative z-10 w-10">
+                    <input type="checkbox" className="adm-check" aria-label={L.selectOne(l.id)} checked={selected.has(l.id)} onChange={() => toggleOne(l.id)} />
+                  </td>
+                  <td>
+                    <Link href={`/admin/leads/${l.id}`} className="font-semibold after:absolute after:inset-0 hover:text-adm-accent">
+                      {l.contactName ?? "—"}
+                    </Link>
+                    <span className="block text-[12.5px] whitespace-nowrap text-adm-ink-3 tabular-nums">
+                      #{l.id}
+                      {l.contactPhone ? ` · ${displayPhone(l.contactPhone)}` : ""}
+                    </span>
+                  </td>
+                  <td>
+                    <StageTrack stage={l.stage} answered={l.answered} total={QUESTION_KEYS.length} />
+                  </td>
+                  <td className="relative z-10">
+                    <StatusSelect value={l.status} label={L.statusFor(l.id)} disabled={saving === l.id} onChange={(s) => void changeStatus(l.id, s)} />
+                  </td>
+                  <td className="whitespace-nowrap text-adm-ink-2">{l.answer ? l.answer.split(",").map((x) => t.ui.answers[x] ?? x).join(" · ") : "—"}</td>
+                  <td className="whitespace-nowrap text-adm-ink-2 tabular-nums">{l.lastMessageAt ? time(l.lastMessageAt) : "—"}</td>
+                  <td className="text-right text-adm-ink-2 tabular-nums">{l.messageCount}</td>
+                  <td className="whitespace-nowrap text-adm-ink-2 tabular-nums">{time(l.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {data && data.items.length === 0 && <EmptyState text={filters.q || filters.status ? L.noResults : L.empty} />}
+        </div>
+
+        {data && data.total > 0 && (
+          <nav className="flex items-center gap-3 border-t border-adm-line px-3 py-2" aria-label={L.pages}>
+            <span className="text-[13px] text-adm-ink-3 tabular-nums">{L.range(from, to, data.total)}</span>
+            <div className="ml-auto flex gap-1.5">
+              <button
+                type="button"
+                className="adm-btn adm-btn-sm"
+                disabled={data.page <= 1}
+                onClick={() => setFilters((f) => ({ ...f, page: f.page - 1 }))}
+              >
+                <ChevronLeft aria-hidden className="size-3.5" />
+                {L.prev}
               </button>
               <button
                 type="button"
-                className="btn h-9 min-h-0 border border-danger/60 px-4 text-sm text-danger hover:bg-danger-soft"
-                onClick={() => setConfirming(true)}
+                className="adm-btn adm-btn-sm"
+                disabled={data.page >= pages}
+                onClick={() => setFilters((f) => ({ ...f, page: f.page + 1 }))}
               >
-                {t.ui.list.deleteSelected}
+                {L.next}
+                <ChevronRight aria-hidden className="size-3.5" />
               </button>
             </div>
-          )}
-        </div>
-      )}
-      {flash && (
-        <p role="status" className="pop mt-4 text-sm text-cyan">
-          {flash}
-        </p>
-      )}
-
-      {error && (
-        <p role="alert" className="mt-6 rounded-(--radius-field) bg-danger-soft p-4 text-danger">
-          {error}
-        </p>
-      )}
-
-      <div className={`mt-6 overflow-x-auto rounded-(--radius-tile) glass transition-opacity ${loading ? "opacity-60" : ""}`}>
-        <table className="w-full min-w-[760px] text-left text-sm">
-          <thead className="border-b border-line text-slate">
-            <tr>
-              <th className="w-10 py-3 pl-4">
-                <input
-                  type="checkbox"
-                  className="size-4 accent-[#168bff]"
-                  aria-label={t.ui.list.selectAll}
-                  checked={allOnPage}
-                  onChange={toggleAll}
-                  disabled={!pageIds.length}
-                />
-              </th>
-              <th className="px-4 py-3 font-medium">{t.ui.list.columns.id}</th>
-              <th className="px-4 py-3 font-medium">{t.ui.list.columns.created}</th>
-              <th className="px-4 py-3 font-medium">{t.ui.list.columns.status}</th>
-              <th className="px-4 py-3 font-medium">{t.ui.list.columns.stage}</th>
-              <th className="px-4 py-3 font-medium">{t.ui.list.columns.answer}</th>
-              <th className="px-4 py-3 font-medium">{t.ui.list.columns.contact}</th>
-              <th className="px-4 py-3 font-medium">{t.ui.list.columns.lastMessage}</th>
-              <th className="px-4 py-3 text-right font-medium">{t.ui.list.columns.messages}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data?.items.map((l) => (
-              <tr key={l.id} className={`relative border-b border-line last:border-0 hover:bg-white/[0.03] ${selected.has(l.id) ? "bg-paint/[0.06]" : ""}`}>
-                <td className="relative z-10 w-10 py-3 pl-4">
-                  <input
-                    type="checkbox"
-                    className="size-4 accent-[#168bff]"
-                    aria-label={t.ui.list.selectOne(l.id)}
-                    checked={selected.has(l.id)}
-                    onChange={() => toggleOne(l.id)}
-                  />
-                </td>
-                <td className="px-4 py-3 font-semibold">
-                  <Link href={`/admin/leads/${l.id}`} className="after:absolute after:inset-0 focus-visible:outline-none">
-                    #{l.id}
-                  </Link>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap">{time(l.createdAt)}</td>
-                <td className="px-4 py-3">
-                  <StatusBadge status={l.status} />
-                </td>
-                <td className="px-4 py-3">
-                  <StageBadge stage={l.stage} />
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap">{l.answer ? l.answer.split(",").map((x) => t.ui.answers[x] ?? x).join(" · ") : "—"}</td>
-                <td className="px-4 py-3">
-                  {l.contactName ? (
-                    <>
-                      <span className="block font-medium">{l.contactName}</span>
-                      <span className="block text-xs whitespace-nowrap text-slate">{l.contactPhone ? displayPhone(l.contactPhone) : ""}</span>
-                    </>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap">{l.lastMessageAt ? time(l.lastMessageAt) : "—"}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{l.messageCount}</td>
-              </tr>
-            ))}
-            {data && data.items.length === 0 && (
-              <tr>
-                <td colSpan={9} className="px-4 py-12 text-center text-slate">
-                  {filters.q || filters.status ? t.ui.list.noResults : t.ui.list.empty}
-                </td>
-              </tr>
-            )}
-            {!data && !error && (
-              <tr>
-                <td colSpan={9} className="p-4">
-                  <div className="skeleton h-24 rounded-lg" />
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+          </nav>
+        )}
       </div>
-
-      {data && pages > 1 && (
-        <nav className="mt-6 flex items-center justify-center gap-3" aria-label={t.ui.list.pages}>
-          <button
-            type="button"
-            className="btn btn-ghost h-10 min-h-0 text-sm"
-            disabled={data.page <= 1}
-            onClick={() => setFilters((f) => ({ ...f, page: f.page - 1 }))}
-          >
-            {t.ui.list.prev}
-          </button>
-          <span className="text-sm text-slate">
-            {t.ui.list.pageOf(data.page, pages)}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost h-10 min-h-0 text-sm"
-            disabled={data.page >= pages}
-            onClick={() => setFilters((f) => ({ ...f, page: f.page + 1 }))}
-          >
-            {t.ui.list.next}
-          </button>
-        </nav>
-      )}
     </div>
   );
 }

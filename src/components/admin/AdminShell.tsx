@@ -2,11 +2,13 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { LogOut, MessageSquareText, Settings, Users } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { SoundToggle } from "../ui/SoundToggle";
 import { ActivityNotifier } from "./ActivityNotifier";
-import { LangSwitch } from "./i18n";
-import { useAdminI18n } from "@/components/admin/i18n";
+import { LangSwitch, useAdminI18n } from "./i18n";
+import { Toaster } from "./toast";
+import { BrandMark } from "./BrandMark";
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const { t } = useAdminI18n();
@@ -29,41 +31,93 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   };
 
   const nav = [
-    { href: "/admin", label: t.ui.nav.leads, active: path === "/admin" || path.startsWith("/admin/leads") },
-    { href: "/admin/settings", label: t.ui.nav.settings, active: path.startsWith("/admin/settings") },
+    { href: "/admin", label: t.ui.nav.leads, icon: Users, active: path === "/admin" || path.startsWith("/admin/leads") },
+    { href: "/admin/reviews", label: t.ui.nav.reviews, icon: MessageSquareText, active: path.startsWith("/admin/reviews") },
+    { href: "/admin/settings", label: t.ui.nav.settings, icon: Settings, active: path.startsWith("/admin/settings") },
   ];
 
+  const navLinks = (compact: boolean) =>
+    nav.map((n) => (
+      <Link
+        key={n.href}
+        href={n.href}
+        aria-current={n.active ? "page" : undefined}
+        className={`relative flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13.5px] whitespace-nowrap transition-colors ${
+          n.active ? "bg-adm-subtle font-semibold text-adm-ink" : "text-adm-ink-2 hover:bg-adm-subtle/70 hover:text-adm-ink"
+        } ${compact ? "" : "w-full"}`}
+      >
+        {n.active && !compact && <span aria-hidden className="absolute top-1.5 bottom-1.5 -left-3 w-[3px] rounded-r bg-adm-accent" />}
+        <n.icon aria-hidden className={`size-4 ${n.active ? "text-adm-accent" : ""}`} strokeWidth={1.8} />
+        {n.label}
+      </Link>
+    ));
+
+  const tools = (
+    <>
+      <LangSwitch />
+      <SoundToggle appearance="admin" scope="admin" labelOn={t.ui.notify.soundOn} labelOff={t.ui.notify.soundOff} onChange={setSoundOn} />
+    </>
+  );
+
   return (
-    <div className="min-h-dvh">
-      <header className="sticky top-0 z-30 border-b border-line bg-paper/70 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
-          <Link href="/admin" className="display text-sm font-bold">
-            {t.ui.title}
+    <div className="adm lg:grid lg:grid-cols-[232px_1fr]">
+      {/* Sidebar (desktop) */}
+      <aside className="sticky top-0 hidden h-dvh flex-col border-r border-adm-line bg-adm-surface px-3 py-4 lg:flex">
+        <Link href="/admin" className="flex items-center gap-2.5 px-2.5">
+          <BrandMark />
+          <span className="leading-tight">
+            <span className="block text-[14px] font-bold">Nordlane</span>
+            <span className="block text-[12px] text-adm-ink-3">{t.ui.title.split("·")[1]?.trim() ?? t.ui.title}</span>
+          </span>
+        </Link>
+        <nav className="mt-6 flex flex-col gap-0.5" aria-label={t.ui.nav.sections}>
+          {navLinks(false)}
+        </nav>
+        <div className="mt-auto space-y-3 border-t border-adm-line px-1 pt-4">
+          <div className="flex items-center gap-2">{tools}</div>
+          <p className="truncate text-[12.5px] text-adm-ink-3" title={email ?? ""}>
+            {email}
+          </p>
+          <button type="button" onClick={logout} className="adm-btn adm-btn-quiet -ml-2 h-7 px-2">
+            <LogOut aria-hidden className="size-4" strokeWidth={1.8} />
+            {t.ui.nav.logout}
+          </button>
+        </div>
+      </aside>
+
+      {/* Top bar (mobile / tablet) */}
+      <header className="sticky top-0 z-30 border-b border-adm-line bg-adm-surface lg:hidden">
+        <div className="flex h-12 items-center gap-2 px-4">
+          <Link href="/admin" className="flex items-center gap-2">
+            <BrandMark className="size-6" />
+            <span className="text-[14px] font-bold">Nordlane</span>
           </Link>
-          <nav className="flex gap-1" aria-label={t.ui.nav.sections}>
-            {nav.map((n) => (
-              <Link
-                key={n.href}
-                href={n.href}
-                aria-current={n.active ? "page" : undefined}
-                className={`rounded-full px-3 py-1.5 text-sm ${n.active ? "bg-paint font-semibold text-on-paint" : "text-slate hover:text-ink"}`}
-              >
-                {n.label}
-              </Link>
-            ))}
-          </nav>
-          <div className="ml-auto flex items-center gap-3 text-sm text-slate">
-            <LangSwitch />
-            <SoundToggle scope="admin" labelOn={t.ui.notify.soundOn} labelOff={t.ui.notify.soundOff} onChange={setSoundOn} />
-            <span className="hidden sm:inline">{email}</span>
-            <button type="button" onClick={logout} className="underline hover:text-ink">
-              {t.ui.nav.logout}
+          <div className="ml-auto flex items-center gap-2">
+            {tools}
+            <button type="button" onClick={logout} className="adm-btn size-8 px-0" aria-label={t.ui.nav.logout} title={t.ui.nav.logout}>
+              <LogOut aria-hidden className="size-4" strokeWidth={1.8} />
             </button>
           </div>
         </div>
+        <nav className="flex gap-1 overflow-x-auto px-3 pb-2" aria-label={t.ui.nav.sections}>
+          {navLinks(true)}
+        </nav>
       </header>
-      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">{email ? children : <div className="skeleton h-40 rounded-(--radius-tile)" aria-busy />}</div>
+
+      <main className="min-w-0 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+        <div className="mx-auto max-w-[1180px]">
+          {email ? (
+            children
+          ) : (
+            <div className="space-y-3" aria-busy aria-label={t.ui.common.loading}>
+              <div className="adm-skeleton h-6 w-48" />
+              <div className="adm-skeleton h-64 w-full" />
+            </div>
+          )}
+        </div>
+      </main>
       {email && <ActivityNotifier soundOn={soundOn} />}
+      <Toaster />
     </div>
   );
 }

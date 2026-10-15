@@ -9,12 +9,14 @@ export function SoundToggle({
   labelOff,
   onChange,
   className = "",
+  appearance = "visitor",
 }: {
   scope: "visitor" | "admin";
   labelOn: string;
   labelOff: string;
   onChange?: (on: boolean) => void;
   className?: string;
+  appearance?: "visitor" | "admin";
 }) {
   const [on, setOn] = useState(true);
   useEffect(() => {
@@ -42,7 +44,11 @@ export function SoundToggle({
       aria-pressed={on}
       aria-label={on ? labelOn : labelOff}
       title={on ? labelOn : labelOff}
-      className={`inline-flex size-9 items-center justify-center rounded-full border border-line text-ink-soft transition hover:border-line-strong hover:text-ink ${className}`}
+      className={
+        appearance === "admin"
+          ? `inline-flex size-8 items-center justify-center rounded-md border border-adm-line-strong bg-adm-surface text-adm-ink-2 transition-colors hover:bg-adm-subtle hover:text-adm-ink ${className}`
+          : `inline-flex size-9 items-center justify-center rounded-full border border-line text-ink-soft transition hover:border-line-strong hover:text-ink ${className}`
+      }
     >
       <svg viewBox="0 0 24 24" className="size-4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
         <path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z" />

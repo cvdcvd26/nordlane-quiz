@@ -14,6 +14,7 @@ export function MessageList({
   emptyText,
   text = content.chat,
   locale = content.locale,
+  appearance = "visitor",
 }: {
   messages: LocalMessage[];
   viewer: "visitor" | "admin";
@@ -22,25 +23,34 @@ export function MessageList({
   /** Labels; the admin panel passes its own language. */
   text?: ChatText;
   locale?: string;
+  appearance?: "visitor" | "admin";
 }) {
+  const adm = appearance === "admin";
   const end = useRef<HTMLDivElement>(null);
   const count = messages.length;
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end", behavior: "smooth" });
   }, [count]);
 
-  if (count === 0) return <p className="px-1 py-10 text-center text-sm text-slate">{emptyText}</p>;
+  if (count === 0) return <p className={`px-1 py-10 text-center text-sm ${adm ? "text-adm-ink-3" : "text-slate"}`}>{emptyText}</p>;
 
   return (
     <ol className="space-y-4" aria-live="polite" aria-relevant="additions">
       {messages.map((m) => {
         if (m.sender === "system") {
           return (
-            <li key={m.id} className="pop mx-auto max-w-md rounded-(--radius-field) border border-paint/40 bg-paint-soft px-4 py-3 text-sm shadow-[0_0_30px_-12px_#00d9ff]">
-              <p className="mb-1 flex items-center gap-2 text-xs font-semibold text-cyan">
-                <span aria-hidden className="chip-dot" />
+            <li
+              key={m.id}
+              className={
+                adm
+                  ? "mx-auto max-w-md rounded-lg border border-dashed border-adm-line-strong bg-adm-subtle px-3.5 py-2.5 text-[13.5px]"
+                  : "pop mx-auto max-w-md rounded-(--radius-field) border border-paint/40 bg-paint-soft px-4 py-3 text-sm shadow-[0_0_30px_-12px_#00d9ff]"
+              }
+            >
+              <p className={`mb-1 flex items-center gap-2 text-xs font-semibold ${adm ? "text-adm-ink-2" : "text-cyan"}`}>
+                {!adm && <span aria-hidden className="chip-dot" />}
                 {text.systemLabel}
-                <time className="ml-auto font-normal text-slate" dateTime={m.createdAt}>
+                <time className={`ml-auto font-normal ${adm ? "text-adm-ink-3" : "text-slate"}`} dateTime={m.createdAt}>
                   {formatTime(m.createdAt, locale)}
                 </time>
               </p>
@@ -54,8 +64,14 @@ export function MessageList({
           <li key={m.clientMessageId || m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
             <div className={`max-w-[85%] sm:max-w-[75%] ${m.local === "sending" ? "opacity-70" : ""}`}>
               <div
-                className={`rounded-2xl px-4 py-2.5 ${
-                  mine ? "rounded-br-md bg-paint font-medium text-on-paint shadow-[0_8px_24px_-12px_#00d9ff]" : "rounded-bl-md border border-line-strong bg-white/[0.04]"
+                className={`${
+                  adm
+                    ? mine
+                      ? "rounded-lg rounded-br-sm bg-adm-accent px-3.5 py-2 text-[13.5px] text-white"
+                      : "rounded-lg rounded-bl-sm border border-adm-line bg-adm-subtle px-3.5 py-2 text-[13.5px]"
+                    : mine
+                      ? "rounded-2xl rounded-br-md bg-paint px-4 py-2.5 font-medium text-on-paint shadow-[0_8px_24px_-12px_#00d9ff]"
+                      : "rounded-2xl rounded-bl-md border border-line-strong bg-white/[0.04] px-4 py-2.5"
                 } ${m.local === "failed" ? "ring-2 ring-danger" : ""}`}
               >
                 {m.body && <p className="whitespace-pre-wrap break-words leading-relaxed">{m.body}</p>}
@@ -76,10 +92,10 @@ export function MessageList({
                             target="_blank"
                             rel="noopener"
                             className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm underline-offset-2 hover:underline ${
-                              mine ? "bg-black/15" : "bg-white/5"
+                              mine ? "bg-black/15" : adm ? "bg-adm-surface" : "bg-white/5"
                             }`}
                           >
-                            <span className="rounded bg-paint px-1.5 py-0.5 text-[0.65rem] font-bold text-on-paint">PDF</span>
+                            <span className={`rounded px-1.5 py-0.5 text-[0.65rem] font-bold ${adm ? (mine ? "bg-white/20 text-white" : "bg-adm-ink text-white") : "bg-paint text-on-paint"}`}>PDF</span>
                             <span className="max-w-48 truncate">{f.name}</span>
                             <span className="opacity-70">{formatBytes(f.size)}</span>
                           </a>
@@ -89,7 +105,7 @@ export function MessageList({
                   </ul>
                 )}
               </div>
-              <p className={`mt-1 flex gap-2 text-xs text-slate ${mine ? "justify-end" : ""}`}>
+              <p className={`mt-1 flex gap-2 text-xs ${adm ? "text-adm-ink-3" : "text-slate"} ${mine ? "justify-end" : ""}`}>
                 <span>{who}</span>
                 {m.local === "sending" ? (
                   <span>{text.sending}</span>
