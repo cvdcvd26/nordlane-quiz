@@ -1,7 +1,7 @@
 "use client";
 import { content } from "@/config/content";
 import { ContactFields, type ContactDraft, type ContactErrors } from "./ContactFields";
-import { NetworkOrbit } from "../visual/NetworkOrbit";
+import { PixelHeading } from "../visual/PixelHeading";
 
 type Props = {
   contact: ContactDraft;
@@ -19,21 +19,18 @@ export function StepContact({ contact, errors, onChange, saving, error, onContin
   const q = content.quiz;
   return (
     <section aria-labelledby="contact-title">
-      <div className="grid items-center gap-10 lg:grid-cols-[1fr_18rem] xl:grid-cols-[1fr_20rem]">
+      <div>
         <div>
           <p className="chip reveal" style={delay(0)}>
             <span className="chip-dot" aria-hidden />
             {q.eyebrow}
           </p>
-          <h1 id="contact-title" className="display reveal mt-6 max-w-[15ch] text-[clamp(2.5rem,6vw,4.6rem)] font-bold" style={delay(1)}>
+          <PixelHeading id="contact-title" wrapperClassName="reveal mt-6" style={delay(1)} className="display max-w-[15ch] text-[clamp(2.75rem,7vw,5.5rem)] font-bold">
             {q.title} <span className="accent-text">{q.titleAccent}</span>
-          </h1>
+          </PixelHeading>
           <p className="measure reveal mt-5 text-lg leading-relaxed text-ink-soft" style={delay(2)}>
             {q.description}
           </p>
-        </div>
-        <div className="reveal mx-auto hidden w-full lg:block" style={delay(3)}>
-          <NetworkOrbit />
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 "use client";
 import { useRef } from "react";
 import { content } from "@/config/content";
+import { PixelHeading } from "../visual/PixelHeading";
 
 type Props = {
   answers: Record<string, string>;
@@ -52,9 +53,9 @@ export function StepQuestions({ answers, saving, error, onAnswer, onBack, onCont
         <span className="chip-dot" aria-hidden />
         {q.questionsEyebrow}
       </p>
-      <h1 id="q-title" className="display reveal mt-6 text-[clamp(2.5rem,6vw,4.6rem)] font-bold" style={delay(1)}>
+      <PixelHeading id="q-title" wrapperClassName="reveal mt-6" style={delay(1)} className="display text-[clamp(2.75rem,7vw,5.5rem)] font-bold">
         {q.questionsTitle} <span className="accent-text">{q.questionsTitleAccent}</span>
-      </h1>
+      </PixelHeading>
       <p className="measure reveal mt-5 text-lg leading-relaxed text-ink-soft" style={delay(2)}>
         {q.questionsIntro}
       </p>
@@ -70,7 +71,7 @@ export function StepQuestions({ answers, saving, error, onAnswer, onBack, onCont
         {/* Thin progress for the three answers */}
         <div className="mt-3 h-1 overflow-hidden rounded-full bg-line" aria-hidden>
           <div
-            className="h-full rounded-full bg-gradient-to-r from-paint to-cyan shadow-[0_0_12px_#00d9ff] transition-[width] duration-700 ease-(--ease-lane)"
+            className="h-full rounded-full bg-paint transition-[width] duration-700 ease-(--ease-lane)"
             style={{ width: `${(done / questions.length) * 100}%` }}
           />
         </div>
@@ -85,7 +86,7 @@ export function StepQuestions({ answers, saving, error, onAnswer, onBack, onCont
                   <span
                     aria-hidden
                     className={`display grid size-8 shrink-0 place-items-center rounded-full text-sm font-bold transition-all duration-500 ${
-                      answer ? "bg-paint text-on-paint shadow-[0_0_14px_#00d9ff80]" : "border border-line-strong text-ink-soft"
+                      answer ? "bg-paint text-on-paint" : "border border-line-strong text-ink-soft"
                     }`}
                   >
                     {answer ? "✓" : qi + 1}

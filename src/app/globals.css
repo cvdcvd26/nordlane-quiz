@@ -1,28 +1,28 @@
 @import "tailwindcss";
 
 /*
- * Nordlane — midnight navy, electric blue, cyan highlights.
+ * Nordlane — near-black with a green cast, one mint accent (after the client's reference).
  * Token names are semantic (paper = page, surface = card, ink = text, paint = primary),
  * so every component re-themes from here.
  */
 @theme {
-  --color-paper: #02091b;
-  --color-surface-2: #061329;
-  --color-surface: #0b1730;
-  --color-line: #172b46;
-  --color-line-strong: #24416a;
-  --color-ink: #eaf4ff;
-  --color-ink-soft: #91a3bc;
-  --color-slate: #586b88;
-  --color-paint: #168bff;
-  --color-paint-deep: #0f6fd6;
-  --color-paint-soft: #0099ff2e;
-  --color-on-paint: #ffffff;
-  --color-cyan: #00d9ff;
-  --color-sky: #69c7ff;
-  --color-danger: #ff6b81;
-  --color-danger-soft: #ff6b811a;
-  --color-ok: #00d9ff;
+  --color-paper: #050807;
+  --color-surface-2: #08100c;
+  --color-surface: #0c1511;
+  --color-line: #18251f;
+  --color-line-strong: #263a30;
+  --color-ink: #ecf5f0;
+  --color-ink-soft: #9aaba2;
+  --color-slate: #66776d;
+  --color-paint: #2ee6a0;
+  --color-paint-deep: #1fbf83;
+  --color-paint-soft: #2ee6a01f;
+  --color-on-paint: #03140c;
+  --color-cyan: #2ee6a0;
+  --color-sky: #9af5d0;
+  --color-danger: #ff6b6b;
+  --color-danger-soft: #ff6b6b1a;
+  --color-ok: #2ee6a0;
 
   --font-display: "Space Grotesk Variable", "Space Grotesk", system-ui, sans-serif;
   --font-sans: "Manrope Variable", "Manrope", system-ui, sans-serif;
@@ -41,10 +41,10 @@
   --color-adm-ink: #17191c;
   --color-adm-ink-2: #4c525a;
   --color-adm-ink-3: #7c828a;
-  /* Brand blue (#168bff) darkened to pass WCAG AA on white. */
-  --color-adm-accent: #0f6fd6;
-  --color-adm-accent-hover: #0b5fb8;
-  --color-adm-accent-soft: #e9f2fd;
+  /* Brand mint (#2ee6a0) darkened to pass WCAG AA on white. */
+  --color-adm-accent: #0b7a51;
+  --color-adm-accent-hover: #086543;
+  --color-adm-accent-soft: #e6f5ee;
   /* Semantic: statuses and feedback only. */
   --color-adm-blue: #0b5fb8;
   --color-adm-blue-bg: #e9f2fd;
@@ -72,7 +72,7 @@
     position: relative;
     isolation: isolate;
   }
-  /* Layered navy depth + restrained blue light behind the focal area (top right). */
+  /* Near-black depth with a soft mint light rising from the bottom, as in the reference. */
   body::before {
     content: "";
     position: fixed;
@@ -80,14 +80,13 @@
     z-index: -2;
     pointer-events: none;
     background:
-      radial-gradient(38% 32% at 82% 14%, #0099ff2e, transparent 70%),
-      radial-gradient(28% 26% at 70% 30%, #00d9ff12, transparent 70%),
-      radial-gradient(60% 50% at 10% 100%, #061329, transparent 70%),
-      linear-gradient(180deg, #02091b 0%, #030c22 60%, #02091b 100%);
+      radial-gradient(70% 45% at 50% 108%, #2ee6a02e, transparent 70%),
+      radial-gradient(45% 35% at 85% -5%, #2ee6a014, transparent 70%),
+      linear-gradient(180deg, #050807 0%, #060b09 60%, #050807 100%);
   }
   ::selection {
     background: var(--color-paint);
-    color: #fff;
+    color: var(--color-on-paint);
   }
   :focus-visible {
     outline: 2px solid var(--color-cyan);
@@ -113,17 +112,13 @@
 
   /* Highlighted words in headlines. */
   .accent-text {
-    background: linear-gradient(100deg, var(--color-cyan), var(--color-paint) 70%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    color: var(--color-paint);
   }
 
   /* Elevated navy surface. */
   .glass {
-    background: linear-gradient(180deg, #0b1730f2, #081328f2);
+    background: #0c1511eb;
     border: 1px solid var(--color-line);
-    box-shadow: inset 0 1px 0 #ffffff08;
   }
   /* Interactive card: brighter border + faint cyan glow on hover. */
   .card-hover {
@@ -134,9 +129,8 @@
       transform 0.25s var(--ease-lane);
   }
   .card-hover:hover {
-    border-color: var(--color-line-strong);
-    box-shadow: 0 0 0 1px #00d9ff1a, 0 10px 30px -14px #00d9ff40;
-    transform: translateY(-3px);
+    border-color: #2ee6a059;
+    transform: translateY(-2px);
   }
 
   /* Compact uppercase category label in a thin blue pill. */
@@ -145,7 +139,7 @@
     align-items: center;
     gap: 0.5rem;
     border: 1px solid var(--color-line-strong);
-    background: #061329b3;
+    background: #0c1511cc;
     border-radius: 999px;
     padding: 0.32rem 0.8rem;
     font-size: 0.68rem;
@@ -159,7 +153,7 @@
     height: 6px;
     border-radius: 999px;
     background: var(--color-cyan);
-    box-shadow: 0 0 8px #00d9ff;
+    box-shadow: 0 0 6px #2ee6a0aa;
   }
 
   .btn {
@@ -198,32 +192,27 @@
     filter: saturate(0.6);
   }
   .btn-primary {
-    background: linear-gradient(100deg, #00cfff, #278bff);
-    color: #fff;
-    box-shadow:
-      0 0 0 1px #4fb4ff55,
-      0 8px 26px -8px #0099ff99;
+    background: var(--color-paint);
+    color: var(--color-on-paint);
   }
   .btn-primary:hover:not(:disabled) {
-    filter: brightness(1.1);
-    box-shadow:
-      0 0 0 1px #7fd0ff88,
-      0 10px 34px -6px #0099ffcc;
+    background: #5cefb6;
+    box-shadow: 0 6px 24px -10px #2ee6a0b3;
   }
   .btn-ghost {
     color: var(--color-ink);
     border: 1px solid var(--color-line-strong);
-    background: #02091b66;
+    background: #05080766;
   }
   .btn-ghost:hover:not(:disabled) {
-    border-color: #3a6aa8;
-    background: #0099ff14;
+    border-color: #3c5a4a;
+    background: #2ee6a00d;
   }
 
   .field {
     width: 100%;
     border: 1px solid var(--color-line-strong);
-    background: #061329cc;
+    background: #08100ccc;
     border-radius: var(--radius-field);
     padding: 0.8rem 1rem;
     color: var(--color-ink);
@@ -236,13 +225,13 @@
     color: var(--color-slate);
   }
   .field:hover {
-    border-color: #2f5283;
+    border-color: #35503f;
   }
   .field:focus {
     outline: none;
     border-color: var(--color-paint);
-    background: #0b1730;
-    box-shadow: 0 0 0 4px #0099ff2e;
+    background: #0c1511;
+    box-shadow: 0 0 0 3px #2ee6a026;
   }
 
   /* Selectable tile (Tak / Nie). */
@@ -250,7 +239,7 @@
     position: relative;
     border-radius: var(--radius-tile);
     border: 1px solid var(--color-line-strong);
-    background: #061329;
+    background: #08100c;
     transition:
       border-color 0.25s,
       background-color 0.25s,
@@ -258,17 +247,26 @@
       transform 0.25s var(--ease-lane);
   }
   .tile:hover {
-    border-color: #3a6aa8;
-    background: #0a1a36;
+    border-color: #3c5a4a;
+    background: #0c1511;
     transform: translateY(-2px);
   }
   .tile[aria-checked="true"] {
-    border-color: var(--color-cyan);
-    background: linear-gradient(180deg, #00d9ff1f, #168bff12);
-    box-shadow:
-      0 0 0 1px #00d9ff,
-      0 0 26px -8px #00d9ff99;
+    border-color: var(--color-paint);
+    background: #2ee6a014;
+    box-shadow: 0 0 0 1px var(--color-paint);
   }
+}
+
+/* ---------- Pixel heading (canvas effect, see PixelHeading.tsx) ---------- */
+.pixel-heading.is-pixel,
+.pixel-heading.is-pixel * {
+  color: transparent !important;
+}
+.pixel-canvas {
+  position: absolute;
+  pointer-events: none;
+  filter: drop-shadow(0 0 18px #2ee6a033);
 }
 
 /* ---------- Admin panel ---------- */
@@ -550,7 +548,7 @@ html:has(.adm) body::before {
   }
 }
 .skeleton {
-  background: linear-gradient(90deg, #0b1730 25%, #12244a 50%, #0b1730 75%);
+  background: linear-gradient(90deg, #0c1511 25%, #15241c 50%, #0c1511 75%);
   background-size: 200% 100%;
   animation: shimmer 1.6s linear infinite;
 }

@@ -79,7 +79,7 @@ export function Composer({
       className={
         adm
           ? "rounded-lg border border-adm-line-strong bg-adm-surface p-1.5 transition-[border-color,box-shadow] focus-within:border-adm-accent focus-within:shadow-[0_0_0_3px_#0f6fd626]"
-          : "rounded-(--radius-tile) border border-line-strong bg-white/[0.03] p-2 transition-[border-color,box-shadow] focus-within:border-paint focus-within:shadow-[0_0_0_4px_#00d9ff1f]"
+          : "rounded-(--radius-tile) border border-line-strong bg-white/[0.03] p-2 transition-[border-color,box-shadow] focus-within:border-paint focus-within:shadow-[0_0_0_4px_#2ee6a01f]"
       }
     >
       {files.length > 0 && (

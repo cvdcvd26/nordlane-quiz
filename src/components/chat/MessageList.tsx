@@ -44,7 +44,7 @@ export function MessageList({
               className={
                 adm
                   ? "mx-auto max-w-md rounded-lg border border-dashed border-adm-line-strong bg-adm-subtle px-3.5 py-2.5 text-[13.5px]"
-                  : "pop mx-auto max-w-md rounded-(--radius-field) border border-paint/40 bg-paint-soft px-4 py-3 text-sm shadow-[0_0_30px_-12px_#00d9ff]"
+                  : "pop mx-auto max-w-md rounded-(--radius-field) border border-paint/40 bg-paint-soft px-4 py-3 text-sm"
               }
             >
               <p className={`mb-1 flex items-center gap-2 text-xs font-semibold ${adm ? "text-adm-ink-2" : "text-cyan"}`}>
@@ -70,7 +70,7 @@ export function MessageList({
                       ? "rounded-lg rounded-br-sm bg-adm-accent px-3.5 py-2 text-[13.5px] text-white"
                       : "rounded-lg rounded-bl-sm border border-adm-line bg-adm-subtle px-3.5 py-2 text-[13.5px]"
                     : mine
-                      ? "rounded-2xl rounded-br-md bg-paint px-4 py-2.5 font-medium text-on-paint shadow-[0_8px_24px_-12px_#00d9ff]"
+                      ? "rounded-2xl rounded-br-md bg-paint px-4 py-2.5 font-medium text-on-paint"
                       : "rounded-2xl rounded-bl-md border border-line-strong bg-white/[0.04] px-4 py-2.5"
                 } ${m.local === "failed" ? "ring-2 ring-danger" : ""}`}
               >

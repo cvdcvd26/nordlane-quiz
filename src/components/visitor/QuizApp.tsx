@@ -11,6 +11,7 @@ import { StepTask } from "./StepTask";
 import { VisitorChat } from "./VisitorChat";
 import { fromServer, type UploadItem } from "./Uploader";
 import { displayPhone, validateContact, type ContactDraft, type ContactErrors } from "./ContactFields";
+import { PixelHeading } from "../visual/PixelHeading";
 
 type SessionState = {
   answers: Record<string, string>;
@@ -206,13 +207,13 @@ export function QuizApp() {
   };
 
   return (
-    <div className="min-h-dvh">
+    <div className="min-h-dvh overflow-x-clip">
       <Backdrop />
       {/* Top bar */}
       <header className="sticky top-0 z-30 border-b border-line bg-paper/70 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-10">
           <p className="flex items-center gap-2.5">
-            <span aria-hidden className="relative grid size-8 place-items-center rounded-full bg-gradient-to-br from-cyan/25 to-paint/25 ring-1 ring-paint/50">
+            <span aria-hidden className="relative grid size-8 place-items-center rounded-full bg-paint/10 ring-1 ring-paint/40">
               <span className="size-3.5 rounded-full border-[3px] border-cyan border-r-transparent" />
             </span>
             <span className="display text-[1.05rem] font-bold">{content.brand.name}</span>
@@ -300,9 +301,9 @@ export function QuizApp() {
                 <p className="chip pop border-cyan/50 text-cyan" role="status">
                   <span aria-hidden>✓</span> {content.done.status}
                 </p>
-                <h1 id="done-title" className="display mt-5 text-[clamp(2.5rem,6vw,4.6rem)] font-bold">
+                <PixelHeading id="done-title" wrapperClassName="mt-5" className="display text-[clamp(2.75rem,7vw,5.5rem)] font-bold">
                   {content.done.title} <span className="accent-text">{content.done.titleAccent}</span>
-                </h1>
+                </PixelHeading>
                 <p className="measure mt-4 text-lg leading-relaxed text-ink-soft">{content.done.body}</p>
               </div>
               <div className="reveal" style={{ "--i": 2 } as React.CSSProperties}>

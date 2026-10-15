@@ -32,12 +32,12 @@ export function Lane({ step }: { step: Step }) {
         {/* Beam (horizontal / vertical) */}
         <span
           aria-hidden
-          className="absolute top-[12px] left-[14px] h-[3px] rounded-full bg-gradient-to-r from-paint to-cyan shadow-[0_0_14px_#00d9ff] transition-[width] duration-1000 ease-(--ease-lane) md:hidden"
+          className="absolute top-[12px] left-[14px] h-[3px] rounded-full bg-paint transition-[width] duration-1000 ease-(--ease-lane) md:hidden"
           style={{ width: `calc((100% - 28px) * ${fraction})` }}
         />
         <span
           aria-hidden
-          className="absolute top-[14px] left-[13px] hidden w-[3px] rounded-full bg-gradient-to-b from-paint to-cyan shadow-[0_0_14px_#00d9ff] transition-[height] duration-1000 ease-(--ease-lane) md:block"
+          className="absolute top-[14px] left-[13px] hidden w-[3px] rounded-full bg-paint transition-[height] duration-1000 ease-(--ease-lane) md:block"
           style={{ height: `calc((100% - 28px) * ${fraction})` }}
         />
 
@@ -49,8 +49,8 @@ export function Lane({ step }: { step: Step }) {
                 aria-hidden
                 className={[
                   "grid size-[28px] place-items-center rounded-full text-xs font-bold transition-all duration-500",
-                  state === "done" && "bg-paint text-on-paint shadow-[0_0_16px_#00d9ff99]",
-                  state === "current" && "border border-paint bg-paper text-cyan shadow-[0_0_20px_#00d9ff66]",
+                  state === "done" && "bg-paint text-on-paint",
+                  state === "current" && "border border-paint bg-paper text-cyan",
                   state === "next" && "border border-line-strong bg-paper text-slate",
                 ]
                   .filter(Boolean)

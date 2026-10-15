@@ -3,7 +3,7 @@ import { content } from "@/config/content";
 import { reviewConfig } from "@/config/settings";
 import { Uploader, type UploadItem } from "./Uploader";
 import { Reveal } from "../visual/Reveal";
-import { NetworkOrbit } from "../visual/NetworkOrbit";
+import { PixelHeading } from "../visual/PixelHeading";
 
 type Props = {
   items: UploadItem[];
@@ -25,21 +25,18 @@ export function StepTask({ items, setItems, limits, submitting, error, review, o
   return (
     <section aria-labelledby="about-title">
       {/* 1. About the company — the first thing after the questions */}
-      <div className="grid items-center gap-10 lg:grid-cols-[1fr_16rem]">
+      <div>
         <div>
           <p className="chip reveal" style={delay(0)}>
             <span className="chip-dot" aria-hidden />
             {t.about.eyebrow}
           </p>
-          <h1 id="about-title" className="display reveal mt-6 text-[clamp(2.5rem,6vw,4.6rem)] font-bold" style={delay(1)}>
+          <PixelHeading id="about-title" wrapperClassName="reveal mt-6" style={delay(1)} className="display text-[clamp(2.75rem,7vw,5.5rem)] font-bold">
             {t.about.title} <span className="accent-text">{t.about.titleAccent}</span>
-          </h1>
+          </PixelHeading>
           <p className="measure reveal mt-5 text-lg leading-relaxed text-ink-soft" style={delay(2)}>
             {t.about.body}
           </p>
-        </div>
-        <div className="reveal mx-auto hidden w-full lg:block" style={delay(3)}>
-          <NetworkOrbit />
         </div>
       </div>
 
@@ -95,7 +92,7 @@ export function StepTask({ items, setItems, limits, submitting, error, review, o
           {/* PDF */}
           <div className="card-hover self-start rounded-(--radius-tile) border border-line-strong bg-gradient-to-b from-paint/15 to-surface-2 p-5">
             <div className="flex items-start gap-3">
-              <span aria-hidden className="grid h-12 w-10 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-cyan to-paint text-[0.65rem] font-extrabold text-white shadow-[0_0_18px_#0099ff66]">
+              <span aria-hidden className="grid h-12 w-10 shrink-0 place-items-center rounded-lg bg-paint text-[0.65rem] font-extrabold text-on-paint">
                 PDF
               </span>
               <div className="min-w-0">
@@ -148,17 +145,20 @@ export function StepTask({ items, setItems, limits, submitting, error, review, o
         </div>
       </Reveal>
 
-      <Reveal className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
-        <button type="button" className="btn btn-ghost" onClick={onBack} disabled={submitting}>
-          <span aria-hidden>←</span> {t.back}
-        </button>
-        <button type="button" className="btn btn-primary sm:ml-auto sm:min-w-60" onClick={onSubmit} disabled={submitting} aria-busy={submitting}>
-          {submitting ? t.submitting : t.submit} {!submitting && <span aria-hidden className="arrow">→</span>}
-        </button>
-      </Reveal>
-      <p className="mt-3 min-h-5 text-sm text-danger sm:text-right" role="alert">
-        {error}
-      </p>
+      {/* Actions: pinned to the bottom of the screen on phones, inline on larger screens. */}
+      <div className="sticky bottom-0 z-20 -mx-4 mt-8 border-t border-line bg-paper/90 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-md sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+        <div className="flex items-center gap-3">
+          <button type="button" className="btn btn-ghost px-4 sm:px-6" onClick={onBack} disabled={submitting}>
+            <span aria-hidden>←</span> <span className="sr-only sm:not-sr-only">{t.back}</span>
+          </button>
+          <button type="button" className="btn btn-primary flex-1 sm:ml-auto sm:min-w-60 sm:flex-none" onClick={onSubmit} disabled={submitting} aria-busy={submitting}>
+            {submitting ? t.submitting : t.submit} {!submitting && <span aria-hidden className="arrow">→</span>}
+          </button>
+        </div>
+        <p className="mt-2 text-sm text-danger empty:hidden sm:mt-3 sm:min-h-5 sm:text-right sm:empty:block" role="alert">
+          {error}
+        </p>
+      </div>
     </section>
   );
 }
