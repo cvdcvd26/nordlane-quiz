@@ -39,6 +39,12 @@ Kontakt ──► Pytania (3× "Tak / Nie") ──► Step 2: task + PDF + scree
 
 **Review.** On the task step the worker also writes a review (required, 10–3000 characters; the draft survives a reload). It is saved with the submission (`task_submissions.review`, migration `0002_review.sql`), shown in its own “Opinia / Отзыв / Review” block on the lead page and included in the admin search.
 
+**Admin design.** The admin uses its own light, restrained theme (warm-gray background, white panels, 1px borders, 6–8px radii, one accent: the brand blue darkened to `#0f6fd6` for contrast; semantic colours only for statuses and feedback). Tokens are the `--color-adm-*` variables and `.adm-*` classes in `globals.css`; icons come from `lucide-react`. Layout: sidebar (Leads, Reviews, Settings), compact tables, toasts for success/error. The visitor site keeps its navy theme.
+
+**Lead workflow.** The lead page shows the four visitor screens (Kontakt → Pytania → Zadanie → Gotowe) with the current one highlighted — this updates automatically. The handling status is separate: change it from the lead page (buttons + “move to next status”) or straight from the leads table.
+
+**Reviews page.** `/admin/reviews` lists every review with the employee, date, lead status and a link to the lead (no rating — the form does not collect one).
+
 **Admin languages.** The admin panel is available in Polish, Russian and English (PL / RU / EN switch in the header and on the login page). The first visit picks the browser language; the choice is remembered per browser. Copy lives in `src/config/admin-i18n.ts` (Polish comes from `content.ts`; TypeScript checks that every language has the same keys). Server error messages are translated in the panel. The visitor site stays Polish.
 
 **Sound notifications.** A short Web Audio chime (no audio files). The visitor hears it when an admin or automatic message arrives; the admin panel polls `/api/admin/activity` every 5 s and plays a chime plus a toast for new leads and new visitor messages on any admin page, and refreshes the open list/lead. Both sides have a speaker button to mute; the choice is remembered per browser. Browsers allow sound only after the first click on the page.
