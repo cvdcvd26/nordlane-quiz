@@ -13,6 +13,17 @@ export const uploadConfig = {
   maxFilesPerMessage: 3,
 } as const;
 
+/** Public reviews (testimonials) shown on the first screen after moderation. */
+export const testimonialConfig = {
+  minLength: 10,
+  maxLength: 600,
+  maxNameLength: 40,
+  /** How many published reviews the first screen loads. */
+  publicLimit: 24,
+  /** Placeholder reviews from content.ts fill the strip until this many real ones are published. */
+  demoUntil: 4,
+} as const;
+
 /** Review written on the task step. */
 export const reviewConfig = { minLength: 10, maxLength: 3000 } as const;
 

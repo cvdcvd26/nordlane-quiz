@@ -9,6 +9,7 @@ type Activity = {
   now: string;
   leads: { id: number; name: string | null; at: string }[];
   messages: { leadId: number; name: string | null; preview: string; at: string }[];
+  reviews?: { id: string; name: string; at: string }[];
 };
 
 /** Fired after new activity so the open list / lead page reloads immediately. */
@@ -55,6 +56,13 @@ export function ActivityNotifier({ soundOn }: { soundOn: boolean }) {
           seen.current.add(key);
           count++;
           toast({ kind: "info", title: n.newMessage(m.leadId, m.name), body: m.preview, href: `/admin/leads/${m.leadId}` });
+        }
+        for (const r of res.reviews ?? []) {
+          const key = `review-${r.id}`;
+          if (seen.current.has(key)) continue;
+          seen.current.add(key);
+          count++;
+          toast({ kind: "info", title: n.newReview(r.name), href: "/admin/reviews?tab=site" });
         }
         if (!count) return;
         if (sound.current) playChime(res.leads.length ? "lead" : "message");

@@ -23,6 +23,7 @@ export const messageSender = pgEnum("message_sender", ["visitor", "admin", "syst
 export const scheduledStatus = pgEnum("scheduled_status", ["pending", "sending", "sent", "failed", "cancelled"]);
 export const fileOwner = pgEnum("file_owner", ["visitor", "admin"]);
 export const filePurpose = pgEnum("file_purpose", ["submission", "chat"]);
+export const testimonialStatus = pgEnum("testimonial_status", ["pending", "published", "rejected"]);
 
 /* ---------- Administrators ---------- */
 export const adminUsers = pgTable("admin_users", {
@@ -114,6 +115,8 @@ export const leads = pgTable(
     status: leadStatus("status").notNull().default("new"),
     messageCount: integer("message_count").notNull().default(0),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
+    /** Set when the manager asks the visitor for a public review; unlocks the review form. */
+    testimonialRequestedAt: timestamp("testimonial_requested_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -121,6 +124,27 @@ export const leads = pgTable(
     uniqueIndex("leads_session_uq").on(t.sessionId),
     index("leads_status_idx").on(t.status),
     index("leads_created_idx").on(t.createdAt),
+  ],
+);
+
+/** Public reviews: written by the visitor after the manager asks, published after moderation. */
+export const testimonials = pgTable(
+  "testimonials",
+  {
+    id: id(),
+    sessionId: uuid("session_id").notNull().references(() => visitorSessions.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    rating: integer("rating").notNull(),
+    body: text("body").notNull(),
+    status: testimonialStatus("status").notNull().default("pending"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("testimonials_session_uq").on(t.sessionId),
+    index("testimonials_status_idx").on(t.status, t.publishedAt),
+    check("testimonials_rating_ck", sql`${t.rating} between 1 and 5`),
   ],
 );
 

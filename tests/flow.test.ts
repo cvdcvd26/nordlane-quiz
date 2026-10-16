@@ -11,6 +11,14 @@ import { deliverScheduledMessage, deliverOverdue } from "@/server/services/deliv
 import { getVisitorChat, postVisitorMessage } from "@/server/services/chat";
 import { listLeads, listReviews, getLeadDetails, postAdminMessage, addLeadNote, updateLeadStatus } from "@/server/services/admin";
 import { deleteLeads, adminActivity } from "@/server/services/leads";
+import {
+  submitTestimonial,
+  requestTestimonial,
+  listPublishedTestimonials,
+  listTestimonials,
+  setTestimonialStatus,
+  getVisitorTestimonial,
+} from "@/server/services/testimonials";
 import { updateSettings, getSettings, pickDelayMs } from "@/server/settings";
 import { defaultSettings } from "@/config/settings";
 
@@ -367,5 +375,51 @@ describe("contact details", () => {
     expect((await listLeads({ q: "kowalska" })).items.map((i) => i.id)).toEqual([leadId]);
     expect((await listLeads({ q: "733 222" })).items.map((i) => i.id)).toEqual([leadId]);
     expect((await getLeadDetails(leadId!)).contact).toEqual({ name: "Zofia Kowalska", phone: "+48733222111", telegram: null });
+  });
+});
+
+describe("site reviews (testimonials)", () => {
+  const leadOf = async (sid: string) => (await env.db.select().from(schema.leads).where(eq(schema.leads.sessionId, sid)))[0].id;
+  const review = { name: "Anna K.", rating: 5, body: "Świetna współpraca, wszystko jasne." };
+
+  it("the form is locked until the manager asks; the request posts a chat message", async () => {
+    const { sid } = await submittedVisitor();
+    expect((await getVisitorTestimonial(sid)).requested).toBe(false);
+    await expect(submitTestimonial(sid, review)).rejects.toThrow(/po zakończeniu rozmowy/);
+
+    const leadId = await leadOf(sid);
+    const first = await requestTestimonial(leadId, postAdminMessage);
+    const again = await requestTestimonial(leadId, postAdminMessage);
+    expect(first.alreadyRequested).toBe(false);
+    expect(again.alreadyRequested).toBe(true);
+    const chat = await getVisitorChat(sid);
+    expect(chat.testimonial).toEqual({ requested: true, submitted: null });
+    expect(chat.messages.filter((m) => m.sender === "admin" && m.body.includes("opinię"))).toHaveLength(1);
+  });
+
+  it("validates, accepts one review per visitor and keeps it out of public until published", async () => {
+    const { sid } = await submittedVisitor();
+    const leadId = await leadOf(sid);
+    await requestTestimonial(leadId, postAdminMessage);
+    await expect(submitTestimonial(sid, { ...review, rating: 0 })).rejects.toThrow(/ocenę/);
+    await expect(submitTestimonial(sid, { ...review, body: "krótko" })).rejects.toThrow(/10 znaków/);
+
+    const t = await submitTestimonial(sid, review);
+    expect(t.status).toBe("pending");
+    await expect(submitTestimonial(sid, review)).rejects.toThrow(/już wysłana/);
+    expect((await listPublishedTestimonials()).some((x) => x.id === t.id)).toBe(false);
+
+    const queue = await listTestimonials({ status: "pending" });
+    expect(queue.items.some((x) => x.id === t.id && x.leadId === leadId)).toBe(true);
+
+    await setTestimonialStatus(t.id, { status: "published" });
+    expect((await listPublishedTestimonials()).find((x) => x.id === t.id)).toMatchObject({ name: "Anna K.", rating: 5 });
+    expect((await getLeadDetails(leadId)).siteReview?.testimonial?.status).toBe("published");
+
+    await setTestimonialStatus(t.id, { status: "rejected" });
+    expect((await listPublishedTestimonials()).some((x) => x.id === t.id)).toBe(false);
+
+    await deleteLeads([leadId]);
+    expect((await listTestimonials({})).items.some((x) => x.id === t.id)).toBe(false);
   });
 });

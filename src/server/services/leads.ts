@@ -77,7 +77,7 @@ export async function deleteLeads(ids: number[]) {
  * The admin panel polls this to play a sound and show a toast.
  */
 export async function adminActivity(since: Date) {
-  const [newLeads, newMessages] = await Promise.all([
+  const [newLeads, newMessages, newReviews] = await Promise.all([
     db()
       .select({ id: schema.leads.id, name: schema.visitorContacts.name, createdAt: schema.leads.createdAt })
       .from(schema.leads)
@@ -98,6 +98,12 @@ export async function adminActivity(since: Date) {
       .where(and(eq(schema.messages.sender, "visitor"), gt(schema.messages.createdAt, since), isNotNull(schema.conversations.leadId)))
       .orderBy(desc(schema.messages.createdAt))
       .limit(20),
+    db()
+      .select({ id: schema.testimonials.id, name: schema.testimonials.name, createdAt: schema.testimonials.createdAt })
+      .from(schema.testimonials)
+      .where(gt(schema.testimonials.createdAt, since))
+      .orderBy(desc(schema.testimonials.createdAt))
+      .limit(20),
   ]);
   return {
     leads: newLeads.map((l) => ({ id: l.id, name: l.name, at: l.createdAt.toISOString() })),
@@ -107,5 +113,6 @@ export async function adminActivity(since: Date) {
       preview: m.body.slice(0, 120),
       at: m.createdAt.toISOString(),
     })),
+    reviews: newReviews.map((r) => ({ id: r.id, name: r.name, at: r.createdAt.toISOString() })),
   };
 }

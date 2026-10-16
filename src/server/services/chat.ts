@@ -9,6 +9,7 @@ import { content } from "@/config/content";
 import { toPublicFile, type PublicFile } from "./uploads";
 import { touchConversation, refreshLeadStats } from "./conversation";
 import { ensureConversation, ensureLead } from "./leads";
+import { getVisitorTestimonial } from "./testimonials";
 import { deliverOverdue } from "./delivery";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -81,6 +82,7 @@ export async function getVisitorChat(sessionId: string, after?: Date) {
   return {
     messages: await loadMessages(conv.id, after),
     attachmentsEnabled: settings.chatAttachmentsEnabled,
+    testimonial: await getVisitorTestimonial(sessionId),
   };
 }
 

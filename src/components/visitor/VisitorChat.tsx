@@ -5,16 +5,22 @@ import { chatConfig, uploadConfig } from "@/config/settings";
 import { api, newId, type ChatMessage, type PublicFile } from "@/lib/api";
 import { MessageList, type LocalMessage } from "../chat/MessageList";
 import { Composer } from "../chat/Composer";
+import type { VisitorTestimonial } from "../testimonials/TestimonialForm";
 import { SoundToggle } from "../ui/SoundToggle";
 import { playChime } from "@/lib/sound";
 
-type ChatResponse = { messages: ChatMessage[]; attachmentsEnabled: boolean };
+type ChatResponse = { messages: ChatMessage[]; attachmentsEnabled: boolean; testimonial?: VisitorTestimonial };
 
 /**
  * Built-in chat. New messages arrive by polling every few seconds (paused while the tab is hidden).
  * Sending is idempotent: a retry after a network error reuses the same clientMessageId.
  */
-export function VisitorChat() {
+export function VisitorChat({ onTestimonial }: { onTestimonial?: (t: VisitorTestimonial) => void } = {}) {
+  // Kept in a ref so polling does not restart when the parent re-renders.
+  const testimonialCb = useRef(onTestimonial);
+  useEffect(() => {
+    testimonialCb.current = onTestimonial;
+  }, [onTestimonial]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState<LocalMessage[]>([]);
   const [attachments, setAttachments] = useState(false);
@@ -55,6 +61,7 @@ export function VisitorChat() {
       notify(res.messages);
       merge(res.messages);
       setAttachments(res.attachmentsEnabled);
+      if (res.testimonial) testimonialCb.current?.(res.testimonial);
       setOffline(false);
     } catch (err) {
       if ((err as { status?: number }).status === 0) setOffline(true);

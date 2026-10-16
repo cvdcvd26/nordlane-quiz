@@ -193,3 +193,36 @@ export function SkeletonRows({ rows = 5, cols }: { rows?: number; cols: number }
     </>
   );
 }
+
+/* ---------- Site reviews ---------- */
+
+export type TestimonialStatus = "pending" | "published" | "rejected";
+export const TESTIMONIAL_TONE: Record<TestimonialStatus, { text: string; bg: string; dot: string }> = {
+  pending: STATUS_TONE.in_progress,
+  published: STATUS_TONE.completed,
+  rejected: STATUS_TONE.rejected,
+};
+
+export function TestimonialBadge({ status }: { status: TestimonialStatus }) {
+  const { t } = useAdminI18n();
+  const tone = TESTIMONIAL_TONE[status];
+  return (
+    <span className={`adm-badge ${tone.bg} ${tone.text}`}>
+      <span aria-hidden className={`size-1.5 rounded-full ${tone.dot}`} />
+      {t.ui.testimonials.statuses[status]}
+    </span>
+  );
+}
+
+export function AdmStars({ value }: { value: number }) {
+  const { t } = useAdminI18n();
+  return (
+    <span className="inline-flex gap-0.5" role="img" aria-label={t.ui.testimonials.rating(value)}>
+      {[1, 2, 3, 4, 5].map((i) => (
+        <svg key={i} viewBox="0 0 20 20" aria-hidden className={`size-3.5 ${i <= value ? "text-[#d99a0b]" : "text-adm-line-strong"}`} fill="currentColor">
+          <path d="M10 1.8l2.47 5.01 5.53.8-4 3.9.94 5.5L10 14.43 5.06 17.01 6 11.51l-4-3.9 5.53-.8z" />
+        </svg>
+      ))}
+    </span>
+  );
+}

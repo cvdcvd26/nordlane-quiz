@@ -9,7 +9,7 @@ import { api, formatBytes, newId, type ChatMessage, type PublicFile } from "@/li
 import { MessageList } from "@/components/chat/MessageList";
 import { Composer } from "@/components/chat/Composer";
 import { ACTIVITY_EVENT } from "@/components/admin/ActivityNotifier";
-import { ErrorState, NEXT_STATUS, StageStepper, STATUS_TONE, StatusBadge } from "@/components/admin/ui";
+import { AdmStars, ErrorState, NEXT_STATUS, StageStepper, STATUS_TONE, StatusBadge, TestimonialBadge, type TestimonialStatus } from "@/components/admin/ui";
 import { toast } from "@/components/admin/toast";
 import { formatPhone, nationalDigits } from "@/lib/contact";
 import { useAdminI18n } from "@/components/admin/i18n";
@@ -27,6 +27,10 @@ type Details = {
   } | null;
   messages: ChatMessage[];
   notes: { id: string; body: string; createdAt: string }[];
+  siteReview: {
+    requestedAt: string | null;
+    testimonial: { id: string; name: string; rating: number; body: string; status: TestimonialStatus; createdAt: string } | null;
+  } | null;
 };
 
 export default function LeadPage() {
@@ -139,6 +143,34 @@ function Lead() {
     } catch (e) {
       toast({ kind: "error", title: tErr(e) });
       setDeleting(false);
+    }
+  };
+
+  const requestReview = async () => {
+    setBusy(true);
+    try {
+      await api(`/api/admin/leads/${id}/testimonial-request`, { method: "POST" });
+      toast({ kind: "success", title: t.ui.testimonials.requestedToast });
+      load();
+    } catch (e) {
+      toast({ kind: "error", title: tErr(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const moderate = async (status: TestimonialStatus) => {
+    const tm = d.siteReview?.testimonial;
+    if (!tm) return;
+    setBusy(true);
+    try {
+      await api(`/api/admin/testimonials/${tm.id}`, { method: "PATCH", json: { status } });
+      toast({ kind: "success", title: t.ui.testimonials.changed(t.ui.testimonials.statuses[status]) });
+      load();
+    } catch (e) {
+      toast({ kind: "error", title: tErr(e) });
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -321,6 +353,47 @@ function Lead() {
               <blockquote className="border-l-2 border-adm-accent pl-3 text-[13.5px] leading-relaxed whitespace-pre-wrap">{d.submission.review}</blockquote>
             ) : (
               <p className="text-[13px] text-adm-ink-3">{d.submission ? T.noReview : T.noSubmissionYet}</p>
+            )}
+          </Section>
+
+          <Section title={t.ui.testimonials.leadTitle} id="site-review-title">
+            {d.siteReview?.testimonial ? (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <AdmStars value={d.siteReview.testimonial.rating} />
+                  <TestimonialBadge status={d.siteReview.testimonial.status} />
+                </div>
+                <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap">{d.siteReview.testimonial.body}</p>
+                <p className="text-[12.5px] text-adm-ink-3">
+                  {d.siteReview.testimonial.name} · {time(d.siteReview.testimonial.createdAt)}
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {d.siteReview.testimonial.status !== "published" && (
+                    <button type="button" className="adm-btn adm-btn-primary adm-btn-sm" disabled={busy} onClick={() => void moderate("published")}>
+                      {t.ui.testimonials.publish}
+                    </button>
+                  )}
+                  {d.siteReview.testimonial.status === "published" && (
+                    <button type="button" className="adm-btn adm-btn-sm" disabled={busy} onClick={() => void moderate("pending")}>
+                      {t.ui.testimonials.unpublish}
+                    </button>
+                  )}
+                  {d.siteReview.testimonial.status === "pending" && (
+                    <button type="button" className="adm-btn adm-btn-danger adm-btn-sm" disabled={busy} onClick={() => void moderate("rejected")}>
+                      {t.ui.testimonials.reject}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : d.siteReview?.requestedAt ? (
+              <p className="text-[13px] text-adm-ink-2">{t.ui.testimonials.requested(time(d.siteReview.requestedAt))}</p>
+            ) : (
+              <>
+                <p className="adm-help">{t.ui.testimonials.notRequested}</p>
+                <button type="button" className="adm-btn mt-2.5" disabled={busy || !d.submission} onClick={() => void requestReview()}>
+                  {t.ui.testimonials.request}
+                </button>
+              </>
             )}
           </Section>
 

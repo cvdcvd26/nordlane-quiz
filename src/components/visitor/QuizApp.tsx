@@ -9,6 +9,7 @@ import { StepContact } from "./StepContact";
 import { StepQuestions } from "./StepQuestions";
 import { StepTask } from "./StepTask";
 import { VisitorChat } from "./VisitorChat";
+import { TestimonialForm, type VisitorTestimonial } from "../testimonials/TestimonialForm";
 import { fromServer, type UploadItem } from "./Uploader";
 import { displayPhone, validateContact, type ContactDraft, type ContactErrors } from "./ContactFields";
 import { PixelHeading } from "../visual/PixelHeading";
@@ -47,6 +48,7 @@ const readIdem = () => {
 
 export function QuizApp() {
   const [state, setState] = useState<SessionState | null>(null);
+  const [testimonial, setTestimonial] = useState<VisitorTestimonial | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [step, setStep] = useState<Step>(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -307,7 +309,10 @@ export function QuizApp() {
                 <p className="measure mt-4 text-lg leading-relaxed text-ink-soft">{content.done.body}</p>
               </div>
               <div className="reveal" style={{ "--i": 2 } as React.CSSProperties}>
-                <VisitorChat />
+                <VisitorChat onTestimonial={setTestimonial} />
+              </div>
+              <div className="reveal" style={{ "--i": 3 } as React.CSSProperties}>
+                <TestimonialForm state={testimonial} defaultName={state.contact?.name ?? ""} onSent={setTestimonial} />
               </div>
             </section>
           )}

@@ -2,6 +2,7 @@
 import { content } from "@/config/content";
 import { ContactFields, type ContactDraft, type ContactErrors } from "./ContactFields";
 import { PixelHeading } from "../visual/PixelHeading";
+import { TestimonialStrip } from "../testimonials/TestimonialStrip";
 
 type Props = {
   contact: ContactDraft;
@@ -34,9 +35,13 @@ export function StepContact({ contact, errors, onChange, saving, error, onContin
         </div>
       </div>
 
+      <div className="reveal mt-10" style={delay(3)}>
+        <TestimonialStrip />
+      </div>
+
       <form
         noValidate
-        className="glass reveal mt-12 rounded-(--radius-tile) p-5 sm:p-7"
+        className="glass reveal mt-10 rounded-(--radius-tile) p-5 sm:p-7"
         style={delay(4)}
         onSubmit={(e) => {
           e.preventDefault();

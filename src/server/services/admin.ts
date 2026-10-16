@@ -7,6 +7,7 @@ import { loadMessages, attachFiles, messageSchema } from "./chat";
 import { toPublicFile } from "./uploads";
 import { touchConversation } from "./conversation";
 import { ensureConversation } from "./leads";
+import { getLeadTestimonial } from "./testimonials";
 
 const listSchema = z.object({
   q: z.string().trim().max(200).optional().default(""),
@@ -165,6 +166,7 @@ export async function getLeadDetails(leadId: number) {
       : null,
     messages: conversation ? await loadMessages(conversation.id) : [],
     notes: notes.map((n) => ({ id: n.id, body: n.body, createdAt: n.createdAt.toISOString() })),
+    siteReview: await getLeadTestimonial(leadId),
   };
 }
 
