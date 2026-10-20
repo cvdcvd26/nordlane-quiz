@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import { CookieSettingsButton } from "@/components/privacy/CookieSettingsButton";
+import { LogoMark } from "@/components/ui/LogoMark";
 
 export const metadata: Metadata = {
   title: "Polityka plików cookie — AlleyBiz",
@@ -24,8 +24,8 @@ export default function CookiePolicyPage() {
       <header className="border-b border-line bg-paper/70">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2.5" aria-label="AlleyBiz — strona główna">
-            <span className="grid size-10 place-items-center rounded-xl border border-paint/30 bg-surface"><Image src="/alleybiz-mark.svg" alt="" width={32} height={32} unoptimized /></span>
-            <span className="display text-lg font-bold">AlleyBiz</span>
+            <LogoMark className="grid size-10 shrink-0 place-items-center rounded-xl border border-paint/30 bg-surface" />
+            <span className="display relative z-10 text-lg font-bold">AlleyBiz</span>
           </Link>
           <Link href="/" className="text-sm text-ink-soft underline underline-offset-4 hover:text-paint">Wróć do zgłoszenia</Link>
         </div>

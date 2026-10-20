@@ -1,5 +1,5 @@
 "use client";
-import Image from "next/image";
+import { LogoMark } from "@/components/ui/LogoMark";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { content, QUESTION_KEYS } from "@/config/content";
 import { reviewConfig } from "@/config/settings";
@@ -257,10 +257,8 @@ export function QuizApp() {
       <header className="sticky top-0 z-30 border-b border-line bg-paper/70 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-10">
           <p className="flex items-center gap-2.5">
-            <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-xl border border-paint/30 bg-gradient-to-br from-[#133a2b] to-surface-2 shadow-[0_0_20px_#2ee6a014]">
-              <Image src="/alleybiz-mark.svg" alt="" width={32} height={32} unoptimized />
-            </span>
-            <span className="display text-[1.05rem] font-bold">{content.brand.name}</span>
+            <LogoMark className="grid size-10 shrink-0 place-items-center rounded-xl border border-paint/30 bg-gradient-to-br from-[#133a2b] to-surface-2 shadow-[0_0_20px_#2ee6a014]" />
+            <span className="display relative z-10 text-[1.05rem] font-bold">{content.brand.name}</span>
           </p>
         </div>
         {/* Mobile progress */}
