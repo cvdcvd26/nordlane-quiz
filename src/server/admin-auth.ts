@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
-import { badRequest, unauthorized } from "./errors";
+import { AppError, badRequest, unauthorized } from "./errors";
 import { rateLimit, resetRateLimit } from "./rate-limit";
 import { log } from "./log";
 import { content } from "@/config/content";
@@ -99,7 +99,7 @@ export async function getAdmin() {
     if (!payload.sub) return null;
     const [admin] = await db().select().from(schema.adminUsers).where(eq(schema.adminUsers.id, payload.sub)).limit(1);
     if (!admin || admin.tokenVersion !== payload.v) return null;
-    return { id: admin.id, email: admin.email };
+    return { id: admin.id, email: admin.email, isTemporary: admin.isTemporary };
   } catch {
     return null;
   }
@@ -108,6 +108,13 @@ export async function getAdmin() {
 export async function requireAdmin() {
   const admin = await getAdmin();
   if (!admin) throw unauthorized();
+  return admin;
+}
+
+/** Temporary test accounts may use the admin panel but cannot manage access. */
+export async function requirePermanentAdmin() {
+  const admin = await requireAdmin();
+  if (admin.isTemporary) throw new AppError(403, "test_access_forbidden", "Only the main administrator can manage test access.");
   return admin;
 }
 

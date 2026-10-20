@@ -11,9 +11,9 @@ const RADIUS = 55; // cursor influence, px
 
 /**
  * Heading drawn as a grid of small squares on a canvas (after the DeLorean marketplace hero):
- * pixels assemble briefly on load, react to pointer movement and settle back to crisp DOM text.
+ * pixels assemble briefly on load, react to pointer movement and settle back to a crisp grid.
  * A stationary pointer never keeps the heading distorted.
- * Falls back to plain text with reduced motion or without canvas.
+ * Reduced motion keeps the grid static; without canvas, the native heading remains visible.
  */
 export function PixelHeading({
   as: Tag = "h1",
@@ -38,9 +38,10 @@ export function PixelHeading({
     const heading = headingRef.current;
     const canvas = canvasRef.current;
     if (!heading || !canvas) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let reducedMotion = motionPreference.matches;
 
     let particles: Particle[] = [];
     let cell = 3;
@@ -51,7 +52,7 @@ export function PixelHeading({
     let lastPointerMove = 0;
     let pointer: { x: number; y: number } | null = null;
     let disposed = false;
-    let introDone = false;
+    let introDone = reducedMotion;
 
     const accent = getComputedStyle(document.documentElement).getPropertyValue("--color-paint").trim() || "#2ee6a0";
 
@@ -146,7 +147,11 @@ export function PixelHeading({
         let tx = 0;
         let ty = 0;
         let ta = 1;
-        if (!introDone) {
+        if (reducedMotion) {
+          p.ox = 0;
+          p.oy = 0;
+          p.a = 1;
+        } else if (!introDone) {
           const k = Math.min(1, Math.max(0, (t - p.delay) / (INTRO_MS - INTRO_STAGGER_MS)));
           const e = 1 - Math.pow(1 - k, 3);
           p.ox = p.sx * (1 - e);
@@ -170,6 +175,11 @@ export function PixelHeading({
           p.oy += (ty - p.oy) * ease;
           p.a += (ta - p.a) * returning;
           if (Math.abs(p.ox) > 0.2 || Math.abs(p.oy) > 0.2 || Math.abs(1 - p.a) > 0.02) moving = true;
+          else if (!pointer) {
+            p.ox = 0;
+            p.oy = 0;
+            p.a = 1;
+          }
         }
         if (p.a <= 0.01) continue;
         if (fill !== p.c) {
@@ -184,9 +194,7 @@ export function PixelHeading({
       if (moving || pointer || !introDone) raf = requestAnimationFrame(draw);
       else {
         raf = 0;
-        // Restore the native glyphs at rest, especially for smaller, multiline headings.
-        heading.classList.remove("is-pixel");
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Leave the settled pixel grid visible without running an idle animation loop.
       }
     };
 
@@ -198,14 +206,13 @@ export function PixelHeading({
     };
 
     const onMove = (e: PointerEvent) => {
-      if (e.pointerType === "touch") return;
+      if (reducedMotion || e.pointerType === "touch") return;
       const box = heading.getBoundingClientRect();
       const inside = e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom;
       if (inside) {
         const r = canvas.getBoundingClientRect();
         pointer = { x: e.clientX - r.left, y: e.clientY - r.top };
         lastPointerMove = performance.now();
-        heading.classList.add("is-pixel");
         kick();
       } else if (pointer) {
         pointer = null;
@@ -213,6 +220,12 @@ export function PixelHeading({
       }
     };
     const onLeave = () => {
+      pointer = null;
+      kick();
+    };
+    const onMotionChange = (e: MediaQueryListEvent) => {
+      reducedMotion = e.matches;
+      introDone = true;
       pointer = null;
       kick();
     };
@@ -239,6 +252,7 @@ export function PixelHeading({
     ro.observe(heading);
     window.addEventListener("pointermove", onMove, { passive: true });
     document.addEventListener("pointerleave", onLeave);
+    motionPreference.addEventListener("change", onMotionChange);
 
     return () => {
       disposed = true;
@@ -246,6 +260,7 @@ export function PixelHeading({
       ro.disconnect();
       window.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerleave", onLeave);
+      motionPreference.removeEventListener("change", onMotionChange);
       heading.classList.remove("is-pixel");
     };
   }, []);

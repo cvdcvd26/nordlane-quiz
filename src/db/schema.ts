@@ -8,6 +8,7 @@ import {
   bigserial,
   timestamp,
   jsonb,
+  boolean,
   primaryKey,
   uniqueIndex,
   index,
@@ -31,6 +32,7 @@ export const adminUsers = pgTable("admin_users", {
   id: id(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
+  isTemporary: boolean("is_temporary").notNull().default(false),
   // Increased on password change: invalidates every existing admin session.
   tokenVersion: integer("token_version").notNull().default(1),
   createdAt: createdAt(),

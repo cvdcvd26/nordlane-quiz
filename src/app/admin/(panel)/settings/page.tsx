@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { useAdminI18n } from "@/components/admin/i18n";
 import { ErrorState, PageHeader } from "@/components/admin/ui";
 import { toast } from "@/components/admin/toast";
+import TestAccessManager from "@/components/admin/TestAccessManager";
 
 function Row({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -139,6 +140,8 @@ export default function SettingsPage() {
           </div>
         </form>
       )}
+
+      <TestAccessManager />
 
       <form onSubmit={changePw} className="adm-panel mt-4" noValidate>
         <Row title={S.password.title}>
