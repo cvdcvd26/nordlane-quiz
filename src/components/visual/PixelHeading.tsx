@@ -11,7 +11,7 @@ const RADIUS = 55; // cursor influence, px
 
 /**
  * Heading drawn as a grid of small squares on a canvas (after the DeLorean marketplace hero):
- * pixels assemble briefly on load, react to pointer movement and settle back to a crisp grid.
+ * pixels assemble briefly on load, react to pointer movement or touch and settle back to a crisp grid.
  * A stationary pointer never keeps the heading distorted.
  * Reduced motion keeps the grid static; without canvas, the native heading remains visible.
  */
@@ -51,6 +51,7 @@ export function PixelHeading({
     let lastFrame = 0;
     let lastPointerMove = 0;
     let pointer: { x: number; y: number } | null = null;
+    let activeTouchId: number | null = null;
     let disposed = false;
     let introDone = reducedMotion;
 
@@ -206,7 +207,7 @@ export function PixelHeading({
     };
 
     const onMove = (e: PointerEvent) => {
-      if (reducedMotion || e.pointerType === "touch") return;
+      if (reducedMotion || (e.pointerType === "touch" && e.pointerId !== activeTouchId)) return;
       const box = heading.getBoundingClientRect();
       const inside = e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom;
       if (inside) {
@@ -219,13 +220,36 @@ export function PixelHeading({
         kick();
       }
     };
+    const onDown = (e: PointerEvent) => {
+      if (reducedMotion || e.pointerType !== "touch" || !e.isPrimary) return;
+      const box = heading.getBoundingClientRect();
+      if (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom) return;
+      activeTouchId = e.pointerId;
+      onMove(e);
+    };
+    const onUp = (e: PointerEvent) => {
+      if (e.pointerType !== "touch" || e.pointerId !== activeTouchId) return;
+      activeTouchId = null;
+      // Keep a brief pulse after a tap, even if the finger lifts before the next frame.
+      lastPointerMove = performance.now();
+      kick();
+    };
     const onLeave = () => {
+      activeTouchId = null;
       pointer = null;
       kick();
+    };
+    const onCancel = (e: PointerEvent) => {
+      if (e.pointerType === "touch" && e.pointerId === activeTouchId) onLeave();
+    };
+    const onDocumentLeave = (e: PointerEvent) => {
+      // Touch browsers also emit pointerleave on lift; let the short tap pulse finish.
+      if (e.pointerType !== "touch") onLeave();
     };
     const onMotionChange = (e: MediaQueryListEvent) => {
       reducedMotion = e.matches;
       introDone = true;
+      activeTouchId = null;
       pointer = null;
       kick();
     };
@@ -250,16 +274,24 @@ export function PixelHeading({
       if (build()) kick();
     });
     ro.observe(heading);
+    window.addEventListener("pointerdown", onDown, { passive: true });
     window.addEventListener("pointermove", onMove, { passive: true });
-    document.addEventListener("pointerleave", onLeave);
+    window.addEventListener("pointerup", onUp, { passive: true });
+    window.addEventListener("pointercancel", onCancel, { passive: true });
+    window.addEventListener("blur", onLeave);
+    document.addEventListener("pointerleave", onDocumentLeave);
     motionPreference.addEventListener("change", onMotionChange);
 
     return () => {
       disposed = true;
       cancelAnimationFrame(raf);
       ro.disconnect();
+      window.removeEventListener("pointerdown", onDown);
       window.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerleave", onLeave);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("blur", onLeave);
+      document.removeEventListener("pointerleave", onDocumentLeave);
       motionPreference.removeEventListener("change", onMotionChange);
       heading.classList.remove("is-pixel");
     };
