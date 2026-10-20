@@ -19,7 +19,13 @@ export const isValidPhone = (digits: string) => /^[1-9]\d{8}$/.test(digits);
 
 /** Stored format (E.164): +48XXXXXXXXX, or null if invalid. */
 export const normalizePhone = (raw: string) => {
-  const d = nationalDigits(raw);
+  if (!/^\s*\+?[\d\s().-]+\s*$/.test(raw)) return null;
+  let d = raw.replace(/\D/g, "");
+  if (/^\s*\+/.test(raw)) {
+    if (!d.startsWith("48") || d.length !== 11) return null;
+    d = d.slice(2);
+  } else if (d.startsWith("0048")) d = d.slice(4);
+  else if (d.startsWith("48") && d.length === 11) d = d.slice(2);
   return isValidPhone(d) ? `+48${d}` : null;
 };
 

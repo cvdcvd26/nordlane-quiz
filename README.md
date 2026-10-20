@@ -1,8 +1,10 @@
-# Nordlane Studio — quiz, task and chat
+# AlleyBiz Quiz — quiz, task and chat
 
-> **Portfolio demo.** The brand is fictional; all copy is placeholder. UI language: Polish.
+> AlleyBiz Quiz landing and recruitment task. UI language: Polish.
 
 A four-step flow: contact details (name, Polish phone number with a +48 mask, optional Telegram), then three yes/no questions, then the company info and a task (PDF brief + screenshot upload), a delayed automatic message, a built-in chat and an admin panel with leads, deletion and sound notifications.
+
+**Runtime:** Node.js 22.12 or newer (24 LTS recommended).
 
 **Stack:** Next.js 16 (App Router, TypeScript) · Tailwind CSS 4 · PostgreSQL (Neon) + Drizzle ORM · Vercel Blob (private store) · Upstash QStash (delayed jobs) · Vercel.
 
@@ -16,7 +18,7 @@ Kontakt ──► Pytania (3× "Tak / Nie") ──► Step 2: task + PDF + scree
               POST /api/submit (one transaction):
               submission, files, conversation, scheduled_messages row
                                      │
-              QStash: deliver after a random 20–30 min
+              QStash: deliver after a random 30–60 sec
                                      ▼
               POST /api/jobs/deliver ──► system message in the chat
                                      │
@@ -76,10 +78,10 @@ src/
 drizzle/                 SQL migrations
 scripts/                 migrate, create-admin
 tests/                   critical-path tests (real Postgres via PGlite)
-public/task-brief.pdf    task PDF (placeholder)
+public/Rejestracja_Ryanair_Instrukcja.pdf    supplied task instructions
 ```
 
-Tables: `admin_users`, `visitor_sessions`, `visitor_contacts`, `quiz_answers`, `task_submissions`, `files`, `leads`, `conversations`, `messages`, `scheduled_messages`, `lead_notes`, `app_settings`, `rate_limits`.
+Tables: `admin_users`, `visitor_sessions`, `visitor_contacts`, `quiz_answers`, `task_submissions`, `files`, `leads`, `conversations`, `messages`, `scheduled_messages`, `lead_notes`, `testimonials`, `managers`, `app_settings`, `rate_limits`.
 
 ---
 
@@ -114,6 +116,8 @@ npm run admin:create -- admin@example.com 'long-password'
 npm run dev                     # http://localhost:3000, admin at /admin
 ```
 
+CLI scripts load `.env.local` / `.env` automatically.
+
 Local PostgreSQL, e.g. with Docker:
 
 ```bash
@@ -121,7 +125,7 @@ docker run -d --name nordlane-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 post
 # DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
 ```
 
-- A `localhost` URL uses the regular `pg` driver; anything else uses the Neon driver.
+- `*.neon.tech` uses Neon over WebSocket. Other PostgreSQL hosts (including Render, VPS, localhost and IPv6) use `pg` over TCP. `DATABASE_DRIVER=postgres|neon` overrides detection.
 - Without `BLOB_READ_WRITE_TOKEN` in development, files are stored in `./.data` (local only; on Vercel the token is required).
 - Without `QSTASH_TOKEN` in development, the automatic message is delivered by the backup path while the visitor has the chat open. To test real QStash locally, run `npx @upstash/qstash-cli dev`, use its `QSTASH_URL` / `QSTASH_TOKEN` / signing keys and set `APP_URL=http://localhost:3000`.
 
@@ -131,13 +135,49 @@ docker run -d --name nordlane-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 post
 npm run typecheck && npm run lint && npm test && npm run build
 ```
 
-`npm test` runs the critical scenarios against a real Postgres (PGlite): contact validation and normalisation (E.164 phone, `@telegram`), saving all three answers, accepting and rejecting files, idempotent submission, the 20–30 minute delay, no duplicates on repeated delivery, a single lead per visitor, admin replies, hidden internal notes and no access to other visitors' data.
+`npm test` runs the critical scenarios against PostgreSQL-compatible PGlite: contact validation and normalisation (E.164 phone, `@telegram`), saving all three answers, accepting and rejecting files, idempotent submission, the 30–60 second delay, no duplicates on repeated delivery, a single lead per visitor, admin replies, hidden internal notes and no access to other visitors' data.
 
 ---
 
 ## Changing the copy
 
 - All texts, the three questions, answer options, contact form labels, instructions, errors and statuses: `src/config/content.ts`.
-- PDF: replace `public/task-brief.pdf` or point `content.task.pdf.url` elsewhere.
+- PDF: replace `public/Rejestracja_Ryanair_Instrukcja.pdf` or point `content.task.pdf.url` elsewhere.
 - Automatic message text, delay, on/off and chat attachments: `/admin/settings` (stored in the database).
 - Upload limits: `src/config/settings.ts` or `NEXT_PUBLIC_MAX_FILE_MB`, `NEXT_PUBLIC_MAX_FILES`. Max file size is 4 MB because Vercel functions accept request bodies up to 4.5 MB.
+
+
+## Reliability fixes and hosting
+
+See `HOSTING-RU.txt` for deployment instructions in Russian and `FIXES-RU.txt` for the change and verification report.
+
+- Chat messages have a database sequence assigned while holding the visitor row lock. Polling advances only from received pages, never from a send response. Both interfaces show the latest 100 messages and provide a button to load older pages.
+- Migration `0004_message_sequence.sql` is required before starting this version. It preserves existing messages and assigns historical sequence values in chronological order. Apply migrations with a backup and deploy schema before the new application. Older application instances should be stopped during this update because the old sender code does not take the new visitor lock.
+- Automatic message claim, insertion and completion are atomic. The backup sweep also recovers expired `sending` locks left by older code.
+- Review invitations unlock the form and insert the chat message in the same transaction.
+- Upload limits, submission attachment and draft deletion share the visitor lock; concurrent requests cannot attach a file after it was deleted or exceed the upload count. Removed chat attachments are deleted from storage.
+- On Vercel, use private Blob storage. On a standalone Node server, set `UPLOAD_DIR` to an absolute directory on a persistent volume, or use Blob. A production server without either configuration refuses local uploads rather than silently using ephemeral storage.
+- On non-Vercel hosts, configure `APP_URL` and an external authenticated schedule for `/api/jobs/sweep`. `vercel.json` is only executed by Vercel. The bundled daily cron is a fallback; QStash handles the configured 30–60 second delivery.
+- Preview callbacks use their own deployment URL unless `APP_URL` explicitly overrides it. Use a separate preview database and reachable callback URL; do not connect previews to the production database.
+
+`npm run typecheck` generates route types before invoking TypeScript. `npm test` includes regression tests for pagination, duplicate timestamps, parallel uploads, stale delivery locks, transactional review invitations, authorization, password session invalidation, request limits and upgrade migrations.
+
+## Public reviews
+
+Manage reviews in Admin -> Reviews -> Site reviews: add a name, optional city and age, 1-5 stars and review text. Save as a draft or publish; existing reviews can be edited, hidden or deleted. Only published reviews appear on the landing page. The final visitor screen contains the submission confirmation and chat, without a review form or invitation. Legacy visitor review records remain available to administrators.
+
+## HR assignment
+
+The managers table stores Aneta, Maja, Hanna and Agnieszka with the supplied portraits. New leads receive one random manager in the database on their first insertion. That identity is reused for system replies and all admin replies shown to the visitor, including after a reload. Existing leads retain Aneta through migration0006. The assigned manager is visible in the admin lead list and details.
+
+## Candidate result and chat hours
+
+The internal `rejected` status is labelled “Не подходит” / “Nie zakwalifikowano” / “Not suitable”. It does not notify the visitor by itself. For a submitted task, the lead page provides an editable Polish result, the visitor card preview, and explicit publish/retract actions. Publication replaces the final waiting card with the result and closes the candidate chat. Direct candidate message and chat attachment requests receive HTTP403 `candidate_chat_closed`; history and files stay available to the admin. Updates arrive through existing polling and restore through the visitor session on reload. Polling continues while the chat is hidden, so retracting the result or changing the status away from `rejected` reopens the chat without a reload.
+
+The published rejection keeps the usual dark background and green AlleyBiz logo, with a soft burgundy bottom glow. Completed steps use neutral gray; Gotowe with its cross and the result card use a subdued red accent. The card includes a quiet sad icon and no invitation to chat. The burgundy bottom glow applies only while a published rejection is visible; retracting it restores the green glow. Other screens keep the green theme. The admin sidebar, mobile header, login and tab title use the green mark and exact label `AlleyBiz /adminka`.
+
+Lead status colours are shared across the admin table, active filter, detail badge and status buttons: new = blue, in progress = orange, awaiting reply = violet, completed = green, not suitable = red. Status labels remain visible and native select keyboard behaviour is preserved.
+
+Apply migration `0007_candidate_outcome.sql` before starting this version. Existing rejected leads remain unpublished. Publication cancels unsent automatic greetings while holding the same visitor lock as delivery. Retraction does not restart cancelled jobs. Already sent messages remain in history.
+
+Visitor and admin timestamps use `Europe/Warsaw`, including daylight saving changes. The visitor chat states that replies are provided from 10:00 to 18:00 Polish time. This is an informational label, not a restriction on sending messages or automatic replies. Visitor recovery still uses the existing browser cookie; email login has not been added.

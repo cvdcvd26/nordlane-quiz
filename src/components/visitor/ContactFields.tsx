@@ -1,6 +1,6 @@
 "use client";
 import { content } from "@/config/content";
-import { maskPhoneInput, nationalDigits, formatPhone, isValidPhone, normalizeTelegram } from "@/lib/contact";
+import { maskPhoneInput, nationalDigits, formatPhone, normalizePhone, normalizeTelegram } from "@/lib/contact";
 
 export type ContactDraft = { name: string; phone: string; telegram: string };
 export type ContactErrors = Partial<Record<keyof ContactDraft, string>>;
@@ -11,9 +11,10 @@ const e = content.errors;
 export function validateContact(c: ContactDraft): ContactErrors {
   const errors: ContactErrors = {};
   if (!c.name.trim()) errors.name = e.nameRequired;
+  else if (c.name.trim().length > 100) errors.name = e.nameTooLong;
   const digits = nationalDigits(c.phone);
   if (!digits) errors.phone = e.phoneRequired;
-  else if (!isValidPhone(digits)) errors.phone = e.phoneInvalid;
+  else if (!normalizePhone(c.phone)) errors.phone = e.phoneInvalid;
   if (normalizeTelegram(c.telegram) === false) errors.telegram = e.telegramInvalid;
   return errors;
 }
@@ -102,7 +103,7 @@ export function ContactFields({ value, errors, onChange }: Props) {
             const text = ev.clipboardData.getData("text");
             if (!text) return;
             ev.preventDefault();
-            onChange({ ...value, phone: formatPhone(nationalDigits(text)) }, "phone");
+            onChange({ ...value, phone: normalizePhone(text) ? formatPhone(nationalDigits(text)) : text }, "phone");
           }}
           {...aria("phone")}
         />,

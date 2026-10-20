@@ -27,22 +27,29 @@ const vercelBlobStorage: FileStorage = {
  * Local development only: without BLOB_READ_WRITE_TOKEN, files go to ./.data (gitignored).
  * Never used on Vercel — there the Blob token is required.
  */
+function localPath(key: string) {
+  if (process.env.NODE_ENV === "production" && !process.env.UPLOAD_DIR)
+    throw new Error("Set UPLOAD_DIR to a persistent directory or configure BLOB_READ_WRITE_TOKEN in production");
+  // Runtime uploads are external data, never deployment assets.
+  return path.join(/*turbopackIgnore: true*/ process.env.UPLOAD_DIR || path.join(process.cwd(), ".data"), key);
+}
+
 const localDiskStorage: FileStorage = {
   async put(key, data) {
-    const file = path.join(process.cwd(), ".data", key);
+    const file = localPath(key);
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, data);
   },
   async get(key) {
     try {
-      const data = await readFile(path.join(process.cwd(), ".data", key));
+      const data = await readFile(/*turbopackIgnore: true*/ localPath(key));
       return { stream: new Blob([new Uint8Array(data)]).stream(), size: data.length };
     } catch {
       return null;
     }
   },
   async delete(key) {
-    await rm(path.join(process.cwd(), ".data", key), { force: true });
+    await rm(localPath(key), { force: true });
   },
 };
 

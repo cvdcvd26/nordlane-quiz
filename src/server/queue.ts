@@ -8,9 +8,18 @@ export interface JobQueue {
 
 export function appUrl() {
   const explicit = process.env.APP_URL;
-  if (explicit) return explicit.replace(/\/$/, "");
+  if (explicit) {
+    const url = new URL(explicit);
+    if (!["http:", "https:"].includes(url.protocol) || url.pathname !== "/" || url.search || url.hash)
+      throw new Error("APP_URL must be an HTTP(S) origin without a path, query or fragment");
+    return url.origin;
+  }
+  // Preview callbacks must reach the deployment that created the job.
+  const preview = process.env.VERCEL_ENV === "preview" ? process.env.VERCEL_URL : undefined;
+  if (preview) return `https://${preview}`;
   const prod = process.env.VERCEL_PROJECT_PRODUCTION_URL;
   if (prod) return `https://${prod}`;
+  if (process.env.NODE_ENV === "production") throw new Error("APP_URL must be configured for QStash outside Vercel");
   return "http://localhost:3000";
 }
 
@@ -23,7 +32,7 @@ const qstashQueue: JobQueue = {
       if (!process.env.VERCEL) return null; // local dev: the backup sweep / chat poll delivers when due
       throw new Error("QSTASH_TOKEN is not set");
     }
-    const client = new Client({ token, baseUrl: process.env.QSTASH_URL });
+    const client = new Client({ token, baseUrl: process.env.QSTASH_URL || undefined });
     const res = await client.publishJSON({
       url: `${appUrl()}${DELIVERY_PATH}`,
       body: { scheduledMessageId: id },

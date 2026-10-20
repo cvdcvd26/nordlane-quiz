@@ -1,4 +1,5 @@
 "use client";
+import { LockKeyhole } from "lucide-react";
 import { content } from "@/config/content";
 import { ContactFields, type ContactDraft, type ContactErrors } from "./ContactFields";
 import { PixelHeading } from "../visual/PixelHeading";
@@ -26,18 +27,18 @@ export function StepContact({ contact, errors, onChange, saving, error, onContin
             <span className="chip-dot" aria-hidden />
             {q.eyebrow}
           </p>
-          <PixelHeading id="contact-title" wrapperClassName="reveal mt-6" style={delay(1)} className="display max-w-[15ch] text-[clamp(2.75rem,7vw,5.5rem)] font-bold">
+          <PixelHeading id="contact-title" wrapperClassName="reveal mt-6" style={delay(1)} className="display max-w-[19ch] text-[clamp(2.5rem,6.5vw,5rem)] font-bold">
             {q.title} <span className="accent-text">{q.titleAccent}</span>
           </PixelHeading>
-          <p className="measure reveal mt-5 text-lg leading-relaxed text-ink-soft" style={delay(2)}>
-            {q.description}
-          </p>
+          <div className="measure reveal mt-6 space-y-4 text-lg leading-relaxed text-ink-soft" style={delay(2)}>
+            <p className="text-xl text-ink">{q.recruitment.lead} <strong className="text-cyan">{q.recruitment.highlight}</strong> {q.recruitment.ending}</p>
+            <p>{q.description}</p>
+            <p><span aria-hidden>✅ </span><strong className="text-ink">{q.invitation.title}</strong> {q.invitation.body}</p>
+          </div>
         </div>
       </div>
 
-      <div className="reveal mt-10" style={delay(3)}>
-        <TestimonialStrip />
-      </div>
+      <TestimonialStrip className="reveal mt-10" />
 
       <form
         noValidate
@@ -49,7 +50,11 @@ export function StepContact({ contact, errors, onChange, saving, error, onContin
         }}
       >
         <ContactFields value={contact} errors={errors} onChange={onChange} />
-        <div className="mt-4 flex flex-wrap items-center gap-4">
+        <p className="mt-5 flex max-w-[65ch] items-start gap-2.5 text-sm leading-relaxed text-ink-soft">
+          <LockKeyhole className="mt-0.5 size-4 shrink-0 text-cyan" aria-hidden />
+          <span>{q.contact.privacy}</span>
+        </p>
+        <div className="mt-5 flex flex-wrap items-center gap-4">
           <button type="submit" className="btn btn-primary min-w-40" disabled={saving} aria-busy={saving}>
             {q.continue} <span aria-hidden className="arrow">→</span>
           </button>

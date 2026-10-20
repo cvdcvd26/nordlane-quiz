@@ -65,10 +65,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       <aside className="sticky top-0 hidden h-dvh flex-col border-r border-adm-line bg-adm-surface px-3 py-4 lg:flex">
         <Link href="/admin" className="flex items-center gap-2.5 px-2.5">
           <BrandMark />
-          <span className="leading-tight">
-            <span className="block text-[14px] font-bold">Nordlane</span>
-            <span className="block text-[12px] text-adm-ink-3">{t.ui.title.split("·")[1]?.trim() ?? t.ui.title}</span>
-          </span>
+          <span className="text-[14px] leading-tight font-bold whitespace-nowrap">{t.ui.title}</span>
         </Link>
         <nav className="mt-6 flex flex-col gap-0.5" aria-label={t.ui.nav.sections}>
           {navLinks(false)}
@@ -87,12 +84,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
       {/* Top bar (mobile / tablet) */}
       <header className="sticky top-0 z-30 border-b border-adm-line bg-adm-surface lg:hidden">
-        <div className="flex h-12 items-center gap-2 px-4">
+        <div className="flex min-h-12 flex-wrap items-center gap-x-2 gap-y-2 px-4 py-2">
           <Link href="/admin" className="flex items-center gap-2">
             <BrandMark className="size-6" />
-            <span className="text-[14px] font-bold">Nordlane</span>
+            <span className="text-[14px] font-bold whitespace-nowrap">{t.ui.title}</span>
           </Link>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             {tools}
             <button type="button" onClick={logout} className="adm-btn size-8 px-0" aria-label={t.ui.nav.logout} title={t.ui.nav.logout}>
               <LogOut aria-hidden className="size-4" strokeWidth={1.8} />

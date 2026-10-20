@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import { AppError, forbidden } from "./errors";
 import { log } from "./log";
 import { content } from "@/config/content";
+import { readBody } from "./body";
 
 export const json = (data: unknown, status = 200) =>
   NextResponse.json(data, { status, headers: { "Cache-Control": "no-store" } });
@@ -27,11 +28,14 @@ export function route<A extends unknown[]>(scope: string, fn: (...args: A) => Pr
 
 /** CSRF protection for state-changing requests: the Origin must be this site. */
 export function assertSameOrigin(req: Request) {
+  if (req.headers.get("sec-fetch-site") === "cross-site") throw forbidden();
   const origin = req.headers.get("origin");
   if (!origin) return; // non-browser clients (no cookies sent by browsers cross-site without Origin)
   const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
   try {
-    if (new URL(origin).host !== host) throw forbidden();
+    const parsed = new URL(origin);
+    const protocol = req.headers.get("x-forwarded-proto") ?? new URL(req.url).protocol.replace(":", "");
+    if (parsed.host !== host || parsed.protocol !== `${protocol}:`) throw forbidden();
   } catch {
     throw forbidden();
   }
@@ -42,8 +46,9 @@ export function clientIp(req: Request) {
 }
 
 export async function readJson(req: Request): Promise<unknown> {
+  const body = await readBody(req, 32 * 1024);
   try {
-    return await req.json();
+    return JSON.parse(body.toString("utf8"));
   } catch {
     return null;
   }

@@ -4,6 +4,7 @@ import { badRequest } from "../errors";
 import { content, QUESTION_KEYS } from "@/config/content";
 import { listPendingSubmissionFiles, toPublicFile } from "./uploads";
 import { getContact } from "./contact";
+import { getSessionOutcome } from "./candidate-outcome";
 
 export type Answers = Record<string, string>;
 
@@ -42,13 +43,14 @@ export async function getVisitorState(sessionId: string) {
     .limit(1);
 
   if (!submission) {
-    return { answers, contact, submission: null, files: await listPendingSubmissionFiles(sessionId) };
+    return { answers, contact, submission: null, outcome: null, files: await listPendingSubmissionFiles(sessionId) };
   }
   const files = await db().select().from(schema.files).where(eq(schema.files.submissionId, submission.id));
   return {
     answers,
     contact,
     submission: { id: submission.id, submittedAt: submission.submittedAt.toISOString() },
+    outcome: await getSessionOutcome(sessionId),
     files: files.map(toPublicFile),
   };
 }

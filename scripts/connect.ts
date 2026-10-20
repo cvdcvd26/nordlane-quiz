@@ -1,3 +1,7 @@
+import { loadEnvConfig } from "@next/env";
+import { databaseDriver } from "../src/lib/database-url";
+
+loadEnvConfig(process.cwd());
 /** DB connection for CLI scripts: Neon over WebSocket, or a regular Postgres on localhost. */
 import { Pool, neonConfig } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-serverless";
@@ -10,10 +14,9 @@ import ws from "ws";
 /** Any constant: the same number serialises all migration runs against one database. */
 const MIGRATION_LOCK_ID = 727_274_001;
 
-const isLocal = (url: string) => /@(localhost|127\.0\.0\.1)(:\d+)?\//.test(url);
 
 export function connect(url: string) {
-  if (isLocal(url)) {
+  if (databaseDriver(url) === "postgres") {
     const pool = new pg.Pool({ connectionString: url, max: 1 });
     const db = drizzlePg({ client: pool });
     return {
@@ -62,7 +65,7 @@ export function connect(url: string) {
  */
 export function databaseUrl(forMigrations = false) {
   if (forMigrations) {
-    return process.env.DATABASE_URL_UNPOOLED ?? process.env.POSTGRES_URL_NON_POOLING ?? process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
+    return process.env.DATABASE_URL_UNPOOLED || process.env.POSTGRES_URL_NON_POOLING || process.env.DATABASE_URL || process.env.POSTGRES_URL;
   }
-  return process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
+  return process.env.DATABASE_URL || process.env.POSTGRES_URL;
 }

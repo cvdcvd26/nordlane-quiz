@@ -1,16 +1,16 @@
 "use client";
-import { Check, Inbox, CircleAlert } from "lucide-react";
+import { Check, ChevronDown, Inbox, CircleAlert } from "lucide-react";
 import { LEAD_STATUSES, type LeadStatus } from "@/config/content";
 import { useAdminI18n } from "./i18n";
 
 /* ---------- Status ---------- */
 
-export const STATUS_TONE: Record<LeadStatus, { text: string; bg: string; dot: string }> = {
-  new: { text: "text-adm-blue", bg: "bg-adm-blue-bg", dot: "bg-adm-blue" },
-  in_progress: { text: "text-adm-amber", bg: "bg-adm-amber-bg", dot: "bg-[#c77d0a]" },
-  awaiting_reply: { text: "text-adm-violet", bg: "bg-adm-violet-bg", dot: "bg-adm-violet" },
-  completed: { text: "text-adm-green", bg: "bg-adm-green-bg", dot: "bg-adm-green" },
-  rejected: { text: "text-adm-red", bg: "bg-adm-red-bg", dot: "bg-adm-red" },
+export const STATUS_TONE: Record<LeadStatus, { text: string; bg: string; dot: string; border: string; active: string }> = {
+  new: { text: "text-[#174ea6]", bg: "bg-[#dbeafe]", dot: "bg-[#2563eb]", border: "border-[#93c5fd]", active: "border-[#1d4ed8] bg-[#2563eb] text-white" },
+  in_progress: { text: "text-[#9a430c]", bg: "bg-[#ffedd5]", dot: "bg-[#ea7b13]", border: "border-[#fdba74]", active: "border-[#a84309] bg-[#b9500a] text-white" },
+  awaiting_reply: { text: "text-[#6b21a8]", bg: "bg-[#f3e8ff]", dot: "bg-[#9333ea]", border: "border-[#d8b4fe]", active: "border-[#6b21a8] bg-[#7e22ce] text-white" },
+  completed: { text: "text-[#166534]", bg: "bg-[#dcfce7]", dot: "bg-[#16a34a]", border: "border-[#86efac]", active: "border-[#166534] bg-[#15803d] text-white" },
+  rejected: { text: "text-[#991b1b]", bg: "bg-[#fee2e2]", dot: "bg-[#dc2626]", border: "border-[#fca5a5]", active: "border-[#991b1b] bg-[#b91c1c] text-white" },
 };
 
 /** Next step of the usual handling flow; completed/rejected have none. */
@@ -24,8 +24,8 @@ export function StatusBadge({ status }: { status: LeadStatus }) {
   const { t } = useAdminI18n();
   const tone = STATUS_TONE[status];
   return (
-    <span className={`adm-badge ${tone.bg} ${tone.text}`}>
-      <span aria-hidden className={`size-1.5 rounded-full ${tone.dot}`} />
+    <span className={`adm-badge border ${tone.bg} ${tone.text} ${tone.border}`}>
+      <span aria-hidden className={`size-2 rounded-full ${tone.dot}`} />
       {t.ui.statuses[status]}
     </span>
   );
@@ -43,24 +43,49 @@ export function StatusSelect({
   disabled?: boolean;
   label: string;
 }) {
+  return <StatusPicker value={value} label={label} disabled={disabled} onChange={(status) => onChange(status as LeadStatus)} />;
+}
+
+/** A selected filter uses the same status colors as each lead's status. */
+export function StatusFilter({ value, onChange, label, allLabel, id }: {
+  value: LeadStatus | "";
+  onChange: (status: LeadStatus | "") => void;
+  label: string;
+  allLabel: string;
+  id?: string;
+}) {
+  return <StatusPicker id={id} value={value} label={label} onChange={onChange} allLabel={allLabel} />;
+}
+
+function StatusPicker({ value, onChange, disabled, label, allLabel, id }: {
+  value: LeadStatus | "";
+  onChange: (status: LeadStatus | "") => void;
+  disabled?: boolean;
+  label: string;
+  allLabel?: string;
+  id?: string;
+}) {
   const { t } = useAdminI18n();
-  const tone = STATUS_TONE[value];
+  const tone = value ? STATUS_TONE[value] : null;
   return (
-    <span className="relative inline-flex">
-      <span aria-hidden className={`pointer-events-none absolute top-1/2 left-2.5 size-1.5 -translate-y-1/2 rounded-full ${tone.dot}`} />
+    <span className={`adm-status-control relative inline-flex items-center rounded-lg border ${tone ? `${tone.bg} ${tone.text} ${tone.border}` : "border-adm-line-strong bg-adm-surface text-adm-ink-2"} ${disabled ? "opacity-60" : ""}`}>
+      <span aria-hidden className={`pointer-events-none absolute top-1/2 left-2.5 size-2 -translate-y-1/2 rounded-full ${tone?.dot ?? "bg-adm-ink-3"}`} />
       <select
+        id={id}
         aria-label={label}
-        className={`adm-input h-7 w-auto cursor-pointer border-transparent py-0 pl-6 text-[12.5px] font-semibold ${tone.bg} ${tone.text} hover:border-adm-line-strong`}
+        className="adm-status-select"
         value={value}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value as LeadStatus)}
+        onChange={(e) => onChange(e.target.value as LeadStatus | "")}
       >
+        {allLabel && <option value="">{allLabel}</option>}
         {LEAD_STATUSES.map((s) => (
           <option key={s} value={s}>
             {t.ui.statuses[s]}
           </option>
         ))}
       </select>
+      <ChevronDown aria-hidden className="pointer-events-none absolute right-2 size-3.5 opacity-75" strokeWidth={2.25} />
     </span>
   );
 }

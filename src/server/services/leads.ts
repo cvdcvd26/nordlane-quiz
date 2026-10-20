@@ -17,6 +17,7 @@ export async function ensureLead(tx: Tx, sessionId: string): Promise<number> {
   let lead = await find();
   if (!lead) {
     const now = new Date();
+    // manager_id's database default picks one HR profile only for the winning INSERT.
     await tx.insert(schema.leads).values({ sessionId, createdAt: now, updatedAt: now }).onConflictDoNothing();
     lead = await find();
   }
@@ -55,13 +56,15 @@ export async function deleteLeads(ids: number[]) {
     .where(inArray(schema.leads.id, ids));
   if (leads.length === 0) return { deleted: 0 };
   const sessionIds = leads.map((l) => l.sessionId);
-  const fileKeys = await db()
-    .select({ key: schema.files.storageKey })
-    .from(schema.files)
-    .where(inArray(schema.files.sessionId, sessionIds));
-
-  // One statement: every visitor table cascades from visitor_sessions.
-  await db().delete(schema.visitorSessions).where(inArray(schema.visitorSessions.id, sessionIds));
+  const fileKeys = await db().transaction(async (tx) => {
+    // Lock in a stable order so uploads/submissions cannot add files after this snapshot.
+    await tx.select({ id: schema.visitorSessions.id }).from(schema.visitorSessions)
+      .where(inArray(schema.visitorSessions.id, sessionIds)).orderBy(schema.visitorSessions.id).for("update");
+    const keys = await tx.select({ key: schema.files.storageKey }).from(schema.files)
+      .where(inArray(schema.files.sessionId, sessionIds));
+    await tx.delete(schema.visitorSessions).where(inArray(schema.visitorSessions.id, sessionIds));
+    return keys;
+  });
 
   for (const { key } of fileKeys) {
     await storage()
@@ -83,10 +86,10 @@ export async function adminActivity(since: Date) {
       .from(schema.leads)
       .leftJoin(schema.visitorContacts, eq(schema.visitorContacts.sessionId, schema.leads.sessionId))
       .where(gt(schema.leads.createdAt, since))
-      .orderBy(desc(schema.leads.createdAt))
-      .limit(20),
+      .orderBy(desc(schema.leads.createdAt)),
     db()
       .select({
+        id: schema.messages.id,
         leadId: schema.conversations.leadId,
         body: schema.messages.body,
         createdAt: schema.messages.createdAt,
@@ -96,18 +99,17 @@ export async function adminActivity(since: Date) {
       .innerJoin(schema.conversations, eq(schema.conversations.id, schema.messages.conversationId))
       .leftJoin(schema.visitorContacts, eq(schema.visitorContacts.sessionId, schema.conversations.sessionId))
       .where(and(eq(schema.messages.sender, "visitor"), gt(schema.messages.createdAt, since), isNotNull(schema.conversations.leadId)))
-      .orderBy(desc(schema.messages.createdAt))
-      .limit(20),
+      .orderBy(desc(schema.messages.createdAt)),
     db()
       .select({ id: schema.testimonials.id, name: schema.testimonials.name, createdAt: schema.testimonials.createdAt })
       .from(schema.testimonials)
       .where(gt(schema.testimonials.createdAt, since))
-      .orderBy(desc(schema.testimonials.createdAt))
-      .limit(20),
+      .orderBy(desc(schema.testimonials.createdAt)),
   ]);
   return {
     leads: newLeads.map((l) => ({ id: l.id, name: l.name, at: l.createdAt.toISOString() })),
     messages: newMessages.map((m) => ({
+      id: m.id,
       leadId: m.leadId!,
       name: m.name,
       preview: m.body.slice(0, 120),

@@ -5,6 +5,7 @@ import {
   text,
   integer,
   bigint,
+  bigserial,
   timestamp,
   jsonb,
   primaryKey,
@@ -106,13 +107,26 @@ export const visitorContacts = pgTable(
   ],
 );
 
+/* ---------- HR profiles ---------- */
+export const managers = pgTable("managers", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  avatar: text("avatar").notNull(),
+  createdAt: createdAt(),
+});
+
 /* ---------- Conversations & messages ---------- */
 export const leads = pgTable(
   "leads",
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     sessionId: uuid("session_id").notNull().references(() => visitorSessions.id, { onDelete: "cascade" }),
+    // The database chooses once when the lead is inserted, including concurrent requests.
+    managerId: text("manager_id").notNull().default(sql`pick_lead_manager()`).references(() => managers.id),
     status: leadStatus("status").notNull().default("new"),
+    /** Public only after an administrator explicitly publishes the result. */
+    candidateResultBody: text("candidate_result_body"),
+    candidateResultPublishedAt: timestamp("candidate_result_published_at", { withTimezone: true }),
     messageCount: integer("message_count").notNull().default(0),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
     /** Set when the manager asks the visitor for a public review; unlocks the review form. */
@@ -124,16 +138,21 @@ export const leads = pgTable(
     uniqueIndex("leads_session_uq").on(t.sessionId),
     index("leads_status_idx").on(t.status),
     index("leads_created_idx").on(t.createdAt),
+    index("leads_manager_idx").on(t.managerId),
+    check("leads_candidate_result_ck", sql`(${t.candidateResultBody} is null and ${t.candidateResultPublishedAt} is null) or
+      (${t.status} = 'rejected' and ${t.candidateResultBody} is not null and ${t.candidateResultPublishedAt} is not null and length(btrim(${t.candidateResultBody})) > 0)`),
   ],
 );
 
-/** Public reviews: written by the visitor after the manager asks, published after moderation. */
+/** Public reviews managed by admins; legacy visitor reviews retain their session link. */
 export const testimonials = pgTable(
   "testimonials",
   {
     id: id(),
-    sessionId: uuid("session_id").notNull().references(() => visitorSessions.id, { onDelete: "cascade" }),
+    sessionId: uuid("session_id").references(() => visitorSessions.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    city: text("city"),
+    age: integer("age"),
     rating: integer("rating").notNull(),
     body: text("body").notNull(),
     status: testimonialStatus("status").notNull().default("pending"),
@@ -145,6 +164,7 @@ export const testimonials = pgTable(
     uniqueIndex("testimonials_session_uq").on(t.sessionId),
     index("testimonials_status_idx").on(t.status, t.publishedAt),
     check("testimonials_rating_ck", sql`${t.rating} between 1 and 5`),
+    check("testimonials_age_ck", sql`${t.age} is null or ${t.age} between 1 and 120`),
   ],
 );
 
@@ -164,6 +184,7 @@ export const messages = pgTable(
   "messages",
   {
     id: id(),
+    sequence: bigserial("sequence", { mode: "bigint" }).notNull(),
     conversationId: uuid("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
     sender: messageSender("sender").notNull(),
     body: text("body").notNull().default(""),
@@ -173,6 +194,8 @@ export const messages = pgTable(
   },
   (t) => [
     uniqueIndex("messages_client_id_uq").on(t.conversationId, t.clientMessageId),
+    uniqueIndex("messages_sequence_uq").on(t.sequence),
+    index("messages_conversation_sequence_idx").on(t.conversationId, t.sequence),
     index("messages_conversation_created_idx").on(t.conversationId, t.createdAt),
   ],
 );
@@ -244,6 +267,7 @@ export const appSettings = pgTable("app_settings", {
 /* ---------- Relations ---------- */
 export const leadsRelations = relations(leads, ({ one, many }) => ({
   session: one(visitorSessions, { fields: [leads.sessionId], references: [visitorSessions.id] }),
+  manager: one(managers, { fields: [leads.managerId], references: [managers.id] }),
   notes: many(leadNotes),
 }));
 export const messagesRelations = relations(messages, ({ one, many }) => ({

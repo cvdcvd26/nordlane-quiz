@@ -4,13 +4,15 @@ import { useEffect, useRef } from "react";
 type Particle = { x: number; y: number; c: string; ox: number; oy: number; a: number; delay: number; sx: number; sy: number };
 
 const PAD = 48; // room around the text for scattered pixels
-const INTRO_MS = 1100;
-const RADIUS = 90; // cursor influence, px
+const INTRO_MS = 450;
+const INTRO_STAGGER_MS = 120;
+const POINTER_IDLE_MS = 90;
+const RADIUS = 55; // cursor influence, px
 
 /**
  * Heading drawn as a grid of small squares on a canvas (after the DeLorean marketplace hero):
- * pixels assemble on load, scatter away from the pointer and spring back.
- * The real heading stays in the DOM (text made transparent) for screen readers, selection and SEO.
+ * pixels assemble briefly on load, react to pointer movement and settle back to crisp DOM text.
+ * A stationary pointer never keeps the heading distorted.
  * Falls back to plain text with reduced motion or without canvas.
  */
 export function PixelHeading({
@@ -45,6 +47,8 @@ export function PixelHeading({
     let dpr = 1;
     let raf = 0;
     let start = 0;
+    let lastFrame = 0;
+    let lastPointerMove = 0;
     let pointer: { x: number; y: number } | null = null;
     let disposed = false;
     let introDone = false;
@@ -117,9 +121,9 @@ export function PixelHeading({
             ox: 0,
             oy: 0,
             a: 1,
-            delay: (x / w) * 450 + Math.random() * 250,
-            sx: (Math.random() - 0.5) * 80,
-            sy: (Math.random() - 0.5) * 40,
+            delay: (x / w) * 90 + Math.random() * 30,
+            sx: (Math.random() - 0.5) * 24,
+            sy: (Math.random() - 0.5) * 12,
           });
         }
       }
@@ -129,6 +133,10 @@ export function PixelHeading({
 
     const draw = (now: number) => {
       const t = now - start;
+      const dt = Math.min(64, Math.max(0, now - lastFrame));
+      lastFrame = now;
+      if (pointer && now - lastPointerMove >= POINTER_IDLE_MS) pointer = null;
+      const returning = 1 - Math.exp(-dt / 55);
       let moving = false;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -139,7 +147,7 @@ export function PixelHeading({
         let ty = 0;
         let ta = 1;
         if (!introDone) {
-          const k = Math.min(1, Math.max(0, (t - p.delay) / (INTRO_MS - 450)));
+          const k = Math.min(1, Math.max(0, (t - p.delay) / (INTRO_MS - INTRO_STAGGER_MS)));
           const e = 1 - Math.pow(1 - k, 3);
           p.ox = p.sx * (1 - e);
           p.oy = p.sy * (1 - e);
@@ -152,15 +160,15 @@ export function PixelHeading({
             const d = Math.hypot(dx, dy);
             if (d < RADIUS) {
               const f = 1 - d / RADIUS;
-              tx = (dx / (d || 1)) * f * 16 + (Math.random() - 0.5) * 22 * f;
-              ty = (dy / (d || 1)) * f * 16 + (Math.random() - 0.5) * 22 * f;
-              ta = Math.random() < f * 0.5 ? 0.15 : 1;
+              tx = (dx / (d || 1)) * f * 6 + (Math.random() - 0.5) * 6 * f;
+              ty = (dy / (d || 1)) * f * 6 + (Math.random() - 0.5) * 6 * f;
+              ta = 1 - f * 0.15;
             }
           }
-          const ease = tx || ty ? 0.25 : 0.1;
+          const ease = tx || ty ? 0.35 : returning;
           p.ox += (tx - p.ox) * ease;
           p.oy += (ty - p.oy) * ease;
-          p.a += (ta - p.a) * 0.3;
+          p.a += (ta - p.a) * returning;
           if (Math.abs(p.ox) > 0.2 || Math.abs(p.oy) > 0.2 || Math.abs(1 - p.a) > 0.02) moving = true;
         }
         if (p.a <= 0.01) continue;
@@ -172,22 +180,37 @@ export function PixelHeading({
         ctx.fillRect(p.x + p.ox, p.y + p.oy, size, size);
       }
       ctx.globalAlpha = 1;
-      if (!introDone && t > INTRO_MS + 300) introDone = true;
+      if (!introDone && t >= INTRO_MS) introDone = true;
       if (moving || pointer || !introDone) raf = requestAnimationFrame(draw);
-      else raf = 0;
+      else {
+        raf = 0;
+        // Restore the native glyphs at rest, especially for smaller, multiline headings.
+        heading.classList.remove("is-pixel");
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
     };
 
     const kick = () => {
-      if (!raf && !disposed) raf = requestAnimationFrame(draw);
+      if (!raf && !disposed) {
+        lastFrame = performance.now();
+        raf = requestAnimationFrame(draw);
+      }
     };
 
     const onMove = (e: PointerEvent) => {
-      const r = canvas.getBoundingClientRect();
-      const x = e.clientX - r.left;
-      const y = e.clientY - r.top;
-      const inside = x > -RADIUS && y > -RADIUS && x < r.width + RADIUS && y < r.height + RADIUS;
-      pointer = inside ? { x, y } : null;
-      if (inside) kick();
+      if (e.pointerType === "touch") return;
+      const box = heading.getBoundingClientRect();
+      const inside = e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom;
+      if (inside) {
+        const r = canvas.getBoundingClientRect();
+        pointer = { x: e.clientX - r.left, y: e.clientY - r.top };
+        lastPointerMove = performance.now();
+        heading.classList.add("is-pixel");
+        kick();
+      } else if (pointer) {
+        pointer = null;
+        kick();
+      }
     };
     const onLeave = () => {
       pointer = null;

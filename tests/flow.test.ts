@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { setupTestEnv, newSession, PNG, JPG, PDF, EXE } from "./helpers";
 import { schema } from "@/db";
@@ -19,7 +19,7 @@ import {
   setTestimonialStatus,
   getVisitorTestimonial,
 } from "@/server/services/testimonials";
-import { updateSettings, getSettings, pickDelayMs } from "@/server/settings";
+import { updateSettings, getSettings, pickDelayMs, settingsSchema } from "@/server/settings";
 import { defaultSettings } from "@/config/settings";
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>;
@@ -73,7 +73,10 @@ describe("file uploads", () => {
     expect((await getVisitorState(sid)).files.map((f) => f.id)).toEqual([a.id, b.id]);
     const [row] = await env.db.select().from(schema.files).where(eq(schema.files.id, a.id));
     expect(env.blobs.has(row.storageKey)).toBe(true);
-    expect(row.storageKey).not.toContain("a.png"); // safe storage name
+    const [directory, owner, basename, ...extra] = row.storageKey.split("/");
+    expect({ directory, owner, extra }).toEqual({ directory: "uploads", owner: sid, extra: [] });
+    // Validate the whole generated basename: a UUID can legitimately end in "a.png".
+    expect(basename).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.png$/);
   });
 
   it("rejects invalid files: spoofed type, PDF instead of screenshot, too many files", async () => {
@@ -96,7 +99,7 @@ describe("file uploads", () => {
 });
 
 describe("task submission", () => {
-  it("saves the task and schedules a job 20–30 minutes later", async () => {
+  it("saves the task and schedules a job 30–60 seconds later", async () => {
     const { sid, res, sched } = await submittedVisitor();
     expect(res.duplicate).toBe(false);
     const state = await getVisitorState(sid);
@@ -104,8 +107,8 @@ describe("task submission", () => {
     expect(state.files).toHaveLength(1);
 
     const delay = sched.scheduledFor.getTime() - new Date(res.submittedAt).getTime();
-    expect(delay).toBeGreaterThanOrEqual(20 * 60_000);
-    expect(delay).toBeLessThanOrEqual(30 * 60_000);
+    expect(delay).toBeGreaterThanOrEqual(30_000);
+    expect(delay).toBeLessThanOrEqual(60_000);
     expect(env.queued.some((q) => q.id === sched.id && q.at.getTime() === sched.scheduledFor.getTime())).toBe(true);
     expect(sched.queueMessageId).toBeTruthy();
   });
@@ -172,6 +175,34 @@ describe("task submission", () => {
 });
 
 describe("automatic message", () => {
+  it("rejects invalid second intervals and keeps old saved minute settings readable", async () => {
+    expect(settingsSchema.safeParse({ ...defaultSettings, autoMessageMinDelaySeconds: 0.5 }).success).toBe(false);
+    expect(settingsSchema.safeParse({ ...defaultSettings, autoMessageMaxDelaySeconds: 29 }).success).toBe(false);
+    const seconds = ["autoMessageMinDelaySeconds", "autoMessageMaxDelaySeconds"];
+    const legacy = ["autoMessageMinDelayMinutes", "autoMessageMaxDelayMinutes"];
+    await env.db.delete(schema.appSettings).where(inArray(schema.appSettings.key, seconds));
+    try {
+      await env.db.insert(schema.appSettings).values([
+        { key: legacy[0], value: 20 }, { key: legacy[1], value: 30 },
+      ]);
+      expect(await getSettings()).toMatchObject({ autoMessageMinDelaySeconds: 1200, autoMessageMaxDelaySeconds: 1800 });
+      await updateSettings(defaultSettings);
+      expect(await getSettings()).toMatchObject({ autoMessageMinDelaySeconds: 30, autoMessageMaxDelaySeconds: 60 });
+    } finally {
+      await env.db.delete(schema.appSettings).where(inArray(schema.appSettings.key, legacy));
+      await updateSettings(defaultSettings);
+    }
+  });
+
+  it("delivers at the scheduled second without an extra minute or an early reply", async () => {
+    const { sched } = await submittedVisitor();
+    const before = new Date(sched.scheduledFor.getTime() - 1);
+    expect(await deliverScheduledMessage(sched.id, before)).toBe("not_due");
+    expect((await deliverOverdue({ conversationId: sched.conversationId, now: before }))[sched.id]).toBeUndefined();
+    expect((await deliverOverdue({ conversationId: sched.conversationId, now: sched.scheduledFor }))[sched.id]).toBe("sent");
+    expect(await deliverScheduledMessage(sched.id, sched.scheduledFor)).toBe("already_sent");
+  });
+
   it("is not sent early, is sent once, retries create no duplicates", async () => {
     const { sched } = await submittedVisitor();
     expect(await deliverScheduledMessage(sched.id, new Date(sched.scheduledFor.getTime() - 5 * 60_000))).toBe("not_due");
@@ -191,9 +222,9 @@ describe("automatic message", () => {
 
   it("random delay always stays within the configured range", () => {
     for (let i = 0; i < 1000; i++) {
-      const d = pickDelayMs({ autoMessageMinDelayMinutes: 20, autoMessageMaxDelayMinutes: 30 });
-      expect(d).toBeGreaterThanOrEqual(20 * 60_000);
-      expect(d).toBeLessThanOrEqual(30 * 60_000);
+      const d = pickDelayMs({ autoMessageMinDelaySeconds: 30, autoMessageMaxDelaySeconds: 60 });
+      expect(d).toBeGreaterThanOrEqual(30_000);
+      expect(d).toBeLessThanOrEqual(60_000);
     }
   });
 
@@ -388,19 +419,19 @@ describe("site reviews (testimonials)", () => {
     await expect(submitTestimonial(sid, review)).rejects.toThrow(/po zakończeniu rozmowy/);
 
     const leadId = await leadOf(sid);
-    const first = await requestTestimonial(leadId, postAdminMessage);
-    const again = await requestTestimonial(leadId, postAdminMessage);
+    const first = await requestTestimonial(leadId);
+    const again = await requestTestimonial(leadId);
     expect(first.alreadyRequested).toBe(false);
     expect(again.alreadyRequested).toBe(true);
     const chat = await getVisitorChat(sid);
-    expect(chat.testimonial).toEqual({ requested: true, submitted: null });
+    expect(chat).not.toHaveProperty("testimonial");
     expect(chat.messages.filter((m) => m.sender === "admin" && m.body.includes("opinię"))).toHaveLength(1);
   });
 
   it("validates, accepts one review per visitor and keeps it out of public until published", async () => {
     const { sid } = await submittedVisitor();
     const leadId = await leadOf(sid);
-    await requestTestimonial(leadId, postAdminMessage);
+    await requestTestimonial(leadId);
     await expect(submitTestimonial(sid, { ...review, rating: 0 })).rejects.toThrow(/ocenę/);
     await expect(submitTestimonial(sid, { ...review, body: "krótko" })).rejects.toThrow(/10 znaków/);
 

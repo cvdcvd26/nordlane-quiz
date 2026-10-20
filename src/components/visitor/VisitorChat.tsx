@@ -1,74 +1,105 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { content } from "@/config/content";
+import type { ManagerProfile } from "@/config/managers";
+import type { CandidateOutcome } from "@/config/candidate-outcome";
 import { chatConfig, uploadConfig } from "@/config/settings";
-import { api, newId, type ChatMessage, type PublicFile } from "@/lib/api";
+import { api, newId, type ChatMessage, type PublicFile, type MessagePage } from "@/lib/api";
+import { mergeMessages } from "@/lib/chat";
 import { MessageList, type LocalMessage } from "../chat/MessageList";
 import { Composer } from "../chat/Composer";
-import type { VisitorTestimonial } from "../testimonials/TestimonialForm";
 import { SoundToggle } from "../ui/SoundToggle";
 import { playChime } from "@/lib/sound";
 
-type ChatResponse = { messages: ChatMessage[]; attachmentsEnabled: boolean; testimonial?: VisitorTestimonial };
+type ChatResponse = MessagePage & { attachmentsEnabled: boolean; manager: ManagerProfile; outcome: CandidateOutcome | null };
 
 /**
  * Built-in chat. New messages arrive by polling every few seconds (paused while the tab is hidden).
  * Sending is idempotent: a retry after a network error reuses the same clientMessageId.
  */
-export function VisitorChat({ onTestimonial }: { onTestimonial?: (t: VisitorTestimonial) => void } = {}) {
-  // Kept in a ref so polling does not restart when the parent re-renders.
-  const testimonialCb = useRef(onTestimonial);
+export function VisitorChat({ onOutcome, closed = false }: { onOutcome?: (outcome: CandidateOutcome | null) => void; closed?: boolean }) {
+  const closedRef = useRef(closed);
   useEffect(() => {
-    testimonialCb.current = onTestimonial;
-  }, [onTestimonial]);
+    closedRef.current = closed;
+  }, [closed]);
+  const outcomeCallback = useRef(onOutcome);
+  useEffect(() => {
+    outcomeCallback.current = onOutcome;
+  }, [onOutcome]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState<LocalMessage[]>([]);
   const [attachments, setAttachments] = useState(false);
+  const [manager, setManager] = useState<ManagerProfile | null>(null);
   const [offline, setOffline] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const last = useRef<string | undefined>(undefined);
+  const polling = useRef(false);
+  const [before, setBefore] = useState<string | null>(null);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   // Ids already shown; the chime plays only for admin/system messages that arrive after the first load.
   const known = useRef<Set<string> | null>(null);
   const soundOn = useRef(true);
 
-  const notify = useCallback((incoming: ChatMessage[]) => {
+  const notify = useCallback((incoming: ChatMessage[], silent = false) => {
     if (known.current === null) {
       known.current = new Set(incoming.map((m) => m.id));
       return;
     }
     const fresh = incoming.filter((m) => !known.current!.has(m.id));
     fresh.forEach((m) => known.current!.add(m.id));
-    if (soundOn.current && fresh.some((m) => m.sender !== "visitor")) playChime("message");
+    if (!silent && soundOn.current && fresh.some((m) => m.sender !== "visitor")) playChime("message");
   }, []);
 
   const merge = useCallback((incoming: ChatMessage[]) => {
     if (!incoming.length) return;
-    setMessages((prev) => {
-      const byId = new Map(prev.map((m) => [m.id, m]));
-      incoming.forEach((m) => byId.set(m.id, m));
-      const list = [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-      last.current = list.at(-1)?.createdAt;
-      return list;
-    });
+    setMessages((prev) => mergeMessages(prev, incoming));
     const ids = new Set(incoming.map((m) => m.clientMessageId));
     setPending((p) => p.filter((m) => !ids.has(m.clientMessageId)));
   }, []);
 
   const poll = useCallback(async () => {
+    if (polling.current) return;
+    polling.current = true;
     try {
-      const q = last.current ? `?after=${encodeURIComponent(last.current)}` : "";
-      const res = await api<ChatResponse>(`/api/chat${q}`);
-      notify(res.messages);
-      merge(res.messages);
-      setAttachments(res.attachmentsEnabled);
-      if (res.testimonial) testimonialCb.current?.(res.testimonial);
+      let more = true;
+      while (more) {
+        const initial = !last.current;
+        const q = last.current ? `?after=${encodeURIComponent(last.current)}` : "";
+        const res = await api<ChatResponse>(`/api/chat${q}`);
+        closedRef.current = Boolean(res.outcome);
+        notify(res.messages, closedRef.current);
+        merge(res.messages);
+        if (initial) setBefore(res.hasMore ? res.previousCursor : null);
+        // A send response must never advance this receive cursor.
+        last.current = res.nextCursor ?? last.current;
+        more = !initial && res.hasMore && res.messages.length > 0;
+        setAttachments(res.attachmentsEnabled);
+        setManager(res.manager);
+        outcomeCallback.current?.(res.outcome);
+      }
       setOffline(false);
-    } catch (err) {
-      if ((err as { status?: number }).status === 0) setOffline(true);
+    } catch {
+      setOffline(true);
     } finally {
+      polling.current = false;
       setLoaded(true);
     }
   }, [merge, notify]);
+
+  const loadEarlier = async () => {
+    if (!before || loadingEarlier) return;
+    setLoadingEarlier(true);
+    setHistoryError(null);
+    try {
+      const res = await api<ChatResponse>(`/api/chat?before=${encodeURIComponent(before)}`);
+      res.messages.forEach((m) => known.current?.add(m.id));
+      merge(res.messages);
+      setBefore(res.hasMore ? res.previousCursor : null);
+    } catch (err) {
+      setHistoryError((err as Error).message);
+    } finally { setLoadingEarlier(false); }
+  };
 
   useEffect(() => {
     void poll();
@@ -88,6 +119,7 @@ export function VisitorChat({ onTestimonial }: { onTestimonial?: (t: VisitorTest
 
   const deliver = useCallback(
     async (m: LocalMessage) => {
+      if (closedRef.current) return;
       setPending((p) => p.map((x) => (x.clientMessageId === m.clientMessageId ? { ...x, local: "sending" } : x)));
       try {
         const res = await api<{ message: ChatMessage }>("/api/chat", {
@@ -98,11 +130,12 @@ export function VisitorChat({ onTestimonial }: { onTestimonial?: (t: VisitorTest
         merge([res.message]);
         setOffline(false);
       } catch (err) {
+        if ((err as { code?: string }).code === "candidate_chat_closed") void poll();
         if ((err as { status?: number }).status === 0) setOffline(true);
         setPending((p) => p.map((x) => (x.clientMessageId === m.clientMessageId ? { ...x, local: "failed" } : x)));
       }
     },
-    [merge],
+    [merge, poll],
   );
 
   // When the network comes back, resend failed messages.
@@ -134,15 +167,20 @@ export function VisitorChat({ onTestimonial }: { onTestimonial?: (t: VisitorTest
     await deliver(local);
   };
 
-  const all: LocalMessage[] = [...messages, ...pending];
+  const confirmed = new Set(messages.map((m) => m.clientMessageId));
+  const all: LocalMessage[] = [...messages, ...pending.filter((m) => !confirmed.has(m.clientMessageId))];
+
+  // Keep polling while the chat is closed so a retracted result restores it without a reload.
+  if (closed) return null;
 
   return (
     <section aria-labelledby="chat-title" className="glass overflow-hidden rounded-(--radius-tile)">
       <header className="flex items-center gap-3 border-b border-line px-5 py-4">
         <span aria-hidden className={`size-2.5 rounded-full ${offline ? "bg-danger" : "bg-ok"}`} />
-        <h2 id="chat-title" className="font-semibold">
-          {content.chat.title}
-        </h2>
+        <div className="min-w-0">
+          <h2 id="chat-title" className="font-semibold">{content.chat.title}</h2>
+          <p className="mt-1 text-[11px] leading-relaxed text-ink-soft">{content.chat.workingHours}</p>
+        </div>
         {offline && <span className="ml-auto text-xs text-danger">{content.chat.offline}</span>}
         <SoundToggle
           scope="visitor"
@@ -153,8 +191,10 @@ export function VisitorChat({ onTestimonial }: { onTestimonial?: (t: VisitorTest
         />
       </header>
       <div className="max-h-[55vh] min-h-48 overflow-y-auto px-4 py-5 sm:px-5">
+        {before && <button type="button" className="btn btn-ghost mb-4" disabled={loadingEarlier} onClick={() => void loadEarlier()}>{content.chat.loadEarlier}</button>}
+        {historyError && <p role="alert" className="mb-3 text-sm text-danger">{historyError}</p>}
         {loaded ? (
-          <MessageList messages={all} viewer="visitor" onRetry={(m) => void deliver(m)} emptyText={content.chat.waiting} />
+          <MessageList messages={all} viewer="visitor" manager={manager} onRetry={(m) => void deliver(m)} emptyText={content.chat.waiting} />
         ) : (
           <div className="space-y-3" aria-hidden>
             <div className="skeleton h-12 w-2/3 rounded-2xl" />

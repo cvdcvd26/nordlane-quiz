@@ -1,13 +1,17 @@
+import { lockVisitor } from "../session-lock";
 import { and, asc, desc, eq, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
-import { badRequest, notFound } from "../errors";
+import { badRequest, conflict, notFound } from "../errors";
 import { LEAD_STATUSES, QUESTION_KEYS, content } from "@/config/content";
-import { loadMessages, attachFiles, messageSchema } from "./chat";
+import { loadMessages, loadMessagePage, attachFiles, messageSchema } from "./chat";
 import { toPublicFile } from "./uploads";
 import { touchConversation } from "./conversation";
 import { ensureConversation } from "./leads";
 import { getLeadTestimonial } from "./testimonials";
+import { getManager } from "./managers";
+import { candidateOutcomeConfig } from "@/config/candidate-outcome";
+import { toCandidateOutcome } from "./candidate-outcome";
 
 const listSchema = z.object({
   q: z.string().trim().max(200).optional().default(""),
@@ -25,7 +29,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
   const leadIdCol = sql.raw(`"leads"."id"`);
   // All answers, ordered by question key: e.g. "yes,no,yes".
   const answer = sql<string | null>`(select string_agg(qa.answer, ',' order by qa.question_key) from quiz_answers qa
-    where qa.session_id = ${leadSession})`;
+    where qa.session_id = ${leadSession} and qa.question_key in ${QUESTION_KEYS})`;
 
   const contactName = sql<string | null>`(select vc.name from visitor_contacts vc where vc.session_id = ${leadSession})`;
   const contactPhone = sql<string | null>`(select vc.phone from visitor_contacts vc where vc.session_id = ${leadSession})`;
@@ -63,12 +67,15 @@ export async function listLeads(input: Record<string, string | undefined>) {
         createdAt: L.createdAt,
         lastMessageAt: L.lastMessageAt,
         messageCount: L.messageCount,
+        managerId: L.managerId,
+        manager: { id: schema.managers.id, name: schema.managers.name, avatar: schema.managers.avatar },
         answer,
         contactName,
         contactPhone,
         submitted,
       })
       .from(L)
+      .innerJoin(schema.managers, eq(schema.managers.id, L.managerId))
       .where(where)
       .orderBy(p.sort === "asc" ? asc(L.createdAt) : desc(L.createdAt), desc(L.id))
       .limit(p.pageSize)
@@ -126,16 +133,19 @@ export async function getLeadDetails(leadId: number) {
     ? await db().select().from(schema.scheduledMessages).where(eq(schema.scheduledMessages.submissionId, submission.id)).limit(1)
     : [];
 
+  const messagePage = conversation ? await loadMessagePage(conversation.id) : null;
   return {
     lead: {
       id: lead.id,
       status: lead.status,
+      outcome: toCandidateOutcome(lead),
+      manager: await getManager(lead.managerId),
       createdAt: lead.createdAt.toISOString(),
       updatedAt: lead.updatedAt.toISOString(),
       messageCount: lead.messageCount,
       lastMessageAt: lead.lastMessageAt?.toISOString() ?? null,
-      stage: leadStage(answers.length, Boolean(submission)),
-      answered: answers.length,
+      stage: leadStage(answers.filter((a) => QUESTION_KEYS.includes(a.questionKey)).length, Boolean(submission)),
+      answered: answers.filter((a) => QUESTION_KEYS.includes(a.questionKey)).length,
     },
     contact: contact ?? null,
     answers: content.quiz.questions.map((q) => {
@@ -164,7 +174,9 @@ export async function getLeadDetails(leadId: number) {
             : null,
         }
       : null,
-    messages: conversation ? await loadMessages(conversation.id) : [],
+    messages: messagePage?.messages ?? [],
+    hasEarlierMessages: messagePage?.hasMore ?? false,
+    oldestMessageCursor: messagePage?.previousCursor ?? null,
     notes: notes.map((n) => ({ id: n.id, body: n.body, createdAt: n.createdAt.toISOString() })),
     siteReview: await getLeadTestimonial(leadId),
   };
@@ -172,11 +184,53 @@ export async function getLeadDetails(leadId: number) {
 
 export async function updateLeadStatus(leadId: number, input: unknown) {
   const { status } = z.object({ status: z.enum(LEAD_STATUSES as [string, ...string[]]) }).parse(input);
-  await findLead(leadId);
-  await db()
-    .update(schema.leads)
-    .set({ status: status as (typeof LEAD_STATUSES)[number], updatedAt: new Date() })
-    .where(eq(schema.leads.id, leadId));
+  const lead = await findLead(leadId);
+  await db().transaction(async (tx) => {
+    await lockVisitor(tx, lead.sessionId);
+    await tx.update(schema.leads).set({
+      status: status as (typeof LEAD_STATUSES)[number],
+      ...(status !== "rejected" ? { candidateResultBody: null, candidateResultPublishedAt: null } : {}),
+      updatedAt: new Date(),
+    }).where(eq(schema.leads.id, leadId));
+  });
+}
+
+export const candidateOutcomeActionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("publish"), body: z.string().trim().min(1).max(candidateOutcomeConfig.maxBodyLength) }),
+  z.object({ action: z.literal("retract") }),
+]);
+
+/** Publishing is an explicit decision, independent of the internal status selector. */
+export async function updateCandidateOutcome(leadId: number, input: unknown) {
+  const action = candidateOutcomeActionSchema.parse(input);
+  const initial = await findLead(leadId);
+  return db().transaction(async (tx) => {
+    // Shares ordering with submissions, status edits and scheduled message delivery.
+    await lockVisitor(tx, initial.sessionId);
+    const [lead] = await tx.select().from(schema.leads).where(eq(schema.leads.id, leadId)).for("update");
+    if (!lead) throw notFound(content.admin.lead.notFound);
+    if (action.action === "retract") {
+      await tx.update(schema.leads).set({ candidateResultBody: null, candidateResultPublishedAt: null, updatedAt: new Date() })
+        .where(eq(schema.leads.id, leadId));
+      return null;
+    }
+    if (lead.status !== "rejected") throw conflict("Najpierw ustaw status „Nie pasuje”.", "outcome_status");
+    const [submission] = await tx.select({ id: schema.taskSubmissions.id }).from(schema.taskSubmissions)
+      .where(eq(schema.taskSubmissions.sessionId, lead.sessionId)).limit(1);
+    if (!submission) throw conflict("Wynik można opublikować dopiero po przesłaniu zadania.", "outcome_not_submitted");
+    // Retries preserve the original publication time; an edited text updates the same result.
+    const now = new Date();
+    const publishedAt = lead.candidateResultPublishedAt ?? now;
+    const [updated] = await tx.update(schema.leads).set({
+      candidateResultBody: action.body, candidateResultPublishedAt: publishedAt, updatedAt: now,
+    }).where(eq(schema.leads.id, leadId)).returning();
+    const conversationIds = tx.select({ id: schema.conversations.id }).from(schema.conversations)
+      .where(eq(schema.conversations.sessionId, lead.sessionId));
+    await tx.update(schema.scheduledMessages).set({ status: "cancelled", lockedAt: null, lastError: "candidate result published" })
+      .where(and(sql`${schema.scheduledMessages.conversationId} in (${conversationIds})`,
+        sql`${schema.scheduledMessages.status} not in ('sent', 'cancelled')`));
+    return toCandidateOutcome(updated);
+  });
 }
 
 export async function addLeadNote(leadId: number, input: unknown) {
@@ -198,6 +252,7 @@ export async function postAdminMessage(leadId: number, input: unknown) {
 
   const now = new Date();
   await db().transaction(async (tx) => {
+    await lockVisitor(tx, lead.sessionId);
     const [inserted] = await tx
       .insert(schema.messages)
       .values({ conversationId: conv.id, sender: "admin", body: text, clientMessageId, createdAt: now })

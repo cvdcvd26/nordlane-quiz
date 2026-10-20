@@ -5,8 +5,9 @@ import { useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, Search, Trash2 } from "lucide-react";
 import { LEAD_STATUSES, QUESTION_KEYS, type LeadStatus } from "@/config/content";
 import { api } from "@/lib/api";
+import type { ManagerProfile } from "@/config/managers";
 import { ACTIVITY_EVENT } from "@/components/admin/ActivityNotifier";
-import { EmptyState, ErrorState, PageHeader, SkeletonRows, StageTrack, StatusSelect } from "@/components/admin/ui";
+import { EmptyState, ErrorState, PageHeader, SkeletonRows, StageTrack, StatusFilter, StatusSelect } from "@/components/admin/ui";
 import { toast } from "@/components/admin/toast";
 import { formatPhone, nationalDigits } from "@/lib/contact";
 import { useAdminI18n } from "@/components/admin/i18n";
@@ -14,6 +15,7 @@ import { useAdminI18n } from "@/components/admin/i18n";
 const displayPhone = (p: string) => formatPhone(nationalDigits(p));
 
 type Item = {
+  manager: ManagerProfile;
   id: number;
   status: LeadStatus;
   createdAt: string;
@@ -197,19 +199,13 @@ function Leads() {
               <label className="sr-only" htmlFor="status">
                 {L.status}
               </label>
-              <select
+              <StatusFilter
                 id="status"
-                className="adm-input w-auto"
-                value={filters.status}
-                onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value, page: 1 }))}
-              >
-                <option value="">{L.allStatuses}</option>
-                {LEAD_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {t.ui.statuses[s]}
-                  </option>
-                ))}
-              </select>
+                label={L.status}
+                allLabel={L.allStatuses}
+                value={LEAD_STATUSES.includes(filters.status as LeadStatus) ? filters.status as LeadStatus : ""}
+                onChange={(status) => setFilters((f) => ({ ...f, status, page: 1 }))}
+              />
               <label className="sr-only" htmlFor="sort">
                 {L.sortLabel}
               </label>
@@ -263,6 +259,7 @@ function Leads() {
                       #{l.id}
                       {l.contactPhone ? ` · ${displayPhone(l.contactPhone)}` : ""}
                     </span>
+                    <span className="mt-0.5 block text-[12px] text-adm-accent">{l.manager.name}</span>
                   </td>
                   <td>
                     <StageTrack stage={l.stage} answered={l.answered} total={QUESTION_KEYS.length} />

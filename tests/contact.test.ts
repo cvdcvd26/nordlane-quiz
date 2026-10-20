@@ -24,6 +24,10 @@ describe("Polish phone mask", () => {
     expect(normalizePhone("600 123 456")).toBe("+48600123456");
     expect(normalizePhone("060 012 345")).toBeNull();
     expect(normalizePhone("12345")).toBeNull();
+    expect(normalizePhone("+380501234567")).toBeNull();
+    expect(normalizePhone("6001234567")).toBeNull();
+    expect(normalizePhone("+486001234")).toBeNull();
+    expect(normalizePhone("abc600123456")).toBeNull();
   });
   it("normalises Telegram names", () => {
     expect(normalizeTelegram("")).toBeNull();

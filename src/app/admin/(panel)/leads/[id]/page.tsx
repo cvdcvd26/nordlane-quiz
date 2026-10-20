@@ -1,21 +1,26 @@
 "use client";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
-import { ArrowRight, ChevronRight, Trash2 } from "lucide-react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { ArrowRight, Check, ChevronRight, Trash2 } from "lucide-react";
 import { LEAD_STATUSES, QUESTION_KEYS, type LeadStatus } from "@/config/content";
 import { uploadConfig } from "@/config/settings";
-import { api, formatBytes, newId, type ChatMessage, type PublicFile } from "@/lib/api";
+import { api, formatBytes, newId, type ChatMessage, type PublicFile, type MessagePage } from "@/lib/api";
+import { mergeMessages } from "@/lib/chat";
 import { MessageList } from "@/components/chat/MessageList";
+import { ManagerAvatar } from "@/components/chat/ManagerAvatar";
+import type { ManagerProfile } from "@/config/managers";
 import { Composer } from "@/components/chat/Composer";
 import { ACTIVITY_EVENT } from "@/components/admin/ActivityNotifier";
 import { AdmStars, ErrorState, NEXT_STATUS, StageStepper, STATUS_TONE, StatusBadge, TestimonialBadge, type TestimonialStatus } from "@/components/admin/ui";
 import { toast } from "@/components/admin/toast";
 import { formatPhone, nationalDigits } from "@/lib/contact";
 import { useAdminI18n } from "@/components/admin/i18n";
+import { CandidateOutcomeEditor } from "@/components/admin/CandidateOutcomeEditor";
+import type { CandidateOutcome } from "@/config/candidate-outcome";
 
 type Details = {
-  lead: { id: number; status: LeadStatus; createdAt: string; updatedAt: string; messageCount: number; lastMessageAt: string | null; stage: string; answered: number };
+  lead: { manager: ManagerProfile; outcome: CandidateOutcome | null; id: number; status: LeadStatus; createdAt: string; updatedAt: string; messageCount: number; lastMessageAt: string | null; stage: string; answered: number };
   contact: { name: string; phone: string; telegram: string | null } | null;
   answers: { question: string; answer: string; value: string | null; updatedAt: string | null }[];
   submission: {
@@ -26,6 +31,8 @@ type Details = {
     autoMessage: { status: string; scheduledFor: string; sentAt: string | null; attempts: number; lastError: string | null } | null;
   } | null;
   messages: ChatMessage[];
+  hasEarlierMessages: boolean;
+  oldestMessageCursor: string | null;
   notes: { id: string; body: string; createdAt: string }[];
   siteReview: {
     requestedAt: string | null;
@@ -36,9 +43,15 @@ type Details = {
 export default function LeadPage() {
   return (
     <Suspense fallback={<div className="adm-skeleton h-64" aria-busy />}>
-      <Lead />
+      <LeadRoute />
     </Suspense>
   );
+}
+
+function LeadRoute() {
+  const { id } = useParams<{ id: string }>();
+  // A route change must discard the previous lead's draft, history and request state.
+  return <Lead key={id} id={id} />;
 }
 
 function Section({ title, children, id }: { title: string; children: React.ReactNode; id?: string }) {
@@ -52,11 +65,10 @@ function Section({ title, children, id }: { title: string; children: React.React
   );
 }
 
-function Lead() {
+function Lead({ id }: { id: string }) {
   const { t, time, err: tErr } = useAdminI18n();
   const T = t.ui.lead;
   const W = t.ui.workflow;
-  const { id } = useParams<{ id: string }>();
   const [d, setD] = useState<Details | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState("");
@@ -65,14 +77,21 @@ function Lead() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const router = useRouter();
+  const replyKey = useRef<{ signature: string; id: string } | null>(null);
+  const loadVersion = useRef(0);
+  const [history, setHistory] = useState<{ leadId: string; messages: ChatMessage[]; before: string | null } | null>(null);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
+
 
   const load = useCallback(() => {
+    const version = ++loadVersion.current;
     api<Details>(`/api/admin/leads/${id}`)
       .then((r) => {
+        if (version !== loadVersion.current) return;
         setD(r);
         setError(null);
       })
-      .catch((e) => setError(tErr(e)));
+      .catch((e) => { if (version === loadVersion.current) setError(tErr(e)); });
   }, [id, tErr]);
 
   useEffect(() => {
@@ -109,8 +128,11 @@ function Lead() {
   const setStatus = async (status: LeadStatus) => {
     if (status === d.lead.status) return;
     setBusy(true);
+    ++loadVersion.current;
     try {
-      setD(await api<Details>(`/api/admin/leads/${id}`, { method: "PATCH", json: { status } }));
+      const details = await api<Details>(`/api/admin/leads/${id}`, { method: "PATCH", json: { status } });
+      ++loadVersion.current;
+      setD(details);
       toast({ kind: "success", title: W.statusChanged(d.lead.id, t.ui.statuses[status]) });
     } catch (e) {
       toast({ kind: "error", title: tErr(e) });
@@ -134,6 +156,22 @@ function Lead() {
     }
   };
 
+  const updateOutcome = async (action: "publish" | "retract", body?: string) => {
+    setBusy(true);
+    ++loadVersion.current;
+    try {
+      const details = await api<Details>(`/api/admin/leads/${id}/outcome`, {
+        method: "POST",
+        json: action === "publish" ? { action, body } : { action },
+      });
+      ++loadVersion.current;
+      setD(details);
+      toast({ kind: "success", title: action === "publish" ? t.ui.candidateOutcome.saved : t.ui.candidateOutcome.retracted });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const remove = async () => {
     setDeleting(true);
     try {
@@ -143,19 +181,6 @@ function Lead() {
     } catch (e) {
       toast({ kind: "error", title: tErr(e) });
       setDeleting(false);
-    }
-  };
-
-  const requestReview = async () => {
-    setBusy(true);
-    try {
-      await api(`/api/admin/leads/${id}/testimonial-request`, { method: "POST" });
-      toast({ kind: "success", title: t.ui.testimonials.requestedToast });
-      load();
-    } catch (e) {
-      toast({ kind: "error", title: tErr(e) });
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -176,16 +201,33 @@ function Lead() {
 
   const reply = async (body: string, files: PublicFile[]) => {
     setSendError(null);
+    const signature = JSON.stringify({ body, files: files.map((f) => f.id) });
+    if (replyKey.current?.signature !== signature) replyKey.current = { signature, id: newId() };
     try {
       const { messages } = await api<{ messages: ChatMessage[] }>(`/api/admin/leads/${id}/messages`, {
         method: "POST",
-        json: { clientMessageId: newId(), body, fileIds: files.map((f) => f.id) },
+        json: { clientMessageId: replyKey.current.id, body, fileIds: files.map((f) => f.id) },
       });
+      replyKey.current = null;
       setD((prev) => prev && { ...prev, messages });
     } catch (e) {
       setSendError(tErr(e));
       throw e;
     }
+  };
+
+  const currentHistory = history?.leadId === id ? history : null;
+  const before = currentHistory ? currentHistory.before : d.hasEarlierMessages ? d.oldestMessageCursor : null;
+  const loadEarlier = async () => {
+    if (!before || loadingEarlier) return;
+    setLoadingEarlier(true);
+    try {
+      const page = await api<MessagePage>(`/api/admin/leads/${id}/messages?before=${encodeURIComponent(before)}`);
+      setHistory((prev) => ({ leadId: id,
+        messages: mergeMessages(prev?.leadId === id ? prev.messages : [], page.messages),
+        before: page.hasMore ? page.previousCursor : null }));
+    } catch (e) { toast({ kind: "error", title: tErr(e) }); }
+    finally { setLoadingEarlier(false); }
   };
 
   const next = NEXT_STATUS[d.lead.status];
@@ -209,6 +251,13 @@ function Lead() {
             <StatusBadge status={d.lead.status} />
           </div>
           <p className="mt-1 text-[13px] text-adm-ink-3">{T.meta(time(d.lead.createdAt), time(d.lead.updatedAt), d.lead.messageCount)}</p>
+          <div className="mt-3 flex items-center gap-2.5">
+            <ManagerAvatar manager={d.lead.manager} size={36} />
+            <div>
+              <p className="text-[11px] text-adm-ink-3">{T.manager}</p>
+              <p className="text-[13px] font-semibold">{d.lead.manager.name}</p>
+            </div>
+          </div>
         </div>
         <button type="button" className="adm-btn adm-btn-danger" onClick={() => setConfirmDelete(true)} disabled={deleting}>
           <Trash2 aria-hidden className="size-3.5" />
@@ -260,11 +309,11 @@ function Lead() {
                   aria-checked={active}
                   disabled={busy}
                   onClick={() => void setStatus(s)}
-                  className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12.5px] font-semibold transition-colors disabled:opacity-60 ${
-                    active ? `${tone.bg} ${tone.text} border-current` : "border-adm-line-strong bg-adm-surface text-adm-ink-2 hover:bg-adm-subtle hover:text-adm-ink"
+                  className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[12.5px] font-semibold transition-colors disabled:opacity-60 ${
+                    active ? `${tone.active} shadow-sm` : `${tone.bg} ${tone.text} ${tone.border} hover:brightness-95`
                   }`}
                 >
-                  <span aria-hidden className={`size-1.5 rounded-full ${tone.dot}`} />
+                  {active ? <Check aria-hidden className="size-3.5" strokeWidth={3} /> : <span aria-hidden className={`size-2 rounded-full ${tone.dot}`} />}
                   {t.ui.statuses[s]}
                 </button>
               );
@@ -272,15 +321,26 @@ function Lead() {
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             {next && (
-              <button type="button" className="adm-btn adm-btn-primary" disabled={busy} onClick={() => void setStatus(next)}>
+              <button type="button" className={`adm-btn ${STATUS_TONE[next].active}`} disabled={busy} onClick={() => void setStatus(next)}>
                 {W.next(t.ui.statuses[next])}
                 <ArrowRight aria-hidden className="size-3.5" />
               </button>
             )}
             <p className="adm-help">{W.statusHint}</p>
           </div>
+          {d.lead.status === "rejected" && !d.submission && <p className="adm-help mt-2">{t.ui.candidateOutcome.requiresSubmission}</p>}
         </section>
       </div>
+
+      {d.lead.status === "rejected" && d.submission && (
+        <CandidateOutcomeEditor
+          key={d.lead.outcome?.publishedAt ?? "unpublished"}
+          outcome={d.lead.outcome}
+          disabled={busy}
+          onPublish={(body) => updateOutcome("publish", body)}
+          onRetract={() => updateOutcome("retract")}
+        />
+      )}
 
       <div className="grid items-start gap-4 lg:grid-cols-[1fr_340px]">
         {/* Conversation */}
@@ -289,12 +349,14 @@ function Lead() {
             {T.thread}
           </h2>
           <div className="max-h-[60vh] min-h-72 overflow-y-auto px-4 py-4">
+            {before && <button type="button" className="adm-btn mb-4" disabled={loadingEarlier} onClick={() => void loadEarlier()}>{t.chat.loadEarlier}</button>}
             <MessageList
-              messages={d.messages}
+              messages={mergeMessages(currentHistory?.messages ?? [], d.messages)}
               viewer="admin"
               text={t.chat}
               locale={t.locale}
               appearance="admin"
+              manager={d.lead.manager}
               emptyText={d.submission ? T.noMessages : T.noSubmissionYet}
             />
           </div>
@@ -356,8 +418,8 @@ function Lead() {
             )}
           </Section>
 
-          <Section title={t.ui.testimonials.leadTitle} id="site-review-title">
-            {d.siteReview?.testimonial ? (
+          {d.siteReview?.testimonial && (
+            <Section title={t.ui.testimonials.leadTitle} id="site-review-title">
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <AdmStars value={d.siteReview.testimonial.rating} />
@@ -385,17 +447,8 @@ function Lead() {
                   )}
                 </div>
               </div>
-            ) : d.siteReview?.requestedAt ? (
-              <p className="text-[13px] text-adm-ink-2">{t.ui.testimonials.requested(time(d.siteReview.requestedAt))}</p>
-            ) : (
-              <>
-                <p className="adm-help">{t.ui.testimonials.notRequested}</p>
-                <button type="button" className="adm-btn mt-2.5" disabled={busy || !d.submission} onClick={() => void requestReview()}>
-                  {t.ui.testimonials.request}
-                </button>
-              </>
-            )}
-          </Section>
+            </Section>
+          )}
 
           <Section title={T.answers} id="answers-title">
             <dl className="space-y-2.5 text-[13.5px]">

@@ -1,7 +1,9 @@
 "use client";
+import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { content, QUESTION_KEYS } from "@/config/content";
 import { reviewConfig } from "@/config/settings";
+import type { CandidateOutcome } from "@/config/candidate-outcome";
 import { api, newId, type PublicFile } from "@/lib/api";
 import { Lane, type Step } from "./Lane";
 import { Backdrop } from "../visual/Backdrop";
@@ -9,15 +11,16 @@ import { StepContact } from "./StepContact";
 import { StepQuestions } from "./StepQuestions";
 import { StepTask } from "./StepTask";
 import { VisitorChat } from "./VisitorChat";
-import { TestimonialForm, type VisitorTestimonial } from "../testimonials/TestimonialForm";
 import { fromServer, type UploadItem } from "./Uploader";
 import { displayPhone, validateContact, type ContactDraft, type ContactErrors } from "./ContactFields";
-import { PixelHeading } from "../visual/PixelHeading";
+import { SubmissionConfirmation, SubmissionFilesSummary } from "./SubmissionConfirmation";
+import { CandidateOutcomeCard } from "./CandidateOutcomeCard";
 
 type SessionState = {
   answers: Record<string, string>;
   contact: { name: string; phone: string; telegram: string | null } | null;
   submission: { id: string; submittedAt: string } | null;
+  outcome: CandidateOutcome | null;
   files: PublicFile[];
   limits: { maxFiles: number; maxFileSizeBytes: number; types: string[] };
 };
@@ -48,10 +51,12 @@ const readIdem = () => {
 
 export function QuizApp() {
   const [state, setState] = useState<SessionState | null>(null);
-  const [testimonial, setTestimonial] = useState<VisitorTestimonial | null>(null);
+  const [outcome, setOutcome] = useState<CandidateOutcome | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [step, setStep] = useState<Step>(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const answersRef = useRef<Record<string, string>>({});
+  const answerSaving = useRef(false);
   const [saving, setSaving] = useState<string | null>(null);
   const [answerError, setAnswerError] = useState<string | null>(null);
   const [contact, setContact] = useState<ContactDraft>({ name: "", phone: "", telegram: "" });
@@ -87,7 +92,9 @@ export function QuizApp() {
       api<SessionState>("/api/session")
         .then((s) => {
           setState(s);
+          setOutcome(s.outcome);
           setAnswers(s.answers);
+          answersRef.current = s.answers;
           if (s.contact)
             setContact({ name: s.contact.name, phone: displayPhone(s.contact.phone), telegram: s.contact.telegram ?? "" });
           setItems(s.files.map(fromServer));
@@ -118,27 +125,27 @@ export function QuizApp() {
   };
 
   const choose = async (questionKey: string, value: string) => {
-    const prev = answers[questionKey];
-    setAnswers((a) => ({ ...a, [questionKey]: value }));
+    if (answerSaving.current) return;
+    answerSaving.current = true;
+    clearTimeout(autoTimer.current);
+    const previous = answersRef.current;
+    const next = { ...previous, [questionKey]: value };
+    setAnswers(next);
     setAnswerError(null);
     setSaving(questionKey);
     try {
       await api("/api/quiz/answer", { method: "PUT", json: { questionKey, answer: value } });
       // The last missing answer just arrived: move on to the task automatically.
-      const next = { ...answers, [questionKey]: value };
-      if (!allAnswered(answers) && allAnswered(next)) {
+      answersRef.current = next;
+      if (!allAnswered(previous) && allAnswered(next)) {
         clearTimeout(autoTimer.current);
         autoTimer.current = setTimeout(() => goTo(2), 700);
       }
     } catch (err) {
-      setAnswers((a) => {
-        const next = { ...a };
-        if (prev) next[questionKey] = prev;
-        else delete next[questionKey];
-        return next;
-      });
+      setAnswers(previous);
       setAnswerError((err as Error).message);
     } finally {
+      answerSaving.current = false;
       setSaving((s) => (s === questionKey ? null : s));
     }
   };
@@ -162,6 +169,7 @@ export function QuizApp() {
     setContactSaving(true);
     try {
       await api("/api/contact", { method: "PUT", json: contact });
+      setState((s) => s && { ...s, contact: { ...contact, telegram: contact.telegram || null } });
       goTo(1);
     } catch (err) {
       setContactError((err as Error).message);
@@ -180,6 +188,7 @@ export function QuizApp() {
   const submit = async () => {
     setSubmitError(null);
     if (items.some((i) => i.status === "uploading")) return setSubmitError(content.errors.filesPending);
+    if (items.some((i) => i.status === "error")) return setSubmitError(content.task.upload.resolveErrors);
     const ready = items.filter((i) => i.status === "done" && i.serverId);
     if (ready.length === 0) return setSubmitError(content.errors.filesRequired);
     if (review.trim().length < reviewConfig.minLength) {
@@ -209,32 +218,28 @@ export function QuizApp() {
   };
 
   return (
-    <div className="min-h-dvh overflow-x-clip">
+    <div className="min-h-dvh overflow-x-clip" data-outcome={outcome?.status}>
       <Backdrop />
       {/* Top bar */}
       <header className="sticky top-0 z-30 border-b border-line bg-paper/70 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-10">
           <p className="flex items-center gap-2.5">
-            <span aria-hidden className="relative grid size-8 place-items-center rounded-full bg-paint/10 ring-1 ring-paint/40">
-              <span className="size-3.5 rounded-full border-[3px] border-cyan border-r-transparent" />
+            <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-xl border border-paint/30 bg-gradient-to-br from-[#133a2b] to-surface-2 shadow-[0_0_20px_#2ee6a014]">
+              <Image src="/alleybiz-mark.svg" alt="" width={32} height={32} unoptimized />
             </span>
             <span className="display text-[1.05rem] font-bold">{content.brand.name}</span>
           </p>
-          <span className="chip">
-            <span className="chip-dot" aria-hidden />
-            {content.brand.demoBadge}
-          </span>
         </div>
         {/* Mobile progress */}
         <div className="mx-auto max-w-6xl px-4 pb-4 sm:px-6 md:hidden">
-          <Lane step={step} />
+          <Lane step={step} rejected={Boolean(outcome)} />
         </div>
       </header>
 
       <div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6 md:grid md:grid-cols-[10rem_1fr] md:gap-14 lg:gap-20 lg:px-10">
         <aside className="hidden md:block">
           <div className="sticky top-28 pt-14">
-            <Lane step={step} />
+            <Lane step={step} rejected={Boolean(outcome)} />
           </div>
         </aside>
 
@@ -298,21 +303,18 @@ export function QuizApp() {
           )}
 
           {state && step === 3 && (
-            <section className="step-enter space-y-10" aria-labelledby="done-title">
-              <div>
-                <p className="chip pop border-cyan/50 text-cyan" role="status">
-                  <span aria-hidden>✓</span> {content.done.status}
-                </p>
-                <PixelHeading id="done-title" wrapperClassName="mt-5" className="display text-[clamp(2.75rem,7vw,5.5rem)] font-bold">
-                  {content.done.title} <span className="accent-text">{content.done.titleAccent}</span>
-                </PixelHeading>
-                <p className="measure mt-4 text-lg leading-relaxed text-ink-soft">{content.done.body}</p>
+            <section className="step-enter space-y-6" aria-labelledby="done-title">
+              <div aria-live="polite" aria-atomic="true">
+                {outcome ? (
+                  <CandidateOutcomeCard title={outcome.title} body={outcome.body} as="h1" id="done-title" live={false}>
+                    <SubmissionFilesSummary fileCount={items.filter((item) => item.status === "done" && item.serverId).length} muted />
+                  </CandidateOutcomeCard>
+                ) : (
+                  <SubmissionConfirmation fileCount={items.filter((item) => item.status === "done" && item.serverId).length} />
+                )}
               </div>
-              <div className="reveal" style={{ "--i": 2 } as React.CSSProperties}>
-                <VisitorChat onTestimonial={setTestimonial} />
-              </div>
-              <div className="reveal" style={{ "--i": 3 } as React.CSSProperties}>
-                <TestimonialForm state={testimonial} defaultName={state.contact?.name ?? ""} onSent={setTestimonial} />
+              <div hidden={Boolean(outcome)} className="reveal" style={{ "--i": 2 } as React.CSSProperties}>
+                <VisitorChat onOutcome={setOutcome} closed={Boolean(outcome)} />
               </div>
             </section>
           )}

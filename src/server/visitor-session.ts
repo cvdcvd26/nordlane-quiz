@@ -1,6 +1,7 @@
+import { rateLimit } from "./rate-limit";
 import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
-import { eq } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { unauthorized } from "./errors";
 import { content } from "@/config/content";
@@ -11,11 +12,11 @@ const MAX_AGE = 60 * 60 * 24 * 180; // 180 days
 const hash = (token: string) => createHash("sha256").update(token).digest("hex");
 
 async function findByToken(token: string | undefined) {
-  if (!token || token.length < 32) return null;
+  if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
   const rows = await db()
     .select({ id: schema.visitorSessions.id })
     .from(schema.visitorSessions)
-    .where(eq(schema.visitorSessions.tokenHash, hash(token)))
+    .where(and(eq(schema.visitorSessions.tokenHash, hash(token)), gt(schema.visitorSessions.createdAt, new Date(Date.now() - MAX_AGE * 1000))))
     .limit(1);
   return rows[0]?.id ?? null;
 }
@@ -35,7 +36,7 @@ export async function requireVisitorSessionId(): Promise<string> {
   return id;
 }
 
-export async function getOrCreateVisitorSessionId(): Promise<string> {
+export async function getOrCreateVisitorSessionId(ip = "unknown"): Promise<string> {
   const jar = await cookies();
   const existing = await findByToken(jar.get(COOKIE)?.value);
   if (existing) {
@@ -45,6 +46,7 @@ export async function getOrCreateVisitorSessionId(): Promise<string> {
       .where(eq(schema.visitorSessions.id, existing));
     return existing;
   }
+  await rateLimit(`session-create:${ip}`, 120, 10 * 60);
   const token = randomBytes(32).toString("base64url");
   const [row] = await db().insert(schema.visitorSessions).values({ tokenHash: hash(token) }).returning();
   jar.set(COOKIE, token, {

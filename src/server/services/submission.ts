@@ -1,3 +1,4 @@
+import { lockVisitor } from "../session-lock";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
@@ -40,6 +41,7 @@ export async function submitTask(sessionId: string, input: unknown): Promise<Sub
   const settings = await getSettings();
 
   const result = await db().transaction(async (tx) => {
+    await lockVisitor(tx, sessionId);
     const [submission] = await tx
       .insert(schema.taskSubmissions)
       .values({ sessionId, idempotencyKey, review })

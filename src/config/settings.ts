@@ -1,3 +1,9 @@
+function positiveInteger(name: string, value: string | undefined, fallback: number, maximum: number) {
+  const n = value === undefined ? fallback : Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > maximum) throw new Error(`${name} must be an integer between 1 and ${maximum}`);
+  return n;
+}
+
 /**
  * Behaviour settings. Values below are defaults; the editable ones are changed
  * by the administrator in /admin/settings (stored in the database).
@@ -8,9 +14,10 @@ export const uploadConfig = {
   /** Types the administrator may attach to messages. */
   adminAttachmentTypes: ["image/png", "image/jpeg", "image/webp", "application/pdf"],
   /** At most 4 MB: a Vercel serverless function accepts request bodies up to 4.5 MB. */
-  maxFileSizeBytes: Number(process.env.NEXT_PUBLIC_MAX_FILE_MB ?? 4) * 1024 * 1024,
-  maxFilesPerSubmission: Number(process.env.NEXT_PUBLIC_MAX_FILES ?? 6),
+  maxFileSizeBytes: positiveInteger("NEXT_PUBLIC_MAX_FILE_MB", process.env.NEXT_PUBLIC_MAX_FILE_MB, 4, 4) * 1024 * 1024,
+  maxFilesPerSubmission: positiveInteger("NEXT_PUBLIC_MAX_FILES", process.env.NEXT_PUBLIC_MAX_FILES, 6, 20),
   maxFilesPerMessage: 3,
+  maxPendingChatFiles: 12,
 } as const;
 
 /** Public reviews (testimonials) shown on the first screen after moderation. */
@@ -20,14 +27,13 @@ export const testimonialConfig = {
   maxNameLength: 40,
   /** How many published reviews the first screen loads. */
   publicLimit: 24,
-  /** Placeholder reviews from content.ts fill the strip until this many real ones are published. */
-  demoUntil: 4,
 } as const;
 
 /** Review written on the task step. */
 export const reviewConfig = { minLength: 10, maxLength: 3000 } as const;
 
 export const chatConfig = {
+  pageSize: 100,
   pollIntervalMs: 4000,
   maxMessageLength: 4000,
 } as const;
@@ -35,17 +41,17 @@ export const chatConfig = {
 export type EditableSettings = {
   autoMessageEnabled: boolean;
   autoMessageText: string;
-  autoMessageMinDelayMinutes: number;
-  autoMessageMaxDelayMinutes: number;
+  autoMessageMinDelaySeconds: number;
+  autoMessageMaxDelaySeconds: number;
   chatAttachmentsEnabled: boolean;
 };
 
 export const defaultSettings: EditableSettings = {
   autoMessageEnabled: true,
   autoMessageText:
-    "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore — odpowiedz na tę wiadomość, aby kontynuować.",
-  autoMessageMinDelayMinutes: 20,
-  autoMessageMaxDelayMinutes: 30,
+    "Dziękujemy za przesłanie zadania. Otrzymaliśmy Twoją odpowiedź i załączniki. Jeśli chcesz coś dodać lub masz pytanie, napisz tutaj.",
+  autoMessageMinDelaySeconds: 30,
+  autoMessageMaxDelaySeconds: 60,
   chatAttachmentsEnabled: true,
 };
 

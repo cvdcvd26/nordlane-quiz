@@ -1,6 +1,9 @@
 "use client";
 import { useEffect, useRef } from "react";
+import { Clock3 } from "lucide-react";
 import { content } from "@/config/content";
+import { defaultManager, type ManagerProfile } from "@/config/managers";
+import { ManagerAvatar } from "./ManagerAvatar";
 import { formatBytes, formatTime, type ChatMessage } from "@/lib/api";
 
 export type ChatText = { [K in "systemLabel" | "youLabel" | "visitorLabel" | "adminLabel" | "sending" | "failed" | "retry"]: string };
@@ -15,6 +18,7 @@ export function MessageList({
   text = content.chat,
   locale = content.locale,
   appearance = "visitor",
+  manager,
 }: {
   messages: LocalMessage[];
   viewer: "visitor" | "admin";
@@ -24,13 +28,16 @@ export function MessageList({
   text?: ChatText;
   locale?: string;
   appearance?: "visitor" | "admin";
+  manager?: ManagerProfile | null;
 }) {
   const adm = appearance === "admin";
-  const end = useRef<HTMLDivElement>(null);
+  const operator = manager ?? defaultManager;
+  const end = useRef<HTMLLIElement>(null);
   const count = messages.length;
+  const lastMessageId = messages.at(-1)?.id;
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [count]);
+  }, [lastMessageId]);
 
   if (count === 0) return <p className={`px-1 py-10 text-center text-sm ${adm ? "text-adm-ink-3" : "text-slate"}`}>{emptyText}</p>;
 
@@ -38,19 +45,39 @@ export function MessageList({
     <ol className="space-y-4" aria-live="polite" aria-relevant="additions">
       {messages.map((m) => {
         if (m.sender === "system") {
+          if (!adm) {
+            return (
+              <li key={m.id} className="flex justify-start">
+                <div className="pop relative max-w-[90%] overflow-hidden rounded-2xl rounded-bl-md border border-paint/25 bg-paint/[0.035] px-4 py-3.5 sm:max-w-[75%]">
+                  <span aria-hidden className="absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-paint/75" />
+                  <div className="mb-3 flex items-start gap-3">
+                    <ManagerAvatar manager={operator} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <p className="text-[13px] font-semibold tracking-[0.01em] text-ink">{operator.name}</p>
+                        <time className="ml-auto shrink-0 text-[11px] tabular-nums text-ink-soft" dateTime={m.createdAt}>
+                          {formatTime(m.createdAt, locale)}
+                        </time>
+                      </div>
+                      <p className="mt-1 inline-flex max-w-full items-center gap-1.5 rounded-md border border-paint/15 bg-paint/[0.08] px-1.5 py-0.5 text-[10px] font-medium leading-relaxed text-sky">
+                        <Clock3 aria-hidden size={10} strokeWidth={1.7} className="shrink-0" />
+                        {text.systemLabel}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="whitespace-pre-wrap break-words text-sm leading-[1.75] text-ink/90 sm:text-[15px]">{m.body}</p>
+                </div>
+              </li>
+            );
+          }
           return (
             <li
               key={m.id}
-              className={
-                adm
-                  ? "mx-auto max-w-md rounded-lg border border-dashed border-adm-line-strong bg-adm-subtle px-3.5 py-2.5 text-[13.5px]"
-                  : "pop mx-auto max-w-md rounded-(--radius-field) border border-paint/40 bg-paint-soft px-4 py-3 text-sm"
-              }
+              className="mx-auto max-w-md rounded-lg border border-dashed border-adm-line-strong bg-adm-subtle px-3.5 py-2.5 text-[13.5px]"
             >
-              <p className={`mb-1 flex items-center gap-2 text-xs font-semibold ${adm ? "text-adm-ink-2" : "text-cyan"}`}>
-                {!adm && <span aria-hidden className="chip-dot" />}
+              <p className="mb-1 flex items-center gap-2 text-xs font-semibold text-adm-ink-2">
                 {text.systemLabel}
-                <time className={`ml-auto font-normal ${adm ? "text-adm-ink-3" : "text-slate"}`} dateTime={m.createdAt}>
+                <time className="ml-auto font-normal text-adm-ink-3" dateTime={m.createdAt}>
                   {formatTime(m.createdAt, locale)}
                 </time>
               </p>
@@ -59,9 +86,10 @@ export function MessageList({
           );
         }
         const mine = m.sender === viewer;
-        const who = m.sender === "visitor" ? (viewer === "visitor" ? text.youLabel : text.visitorLabel) : text.adminLabel;
+        const who = m.sender === "visitor" ? (viewer === "visitor" ? text.youLabel : text.visitorLabel) : operator.name;
         return (
-          <li key={m.clientMessageId || m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+          <li key={m.clientMessageId || m.id} className={`flex gap-2.5 ${mine ? "justify-end" : "justify-start"}`}>
+            {!adm && !mine && m.sender === "admin" && <ManagerAvatar manager={operator} size={36} />}
             <div className={`max-w-[85%] sm:max-w-[75%] ${m.local === "sending" ? "opacity-70" : ""}`}>
               <div
                 className={`${
@@ -126,7 +154,7 @@ export function MessageList({
           </li>
         );
       })}
-      <div ref={end} />
+      <li ref={end} aria-hidden />
     </ol>
   );
 }

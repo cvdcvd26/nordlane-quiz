@@ -1,0 +1,172 @@
+NORDLANE QUIZ — ИСПРАВЛЕНИЯ И ПРОВЕРКИ
+17 октября 2026 года
+
+Исправлены подтверждённые ошибки из первоначального аудита и дополнительные проблемы, найденные при проверке кода и запуске. Полное отсутствие любых ошибок в любых условиях не гарантируется: реальные облачные интеграции и нагрузка проверяются после размещения.
+
+ИСПРАВЛЕНИЯ
+
+Чат
+- Ответ менеджера больше не пропускается, когда посетитель отправил своё сообщение между опросами. Курсор получения меняется только по страницам полученных сообщений.
+- Вместо времени используется последовательный номер сообщения. Это исключает пропуски из-за одинаковых или округлённых временных меток. Запись сообщений сериализуется блокировкой сессии.
+- Обе стороны показывают последние 100 сообщений и могут загрузить раннюю историю. Переписка больше не обрезается первыми 500 сообщениями.
+- Длинная очередь новых сообщений дочитывается страницами до конца; отправленное сообщение извлекается точно по своей записи.
+- Добавление ранних сообщений не перематывает чат автоматически вниз.
+- Повторная отправка ответа из админки после сетевой ошибки повторно использует ключ операции. Изменение текста создаёт новый ключ.
+- Смена карточки лида сбрасывает старые черновики, историю и состояние запросов. Устаревший ответ фоновой загрузки не перезаписывает новый.
+- Серверные ошибки опроса видны как отсутствие соединения; одновременные опросы исключены. Подтверждённые сообщения не дублируются среди локальных ожидающих.
+- Некорректные курсоры возвращают ошибку проверки данных вместо внутренней ошибки сервера.
+
+Задания, контакты и файлы
+- Загрузка, отправка задания и удаление черновика используют общую блокировку сессии. Параллельные загрузки не превышают лимит; удаляемый файл нельзя одновременно прикрепить к заданию или сообщению.
+- При отклонении загрузки метаданных уже записанный объект удаляется из хранилища.
+- Удаление лида сначала блокирует его сессию и получает актуальный список файлов: конкурентная загрузка не оставляет невидимый файл после удаления лида.
+- Удалённые вложения чата удаляются также на сервере. Администратор может удалять свои черновики; посетитель не может удалить черновик администратора.
+- Для незавершённых вложений чата введён лимит. Удаление во время загрузки дождётся идентификатора файла и удалит его после завершения.
+- Кнопки ответа на вопросы блокируются до сохранения, что исключает изменение ответов из-за неправильного порядка сетевых ответов. Автоматический переход не запускается по несохранённым данным.
+- Имя из контактного шага обновляется в общем состоянии и корректно подставляется в итоговую форму отзыва.
+- Номер телефона проверяется без незаметного обрезания лишних цифр. Неполный международный номер, другой код страны и буквы отклоняются; неверная вставка сохраняется в поле как ошибка, а не превращается в другой номер.
+- Некорректные UUID файлов возвращают 404, а не ошибку PostgreSQL.
+- Ограничивается фактический размер потока JSON и multipart, в том числе без Content-Length. Проверка MIME и сигнатуры файлов сохранена.
+- Конфигурация лимитов загрузки проверяется; нельзя случайно отключить её отрицательным, бесконечным или слишком большим значением.
+
+Автоматические сообщения и отзывы
+- Проверка задания, вставка системного сообщения и отметка об отправке выполняются атомарно. Аварийное завершение откатывает операцию.
+- Резервная обработка подбирает просроченные блокировки sending; свежую блокировку не перехватывает.
+- Слишком ранний callback очереди получает 503 для повторной попытки, вместо подтверждения необработанного задания.
+- Приглашение оставить отзыв и открытие формы записываются одной транзакцией. При ошибке можно безопасно повторить операцию.
+- Адрес callback для Vercel Preview выбирается из адреса preview, а не production. Для обычного production-сервера с QStash требуется явный APP_URL.
+
+Авторизация и запуск
+- Проверка происхождения запроса учитывает протокол и Sec-Fetch-Site, а не только имя хоста.
+- Посетительская сессия ограничена по возрасту также на сервере. Создание новых сессий ограничено по IP.
+- Новый пароль ограничен 72 байтами UTF-8 — пределом bcrypt. Смена пароля сериализована и атомарно увеличивает версию сессии.
+- CLI создания администратора проверяет email и длину пароля.
+- Уведомления админки не обрезают пакет до 20 событий; сообщения различаются по ID. Убраны пересекающиеся опросы, набор просмотренных уведомлений очищается.
+- Обычный удалённый PostgreSQL использует pg, Neon — WebSocket-драйвер. Добавлены явный выбор драйвера и WebSocket fallback для Node.
+- CLI загружает .env.local/.env. Добавлен отсутствовавший .env.example, Node 24 в .nvmrc и корректная команда генерации типов перед TypeScript.
+- В production вне Vercel локальные файлы требуют явно настроенного постоянного UPLOAD_DIR. Runtime-каталог файлов исключён из статической трассировки сборки.
+- Vitest-конфигурация переведена в .mts без предупреждения о загрузке ESM как CommonJS.
+
+МИГРАЦИЯ
+Добавлена drizzle/0004_message_sequence.sql и соответствующий snapshot Drizzle. Проверено обновление базы с существующей перепиской: сообщения сохраняются в историческом порядке, следующее сообщение получает правильный номер.
+Перед обновлением реальной базы сделать резервную копию, остановить старую версию, применить миграции и запустить новую. Реальная пользовательская база в этой работе не изменялась.
+
+ПРОВЕРКИ
+- 52 автоматических теста: успешно. Включают 32 исходных теста и 20 новых проверок HTTP-границ, авторизации, сессий, пагинации, транзакций, гонок загрузки и обновления существующей базы.
+- TypeScript с генерацией типов маршрутов: успешно.
+- ESLint: успешно без предупреждений.
+- Production-сборка Next.js: успешно без предупреждений.
+- Реальный локальный HTTP-сценарий на production-сборке и отдельной тестовой базе: 39 проверок успешно. Проверены контакты, CSRF, вопросы, загрузки и доступ к чужим файлам, повторная отправка задания, обе стороны чата, скрытые заметки, модерация отзыва, защита cron, удаление черновика и выход из админки.
+- Браузер: пройден путь контакты → вопросы → загрузка → отзыв к заданию → отправка → сообщение в чате. Прогресс восстанавливается после перезагрузки.
+- Браузерная пагинация: 205 тестовых ответов менеджера и одно сообщение посетителя загружены полностью; после последней страницы кнопка ранней истории исчезла.
+- Мобильная ширина 390 px: горизонтального переполнения нет; журнал ошибок браузера пуст на проверенном сценарии.
+
+ЗАВИСИМОСТИ
+npm audit --omit=dev: 0 известных уязвимостей на дату проверки.
+Полный npm audit: 5 high-уведомлений в одной цепочке инструментов разработки eslint-config-next → plugin → fast-glob/micromatch → braces. Для braces <=3.0.3 исправленного upstream-релиза на дату проверки нет. Это не пять разных ошибок приложения. Риск не устранён и не скрыт; проверять повторно после выхода исправления. Не применять предложенный npm принудительный откат Next.js tooling на несовместимую старую основную версию ради формального нулевого отчёта.
+Источник: https://github.com/advisories/GHSA-vfj7-8cjw-p6xm
+Устранены 4 moderate-уведомления из цепочки старого esbuild инструментов миграций: задан совместимый override и проверены генерация миграции, тесты и сборка.
+
+ГРАНИЦЫ ПРОВЕРКИ
+Не выполнялись реальное развёртывание на Vercel/Render, тест реальных Neon/Blob/QStash и нагрузочный тест. Тестовая PostgreSQL-совместимая база PGlite позволяет проверить SQL, миграции и транзакции; межпроцессную конкуренцию на настоящем PostgreSQL при нагрузке следует дополнительно проверить в staging.
+В проекте намеренно сохранены бренд, демонстрационные тексты и отключение индексации. Это решения по содержанию, а не скрытое исправление технической ошибки.
+
+РАЗМЕЩЕНИЕ
+См. HOSTING-RU.txt и .env.example в том же архиве.
+
+ОБНОВЛЕНИЕ 20 ОКТЯБРЯ 2026
+- Интервал автоматического ответа теперь задаётся в секундах: по умолчанию 30–60.
+- Панель настроек переведена на секунды на RU/PL/EN; сохранённые старые интервалы в минутах читаются с пересчётом.
+- Убрана дополнительная минута ожидания резервной доставки. Ранний вызов очереди не отправляет сообщение до назначенного срока.
+- Тестовые тексты и оформление не менялись.
+- Текущий результат: 54 автоматических теста, TypeScript, ESLint и production-сборка прошли.
+- Проверка по реальным часам: назначено через 49,541 с, отправлено через 49,743 с. Дублей нет. Сценарий использовал опрос открытого чата, без искусственного изменения времени.
+- Выполнен повторный ручной проход интерфейса: контакты, 3 вопроса, перезагрузка с восстановлением, удаление и повторная загрузка PNG, отправка задания, сообщения в обе стороны, статус, скрытая заметка, приглашение к отзыву, отправка и публикация после модерации.
+- Два тестовых лида сохранены только во временной локальной базе. В архив их данные и файлы не включены.
+
+ОФОРМЛЕНИЕ АВТООТВЕТА — 20 ОКТЯБРЯ 2026
+Автоматическое сообщение выровнено слева. Добавлены тонкая зелёная полоса, отдельная метка с иконкой часов, спокойный зелёный оттенок фона, название команды и время. Обычные сообщения и тексты сохранены. ESLint, TypeScript в составе production-сборки и сборка прошли. Внешний вид проверен в локальном браузере; ошибок консоли на проверенном экране нет.
+
+ФИНАЛЬНЫЙ ЭКРАН — 20 ОКТЯБРЯ 2026
+Вместо демонстрационного заголовка на шаге завершения добавлено подтверждение получения задания: статус успешной отправки, число сохранённых файлов и пояснение о дальнейшей переписке. Срок ответа не обещается. Используется фактическое число успешно загруженных вложений. Форма отзывов и рабочий загрузчик не изменялись. Отдельная HTML-макета загрузчика — только пример для обсуждения. ESLint и production-сборка с TypeScript прошли, подтверждение проверено на существующей тестовой заявке после перезагрузки.
+
+РАБОЧАЯ ЗАГРУЗКА И ФОРМА ОТЗЫВА — 20 ОКТЯБРЯ 2026
+- Рабочий загрузчик переведён с сетки на карточки файлов: миниатюра, MIME, размер, состояния загрузки/сохранения/готовности/ошибки, повтор и удаление.
+- Готовое изображение открывается в модальном просмотре. Проверены открытие, закрытие по Escape и возврат фокуса к кнопке. Фоновая прокрутка блокируется, пока просмотр открыт.
+- Файл с ошибкой нельзя незаметно пропустить при отправке задания: пользователь должен удалить его либо повторить загрузку. Неуспешные файлы учитываются в лимите выбранных файлов.
+- До приглашения менеджера вместо заблокированных полей отзыва видна компактная подсказка. После приглашения активная форма появляется при следующем опросе чата, без перезагрузки. Серверная проверка права оставить отзыв сохранена.
+- TypeScript в production-сборке, сама сборка и ESLint прошли.
+- Ручной сценарий в браузере: новые контакты/три вопроса; JPG успешно сохранён; PNG с ложным содержимым отклонён; повтор показал ошибку; отправка задания с ошибочным файлом остановлена; ошибочный файл удалён; увеличенный просмотр открыт и закрыт по Escape; после перезагрузки сохранились JPG и комментарий; задание отправлено, показан один файл; до приглашения поля отзыва отсутствовали; после приглашения появились; отзыв с четырьмя звёздами отправился на модерацию.
+- Проверено на временной локальной базе, тестовый лид #3. Демонстрационная HTML-макета не включена в приложение или ZIP.
+
+ГАЛОЧКА GOTOWE — 20 ОКТЯБРЯ 2026
+Исправлен индикатор: после успешной отправки задания на финальном этапе все четыре пункта показывают галочки, включая Gotowe. Раньше последний пункт всегда оставался текущим и показывал цифру 4. Проверены четыре галочки в браузере после восстановления сохранённой заявки, ESLint и production-сборка с TypeScript.
+
+ALLEYBIZ QUIZ — 20 ОКТЯБРЯ 2026
+Название Nordlane Studio/Nordlane заменено на AlleyBiz Quiz во всём интерфейсе: посетительская часть, чат, админка, языковые подписи и заголовок вкладки. Верхняя метка Demo · projekt do portfolio удалена целиком. Проверены первый шаг с пустыми контактами, отсутствие метки и старого названия в src, ESLint и production-сборка. Для нового прохождения подключена отдельная чистая локальная база; она и её данные не включены в архив.
+
+COPY UPDATE - 20 OCTOBER 2026
+- Added the supplied Polish recruitment copy, privacy notice, question heading and all three question texts.
+- Per the owner's clarification, retained Tak / Nie answer options and existing save logic.
+- Replaced demo company figures with company introduction, registration details, website, responsibilities, paid onboarding, contract terms and benefits.
+- Remaining assignment/PDF copy awaits the owner's next input.
+- Verified all three screens in the browser; no horizontal overflow at 719px. ESLint, production build with TypeScript and all 54 tests passed.
+
+LOGO AND QUESTION HEADING - 20 OCTOBER 2026
+- Extracted the original SVG A mark from https://itsolution.fun/ as requested. Preserved all four paths and changed gradients, shadow and glow to the site green palette. Stored locally as public/alleybiz-mark.svg. No external image request is needed.
+- Replaced the circular header mark with the green A.
+- Applied the existing PixelHeading component to the question heading, with 3 krotkich pytan highlighted in green. Preserved complete Polish wording and Tak / Nie answers. Existing reduced-motion fallback is retained.
+- Production build with TypeScript and ESLint passed. Verified loaded logo, active pixel canvas, original SVG geometry and no horizontal overflow at 719px in the browser.
+
+HEADING READABILITY AND TASK TRANSITION - 20 OCTOBER 2026
+- Shortened the pixel introduction to 450ms and reduced scattering. A stationary pointer expires after 90ms; return speed uses elapsed time. Restored crisp native heading text when the effect settles instead of keeping a permanent pixel rendering. Touch input does not trigger scattering; reduced-motion fallback remains.
+- Added a visible arrow link between company information and assignment: Przejdz do zadania, with instruction/materials hint. It scrolls to the task heading, moves keyboard focus there and respects reduced motion. Scroll margin keeps the heading below the fixed header.
+- ESLint and a clean production build with TypeScript passed. Browser checks: normal text restored after pointer movement stops; task link focuses the assignment heading at 160px below the viewport top. Screenshots saved.
+- Collapsible company sections were discussed as a proposal and have not been implemented.
+
+COMPANY ACCORDIONS - 20 OCTOBER 2026
+- Converted responsibilities/onboarding and cooperation terms/benefits into two native details/summary disclosures, both initially collapsed and independently expandable.
+- Company description and registration details remain visible. Summary rows show a rotating chevron and concise labels, including UoS / B2B and paid onboarding. All original expanded copy is retained. The assignment transition remains visible below both disclosures.
+- ESLint and production build with TypeScript passed. Browser checked both initially closed, both open simultaneously, first closed while second stays open, then second closed with Tab and Space. No horizontal overflow at 719px; saved screenshot with both closed.
+
+RYANAIR ASSIGNMENT AND PLACEHOLDER CLEANUP - 20 OCTOBER 2026
+- Added Polish Zadanie testowe copy and three instructions, with separate official App Store and Google Play links. Corrected the application ownership phrase to refer to the official Ryanair application.
+- Replaced placeholder task PDF with the supplied Rejestracja_Ryanair_Instrukcja.pdf, unchanged (7 pages, 3776000 bytes). Updated file name, links, download attribute, file metadata and README.
+- Replaced task response placeholder with Wpisz tutaj swoja odpowiedz and updated its heading/hint. Removed remaining filler copy in chat, review form and default auto-reply. Removed demonstration review cards instead of inventing review text; published reviews still work. Removed unused empty strip spacing.
+- No Lorem ipsum remains in src. Local settings use the new auto-reply default and there are no published placeholder reviews in the current preview database.
+- ESLint, production build with TypeScript and all 54 tests passed. Verified both app-store links and the response placeholder in the browser. Opened the PDF from its card in a new tab; HTTP download has application/pdf content type and SHA-256 matches the supplied original.
+
+ANETA AVATAR, NEXT STEP COPY AND HEADER - 20 OCTOBER 2026
+- Added the supplied portrait unchanged as public/aneta-hr.png. The visitor automatic message header shows Aneta (HR), with a circular CSS crop centered on the face. Kept the automatic-message badge and timestamp. Admin rendering and human message labels remain as before.
+- Updated the confirmation next-step section in Polish to ask the visitor to wait for task checking and a specialist reply, with an option to ask questions or add details in chat.
+- Changed the visible top header name to AlleyBiz as requested.
+- ESLint and the final production build with TypeScript passed. Verified the loaded portrait, centered face, operator name, automated badge, next-step text and AlleyBiz header in the browser at 1280px, with no horizontal overflow. Used an isolated localhost QA contact to prepare a receipt and system reply through the real services, advancing only the fixture delivery clock. Also restored the primary 127.0.0.1 preview. Test data and helpers are not packaged.
+
+MANUAL PUBLIC REVIEWS AND FOUR HR PROFILES - 20 OCTOBER 2026
+- Added authenticated admin review creation/editing with optional city and age, stars, text and draft/published/hidden states. Only published records appear publicly. Manual reviews need no visitor session. Migration0005 preserves older reviews. UI translated in PL/RU/EN.
+- Removed the final visitor review form, invitation controls and public review submission endpoint. Former visitor write/invitation paths return404; admin creation requires authentication (401 without a session). The task answer field on step3 stays in place.
+- Added four seeded HR profiles: Aneta, Maja, Hanna, Agnieszka. Supplied photos were copied in the requested order and centered using CSS cropping, with source images unchanged. Migration0006 assigns existing leads to Aneta and gives new leads one random manager atomically at insertion. The assignment is reused for automatic and admin messages and shown in admin lead list/details.
+- Updated public review cards with city/age and correct Polish age suffixes. One or two published reviews use a static scroller instead of a too-short repeated marquee.
+- All65 tests across9 files passed; ESLint and final production build including TypeScript passed. Applied migrations to the local preview only. Browser tested new admin form creation; authenticated API verified draft exclusion, publication, editing and hiding. The clearly marked TEST review remains hidden. Live new QA lead received Maja and retained her after a repeated contact save. All four portrait URLs load. Final visitor screen has no review form or invitation.
+- New migration files and profile assets are included in both current archives; local data, credentials and verification scripts are excluded.
+
+СТАТУС «НЕ ПОДХОДИТ» И ВРЕМЯ ЧАТА — 20 ОКТЯБРЯ 2026
+- Внутренний статус переименован в «Не подходит». После отправки задания администратор может отредактировать польский текст, увидеть предпросмотр и отдельно опубликовать результат кандидату. Одна смена статуса не публикует отказ.
+- На финальном экране опубликованный результат заменяет ожидание ответа. Чат, переписка, файлы и текущий черновик сообщения сохраняются. Результат обновляется без перезагрузки и восстанавливается при повторном открытии в том же браузере.
+- Публикацию можно отменить; смена статуса с «Не подходит» автоматически скрывает результат. Неотправленный приветственный автоответ отменяется атомарно с публикацией. Уже отправленные сообщения остаются. Снятие результата не запускает отменённый автоответ повторно.
+- Миграция 0007 добавляет поля и ограничения согласованности, существующие отказы остаются приватными. Миграция применена к локальному предпросмотру.
+- Время в чате посетителя и админке явно задано как Europe/Warsaw, с переходом на летнее/зимнее время. Под заголовком чата добавлено: Odpowiadamy w godzinach 10:00–18:00 (czas polski).
+- Все 82 теста в 11 файлах, ESLint и production-сборка с TypeScript проходят. Исправлена нестабильная проверка имени загружаемого файла: случайное окончание UUID больше не вызывает ложную ошибку теста.
+- В браузере на отдельной тестовой заявке проверены отсутствие результата до публикации, публикация через админку, появление без перезагрузки, сохранение черновика чата, восстановление после перезагрузки и снятие публикации. Тестовый статус восстановлен; основная заявка не менялась.
+- Регистрация и вход через email пока не реализованы; это следующий обсуждаемый этап.
+
+ЗАКРЫТИЕ ЧАТА ПОСЛЕ ОТКАЗА И КРАСНАЯ ТЕМА — 20 ОКТЯБРЯ 2026
+- После публикации отказа чат кандидата скрывается. Сервер отклоняет новые сообщения и вложения с HTTP403 candidate_chat_closed. Внутренний статус без публикации чат не блокирует. История остаётся в админке.
+- Публикация и отправка используют общий visitor lock. Вложения проверяются до записи в хранилище и перед сохранением в БД; если публикация произошла во время загрузки, загруженный объект удаляется.
+- Фоновый опрос сохраняется при скрытом чате. Отмена публикации или смена статуса снова открывает чат; для закрытого чата подавлены звук и автоматические повторные отправки.
+- Опубликованный отказ оформлен в красной палитре: отдельный красный SVG логотип, красное название AlleyBiz, фоновое свечение, линия и пройденные этапы; на Gotowe показывается крестик. В карточке — спокойная грустная иконка и пожелание удачи, приглашение написать в чат удалено.
+- В админке одинаковая зелёная буква A и название AlleyBiz /adminka на странице входа, в шапке/боковой панели и заголовке вкладки. Остальные экраны посетителя остаются зелёными.
+- Все 86 тестов в 11 файлах, ESLint и production-сборка с TypeScript проходят. Миграция для этих изменений не требуется. Локальные тестовые данные и служебные скрипты не включены в архивы.
+- Цвета статусов админки приведены к единому отображению: новый — синий, в работе — оранжевый, ждёт ответа — фиолетовый, завершён — зелёный, не подходит — красный. Цветные плашки в таблице, активном фильтре, бейдже и кнопках карточки лида; текстовые подписи и управление с клавиатуры сохранены.
+- По последующему согласованию оформление отказа смягчено: обычный тёмный фон и фирменный зелёный логотип, нейтральные серые пройденные этапы; приглушённый красный оставлен только в карточке результата и на Gotowe с крестиком. Полностью красная тема и её отдельный SVG удалены из итоговой версии.
+- Нижнее свечение при опубликованном отказе заменено на мягкое бордовое. Оно привязано к видимому результату кандидата; после снятия публикации возвращается зелёное. На остальных экранах свечение остаётся зелёным.

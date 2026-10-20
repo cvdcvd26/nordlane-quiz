@@ -42,7 +42,7 @@ export default function SettingsPage() {
     e.preventDefault();
     if (!s) return;
     setFormError(null);
-    if (s.autoMessageMaxDelayMinutes < s.autoMessageMinDelayMinutes) return setFormError(S.delayOrder);
+    if (s.autoMessageMaxDelaySeconds < s.autoMessageMinDelaySeconds) return setFormError(S.delayOrder);
     setBusy(true);
     try {
       const r = await api<{ settings: EditableSettings }>("/api/admin/settings", { method: "PUT", json: s });
@@ -98,10 +98,10 @@ export default function SettingsPage() {
                 <input
                   type="number"
                   min={0}
-                  max={1440}
+                  max={86400}
                   className="adm-input mt-1.5 tabular-nums"
-                  value={s.autoMessageMinDelayMinutes}
-                  onChange={(e) => setS({ ...s, autoMessageMinDelayMinutes: Number(e.target.value) })}
+                  value={s.autoMessageMinDelaySeconds}
+                  onChange={(e) => setS({ ...s, autoMessageMinDelaySeconds: Number(e.target.value) })}
                 />
               </label>
               <label className="adm-label">
@@ -109,11 +109,11 @@ export default function SettingsPage() {
                 <input
                   type="number"
                   min={0}
-                  max={1440}
+                  max={86400}
                   className="adm-input mt-1.5 tabular-nums"
-                  aria-invalid={s.autoMessageMaxDelayMinutes < s.autoMessageMinDelayMinutes || undefined}
-                  value={s.autoMessageMaxDelayMinutes}
-                  onChange={(e) => setS({ ...s, autoMessageMaxDelayMinutes: Number(e.target.value) })}
+                  aria-invalid={s.autoMessageMaxDelaySeconds < s.autoMessageMinDelaySeconds || undefined}
+                  value={s.autoMessageMaxDelaySeconds}
+                  onChange={(e) => setS({ ...s, autoMessageMaxDelaySeconds: Number(e.target.value) })}
                 />
               </label>
             </div>

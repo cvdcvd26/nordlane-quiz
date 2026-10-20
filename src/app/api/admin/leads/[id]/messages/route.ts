@@ -1,8 +1,17 @@
 import { route, json, assertSameOrigin, readJson } from "@/server/http";
 import { requireAdmin } from "@/server/admin-auth";
-import { postAdminMessage } from "@/server/services/admin";
+import { postAdminMessage, getLeadSessionId } from "@/server/services/admin";
+import { getConversationBySession, loadMessagePage, messageQuerySchema } from "@/server/services/chat";
 import { rateLimit } from "@/server/rate-limit";
 import { leadIdFrom } from "../../lead-id";
+
+export const GET = route("admin.messages", async (req: Request, ctx: RouteContext<"/api/admin/leads/[id]/messages">) => {
+  await requireAdmin();
+  const sessionId = await getLeadSessionId(leadIdFrom((await ctx.params).id));
+  const conv = await getConversationBySession(sessionId);
+  const query = messageQuerySchema.parse(Object.fromEntries(new URL(req.url).searchParams));
+  return json(conv ? await loadMessagePage(conv.id, query) : { messages: [], hasMore: false, nextCursor: null, previousCursor: null });
+});
 
 export const POST = route("admin.message", async (req: Request, ctx: RouteContext<"/api/admin/leads/[id]/messages">) => {
   assertSameOrigin(req);

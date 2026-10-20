@@ -1,5 +1,7 @@
+import { lockVisitor } from "../session-lock";
+import { ensureConversation } from "./leads";
+import { touchConversation } from "./conversation";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { badRequest, conflict, notFound } from "../errors";
@@ -22,6 +24,20 @@ const submitSchema = z.object({
     .max(testimonialConfig.maxLength, e.testimonialTooLong),
 });
 
+const adminFields = submitSchema.extend({
+  city: z.string().trim().max(100, "Miasto jest za długie (maks. 100 znaków).")
+    .nullable().optional().transform((value) => value || null),
+  age: z.number({ error: "Wiek musi być liczbą całkowitą od 1 do 120." })
+    .int("Wiek musi być liczbą całkowitą od 1 do 120.")
+    .min(1, "Wiek musi być liczbą całkowitą od 1 do 120.")
+    .max(120, "Wiek musi być liczbą całkowitą od 1 do 120.").nullable().optional(),
+  status: z.enum(STATUSES),
+});
+const createSchema = adminFields.extend({ status: z.enum(STATUSES).default("pending") }).strict();
+const updateSchema = adminFields.partial().strict().refine((data) => Object.keys(data).length > 0, {
+  message: "Podaj dane opinii do zmiany.",
+});
+
 async function leadOfSession(sessionId: string) {
   const [lead] = await db().select().from(schema.leads).where(eq(schema.leads.sessionId, sessionId)).limit(1);
   return lead ?? null;
@@ -30,6 +46,8 @@ async function leadOfSession(sessionId: string) {
 const publicView = (t: typeof schema.testimonials.$inferSelect) => ({
   id: t.id,
   name: t.name,
+  city: t.city,
+  age: t.age,
   rating: t.rating,
   body: t.body,
   status: t.status,
@@ -74,23 +92,46 @@ export async function listPublishedTestimonials(limit = testimonialConfig.public
     .where(eq(schema.testimonials.status, "published"))
     .orderBy(desc(schema.testimonials.publishedAt))
     .limit(limit);
-  return rows.map((t) => ({ id: t.id, name: t.name, rating: t.rating, body: t.body }));
+  return rows.map((t) => ({ id: t.id, name: t.name, city: t.city, age: t.age, rating: t.rating, body: t.body }));
 }
 
 /* ---------- Admin ---------- */
+
+/** A manually entered review has no visitor session or lead. */
+export async function createTestimonial(input: unknown) {
+  const data = createSchema.parse(input);
+  const [row] = await db().insert(schema.testimonials).values({
+    ...data,
+    sessionId: null,
+    city: data.city ?? null,
+    age: data.age ?? null,
+    publishedAt: data.status === "published" ? new Date() : null,
+  }).returning();
+  return publicView(row);
+}
 
 /**
  * Unlocks the review form for the lead's visitor and tells them in the chat
  * (the message also plays the visitor's notification sound). Idempotent.
  */
-export async function requestTestimonial(leadId: number, postMessage: (leadId: number, input: unknown) => Promise<unknown>) {
+export async function requestTestimonial(leadId: number) {
   const [lead] = await db().select().from(schema.leads).where(eq(schema.leads.id, leadId)).limit(1);
   if (!lead) throw notFound(content.admin.lead.notFound);
-  if (lead.testimonialRequestedAt) return { requestedAt: lead.testimonialRequestedAt.toISOString(), alreadyRequested: true };
-  const now = new Date();
-  await db().update(schema.leads).set({ testimonialRequestedAt: now, updatedAt: now }).where(eq(schema.leads.id, leadId));
-  await postMessage(leadId, { clientMessageId: randomUUID(), body: content.testimonials.requestMessage, fileIds: [] });
-  return { requestedAt: now.toISOString(), alreadyRequested: false };
+  return db().transaction(async (tx) => {
+    await lockVisitor(tx, lead.sessionId);
+    const [current] = await tx.select().from(schema.leads).where(eq(schema.leads.id, leadId));
+    if (current.testimonialRequestedAt)
+      return { requestedAt: current.testimonialRequestedAt.toISOString(), alreadyRequested: true };
+    const now = new Date();
+    const conv = await ensureConversation(tx, lead.sessionId);
+    await tx.insert(schema.messages).values({
+      conversationId: conv.id, sender: "admin", body: content.testimonials.requestMessage,
+      clientMessageId: `testimonial-request:${leadId}`, createdAt: now,
+    }).onConflictDoNothing();
+    await tx.update(schema.leads).set({ testimonialRequestedAt: now, updatedAt: now }).where(eq(schema.leads.id, leadId));
+    await touchConversation(tx, conv.id, now);
+    return { requestedAt: now.toISOString(), alreadyRequested: false };
+  });
 }
 
 export async function getLeadTestimonial(leadId: number) {
@@ -135,16 +176,28 @@ export async function listTestimonials(input: Record<string, string | undefined>
   };
 }
 
-export async function setTestimonialStatus(id: string, input: unknown) {
-  const { status } = z.object({ status: z.enum(STATUSES) }).parse(input);
+/** Partial edits also support the existing publish/hide moderation controls. */
+export async function updateTestimonial(id: string, input: unknown) {
+  const data = updateSchema.parse(input);
   const now = new Date();
   const [row] = await db()
     .update(schema.testimonials)
-    .set({ status, updatedAt: now, publishedAt: status === "published" ? now : null })
+    .set({
+      ...data,
+      updatedAt: now,
+      ...(data.status === undefined ? {} : {
+        publishedAt: data.status === "published" ? sql`coalesce(${schema.testimonials.publishedAt}, ${now})` : null,
+      }),
+    })
     .where(eq(schema.testimonials.id, id))
     .returning();
   if (!row) throw notFound(content.admin.testimonials.notFound);
   return publicView(row);
+}
+
+export async function setTestimonialStatus(id: string, input: unknown) {
+  const data = z.object({ status: z.enum(STATUSES) }).parse(input);
+  return updateTestimonial(id, data);
 }
 
 export async function deleteTestimonial(id: string) {

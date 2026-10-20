@@ -32,7 +32,7 @@ export default function AdminLogin() {
       <div className="w-full max-w-[360px]">
         <div className="mb-5 flex items-center gap-2.5">
           <BrandMark />
-          <span className="text-[15px] font-bold">Nordlane</span>
+          <span className="text-[15px] font-bold">{t.ui.title}</span>
         </div>
         <form onSubmit={submit} className="adm-panel p-6" noValidate>
           <h1 className="text-[18px] font-bold">{t.ui.login.title}</h1>

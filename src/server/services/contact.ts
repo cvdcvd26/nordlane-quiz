@@ -1,3 +1,4 @@
+import { lockVisitor } from "../session-lock";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
@@ -35,6 +36,7 @@ export async function saveContact(sessionId: string, input: unknown): Promise<Co
   const c = contactSchema.parse(input);
   const now = new Date();
   await db().transaction(async (tx) => {
+    await lockVisitor(tx, sessionId);
     await tx
       .insert(schema.visitorContacts)
       .values({ sessionId, ...c })

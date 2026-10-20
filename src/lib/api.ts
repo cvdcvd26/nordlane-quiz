@@ -63,19 +63,42 @@ export function formatBytes(n: number) {
   return `${(n / 1024 / 1024).toFixed(1).replace(".", ",")} MB`;
 }
 
+const displayTimeZone = "Europe/Warsaw";
+const calendarDate = new Intl.DateTimeFormat("en-CA", {
+  timeZone: displayTimeZone,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/** Visitor and admin timestamps share Poland's calendar and automatic DST changes. */
 export function formatTime(iso: string, locale: string = content.locale) {
   const d = new Date(iso);
   const today = new Date();
-  const sameDay = d.toDateString() === today.toDateString();
-  return d.toLocaleString(locale, sameDay ? { hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const sameDay = calendarDate.format(d) === calendarDate.format(today);
+  return d.toLocaleString(locale, {
+    timeZone: displayTimeZone,
+    hourCycle: "h23",
+    ...(sameDay ? {} : { day: "numeric", month: "short" }),
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export type PublicFile = { id: string; name: string; mime: string; size: number; url: string };
 export type ChatMessage = {
   id: string;
+  sequence?: string;
   sender: "visitor" | "admin" | "system";
   body: string;
   createdAt: string;
   clientMessageId: string;
   files: PublicFile[];
+};
+
+export type MessagePage = {
+  messages: ChatMessage[];
+  nextCursor: string | null;
+  previousCursor: string | null;
+  hasMore: boolean;
 };

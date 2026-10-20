@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Plus, Search } from "lucide-react";
 import type { LeadStatus } from "@/config/content";
 import { api } from "@/lib/api";
 import { formatPhone, nationalDigits } from "@/lib/contact";
@@ -10,6 +10,7 @@ import { ACTIVITY_EVENT } from "@/components/admin/ActivityNotifier";
 import { AdmStars, EmptyState, ErrorState, PageHeader, StatusBadge, TestimonialBadge, type TestimonialStatus } from "@/components/admin/ui";
 import { toast } from "@/components/admin/toast";
 import { useAdminI18n } from "@/components/admin/i18n";
+import { TestimonialEditor } from "@/components/admin/TestimonialEditor";
 
 type Review = { id: string; review: string; submittedAt: string; leadId: number; status: LeadStatus; name: string | null; phone: string | null };
 type ReviewsResponse = { items: Review[]; total: number; page: number; pageSize: number };
@@ -24,7 +25,7 @@ export default function ReviewsPage() {
   );
 }
 
-/** Two kinds of reviews: written with the task (internal) and public site reviews (moderated). */
+/** Internal task answers and administrator-managed public site reviews. */
 function Reviews() {
   const { t } = useAdminI18n();
   const params = useSearchParams();
@@ -207,6 +208,8 @@ function TaskReviews() {
 type SiteReview = {
   id: string;
   name: string;
+  city: string | null;
+  age: number | null;
   rating: number;
   body: string;
   status: TestimonialStatus;
@@ -226,6 +229,7 @@ function SiteReviews() {
   const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
+  const [editor, setEditor] = useState<{ review: SiteReview | null } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -260,6 +264,7 @@ function SiteReviews() {
         toast({ kind: "success", title: M.changed(M.statuses[next]) });
       }
       setConfirm(null);
+      if (data?.items.length === 1 && page > 1 && (next === "delete" || (status && next !== status))) setPage((p) => p - 1);
       setReload((n) => n + 1);
     } catch (e) {
       toast({ kind: "error", title: tErr(e) });
@@ -276,6 +281,19 @@ function SiteReviews() {
 
   return (
     <div className="adm-panel">
+      {editor && (
+        <TestimonialEditor
+          key={editor.review?.id ?? "new"}
+          review={editor.review}
+          onClose={() => setEditor(null)}
+          onSaved={(nextStatus) => {
+            setEditor(null);
+            setStatus(nextStatus);
+            setPage(1);
+            setReload((n) => n + 1);
+          }}
+        />
+      )}
       <div className="flex min-h-12 flex-wrap items-center gap-1.5 border-b border-adm-line px-3 py-2" role="group" aria-label={t.ui.list.status}>
         {filters.map((f) => (
           <button
@@ -294,6 +312,10 @@ function SiteReviews() {
             {data && <span className="tabular-nums opacity-70">{f ? data.counts[f] : allCount}</span>}
           </button>
         ))}
+        <button type="button" className="adm-btn adm-btn-primary adm-btn-sm ml-auto" disabled={busy !== null} onClick={() => { setConfirm(null); setEditor({ review: null }); }}>
+          <Plus aria-hidden className="size-3.5" />
+          {M.add}
+        </button>
       </div>
 
       {error && (
@@ -319,6 +341,9 @@ function SiteReviews() {
             <li key={r.id} className="grid gap-x-6 gap-y-2 border-b border-adm-line px-4 py-4 last:border-0 md:grid-cols-[200px_1fr_auto]">
               <div className="min-w-0">
                 <p className="truncate font-semibold">{r.name}</p>
+                {(r.city || r.age !== null) && (
+                  <p className="mt-0.5 text-[12.5px] text-adm-ink-3">{[r.city, r.age !== null ? M.ageValue(r.age) : null].filter(Boolean).join(" · ")}</p>
+                )}
                 <AdmStars value={r.rating} />
                 <time className="mt-1 block text-[12.5px] text-adm-ink-3 tabular-nums" dateTime={r.createdAt}>
                   {time(r.createdAt)}
@@ -346,22 +371,26 @@ function SiteReviews() {
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-1.5 md:justify-end">
+                    <button type="button" className="adm-btn adm-btn-sm" disabled={busy !== null} onClick={() => { setConfirm(null); setEditor({ review: r }); }}>
+                      <Pencil aria-hidden className="size-3.5" />
+                      {M.edit}
+                    </button>
                     {r.status !== "published" && (
-                      <button type="button" className="adm-btn adm-btn-primary adm-btn-sm" disabled={busy === r.id} onClick={() => void act(r.id, "published")}>
+                      <button type="button" className="adm-btn adm-btn-primary adm-btn-sm" disabled={busy !== null} onClick={() => void act(r.id, "published")}>
                         {M.publish}
                       </button>
                     )}
                     {r.status === "published" && (
-                      <button type="button" className="adm-btn adm-btn-sm" disabled={busy === r.id} onClick={() => void act(r.id, "pending")}>
+                      <button type="button" className="adm-btn adm-btn-sm" disabled={busy !== null} onClick={() => void act(r.id, "pending")}>
                         {M.unpublish}
                       </button>
                     )}
                     {r.status === "pending" && (
-                      <button type="button" className="adm-btn adm-btn-danger adm-btn-sm" disabled={busy === r.id} onClick={() => void act(r.id, "rejected")}>
+                      <button type="button" className="adm-btn adm-btn-danger adm-btn-sm" disabled={busy !== null} onClick={() => void act(r.id, "rejected")}>
                         {M.reject}
                       </button>
                     )}
-                    <button type="button" className="adm-btn adm-btn-quiet adm-btn-sm" onClick={() => setConfirm(r.id)}>
+                    <button type="button" className="adm-btn adm-btn-quiet adm-btn-sm" disabled={busy !== null} onClick={() => setConfirm(r.id)}>
                       {M.delete}
                     </button>
                   </div>

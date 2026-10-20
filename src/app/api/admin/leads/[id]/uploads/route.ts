@@ -1,7 +1,8 @@
-import { route, json, assertSameOrigin } from "@/server/http";
+import { z } from "zod";
+import { route, json, assertSameOrigin, readJson } from "@/server/http";
 import { requireAdmin } from "@/server/admin-auth";
 import { getLeadSessionId } from "@/server/services/admin";
-import { uploadFile } from "@/server/services/uploads";
+import { uploadFile, deletePendingFile } from "@/server/services/uploads";
 import { readUploadedFile } from "@/server/multipart";
 import { rateLimit } from "@/server/rate-limit";
 import { leadIdFrom } from "../../lead-id";
@@ -14,4 +15,13 @@ export const POST = route("admin.upload", async (req: Request, ctx: RouteContext
   const sessionId = await getLeadSessionId(leadIdFrom((await ctx.params).id));
   const { file } = await readUploadedFile(req);
   return json({ file: await uploadFile({ sessionId, purpose: "chat", uploadedBy: "admin", file }) }, 201);
+});
+
+export const DELETE = route("admin.upload.delete", async (req: Request, ctx: RouteContext<"/api/admin/leads/[id]/uploads">) => {
+  assertSameOrigin(req);
+  await requireAdmin();
+  const sessionId = await getLeadSessionId(leadIdFrom((await ctx.params).id));
+  const { fileId } = z.object({ fileId: z.uuid() }).parse(await readJson(req));
+  await deletePendingFile(sessionId, fileId, "admin");
+  return json({ ok: true });
 });

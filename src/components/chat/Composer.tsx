@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import { content } from "@/config/content";
-import { formatBytes, uploadWithProgress, type PublicFile } from "@/lib/api";
+import { api, formatBytes, uploadWithProgress, type PublicFile } from "@/lib/api";
 
 type Attachment = { key: string; name: string; size: number; status: "uploading" | "done" | "error"; file?: PublicFile; error?: string };
 
@@ -37,6 +37,8 @@ export function Composer({
   const [text, setText] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const removed = useRef(new Set<string>());
   const input = useRef<HTMLInputElement>(null);
   const area = useRef<HTMLTextAreaElement>(null);
 
@@ -45,7 +47,8 @@ export function Composer({
   const canSend = !busy && !uploading && (text.trim().length > 0 || ready.length > 0);
 
   const send = async () => {
-    if (!canSend) return;
+    if (!canSend || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       await onSend(text.trim(), ready);
@@ -55,11 +58,29 @@ export function Composer({
     } catch {
       // Text stays in the field; the parent shows the error.
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
 
+  const deleteFile = (file: PublicFile) => api(uploadPurpose ? `/api/uploads/${file.id}` : uploadUrl,
+    { method: "DELETE", ...(uploadPurpose ? {} : { json: { fileId: file.id } }) });
+
+  const remove = async (attachment: Attachment) => {
+    if (busyRef.current) return;
+    removed.current.add(attachment.key);
+    setFiles((p) => p.filter((x) => x.key !== attachment.key));
+    if (attachment.file) {
+      try { await deleteFile(attachment.file); }
+      catch (err) {
+        removed.current.delete(attachment.key);
+        setFiles((p) => [...p, { ...attachment, error: translateError(err as Error) }]);
+      }
+    }
+  };
+
   const attach = (list: FileList) => {
+    if (busyRef.current) return;
     Array.from(list)
       .slice(0, Math.max(0, maxFiles - files.length))
       .forEach((file) => {
@@ -69,7 +90,10 @@ export function Composer({
         form.set("file", file);
         if (uploadPurpose) form.set("purpose", uploadPurpose);
         uploadWithProgress<{ file: PublicFile }>(uploadUrl, form, () => {})
-          .promise.then(({ file: saved }) => setFiles((p) => p.map((f) => (f.key === key ? { ...f, status: "done", file: saved } : f))))
+          .promise.then(async ({ file: saved }) => {
+            if (removed.current.has(key)) { await deleteFile(saved); return; }
+            setFiles((p) => p.map((f) => f.key === key ? { ...f, status: "done", file: saved } : f));
+          })
           .catch((err) => setFiles((p) => p.map((f) => (f.key === key ? { ...f, status: "error", error: translateError(err) } : f))));
       });
   };
@@ -94,7 +118,7 @@ export function Composer({
             >
               <span className="max-w-40 truncate">{f.name}</span>
               <span className={adm ? "text-adm-ink-3" : "text-slate"}>{f.status === "uploading" ? "…" : f.status === "error" ? "!" : formatBytes(f.size)}</span>
-              <button type="button" aria-label={labels.removeAttachment(f.name)} onClick={() => setFiles((p) => p.filter((x) => x.key !== f.key))}>
+              <button type="button" aria-label={labels.removeAttachment(f.name)} disabled={busy} onClick={() => void remove(f)}>
                 ×
               </button>
             </li>
@@ -113,6 +137,7 @@ export function Composer({
               }
               aria-label={labels.attach}
               title={labels.attach}
+              disabled={busy}
               onClick={() => input.current?.click()}
             >
               <svg aria-hidden viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -140,6 +165,7 @@ export function Composer({
         <textarea
           id="composer"
           ref={area}
+          disabled={busy}
           rows={1}
           value={text}
           onChange={(e) => {

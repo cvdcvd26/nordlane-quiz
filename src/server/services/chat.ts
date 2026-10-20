@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lt, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import type { Db } from "@/db";
@@ -9,13 +9,16 @@ import { content } from "@/config/content";
 import { toPublicFile, type PublicFile } from "./uploads";
 import { touchConversation, refreshLeadStats } from "./conversation";
 import { ensureConversation, ensureLead } from "./leads";
-import { getVisitorTestimonial } from "./testimonials";
 import { deliverOverdue } from "./delivery";
+import { lockVisitor } from "../session-lock";
+import { getSessionManager } from "./managers";
+import { assertVisitorChatOpen, getSessionOutcome } from "./candidate-outcome";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 export type ChatMessage = {
   id: string;
+  sequence: string;
   sender: "visitor" | "admin" | "system";
   body: string;
   createdAt: string;
@@ -38,23 +41,48 @@ export async function getConversationBySession(sessionId: string) {
   return c ?? null;
 }
 
-/** Messages of one conversation with their attachments. Internal notes live in another table and are never included. */
-export async function loadMessages(conversationId: string, after?: Date): Promise<ChatMessage[]> {
+const cursorSchema = z.string().refine((s) => /^[1-9]\d{0,18}$/.test(s) && BigInt(s) <= BigInt("9223372036854775807"));
+export const messageQuerySchema = z.object({ after: cursorSchema.optional(), before: cursorSchema.optional() })
+  .refine((q) => !(q.after && q.before));
+export type MessageQuery = z.infer<typeof messageQuerySchema>;
+
+/** Stable, bounded pages. Initial loads show the newest page; before loads older history. */
+export async function loadMessagePage(conversationId: string, input: MessageQuery = {}) {
+  const query = messageQuerySchema.parse(input);
+  const forward = Boolean(query.after);
   const rows = await db()
     .select()
     .from(schema.messages)
     .where(
-      and(eq(schema.messages.conversationId, conversationId), after ? gt(schema.messages.createdAt, after) : undefined),
+      and(eq(schema.messages.conversationId, conversationId),
+        query.after ? gt(schema.messages.sequence, BigInt(query.after)) : undefined,
+        query.before ? lt(schema.messages.sequence, BigInt(query.before)) : undefined),
     )
-    .orderBy(asc(schema.messages.createdAt), asc(schema.messages.id))
-    .limit(500);
-  if (rows.length === 0) return [];
+    .orderBy(forward ? asc(schema.messages.sequence) : desc(schema.messages.sequence))
+    .limit(chatConfig.pageSize + 1);
+  const hasMore = rows.length > chatConfig.pageSize;
+  const page = rows.slice(0, chatConfig.pageSize);
+  if (!forward) page.reverse();
+  return {
+    messages: await hydrateMessages(page), hasMore,
+    nextCursor: page.at(-1)?.sequence.toString() ?? query.after ?? null,
+    previousCursor: page[0]?.sequence.toString() ?? null,
+  };
+}
+
+export async function loadMessages(conversationId: string): Promise<ChatMessage[]> {
+  return (await loadMessagePage(conversationId)).messages;
+}
+
+async function hydrateMessages(rows: (typeof schema.messages.$inferSelect)[]): Promise<ChatMessage[]> {
+  if (!rows.length) return [];
   const attached = await db()
     .select()
     .from(schema.files)
     .where(inArray(schema.files.messageId, rows.map((r) => r.id)));
   return rows.map((m) => ({
     id: m.id,
+    sequence: m.sequence.toString(),
     sender: m.sender,
     body: m.body,
     createdAt: m.createdAt.toISOString(),
@@ -73,24 +101,25 @@ async function requireSubmitted(sessionId: string) {
   if (!sub) throw forbidden(content.errors.notSubmitted);
 }
 
-export async function getVisitorChat(sessionId: string, after?: Date) {
+export async function getVisitorChat(sessionId: string, query: MessageQuery = {}) {
   await requireSubmitted(sessionId);
+  // Also repairs historical submissions that predate creation of leads at step one.
+  await ensureLead(db(), sessionId);
   const conv = await ensureConversation(db(), sessionId);
   // Backup delivery if the queue missed it.
   await deliverOverdue({ conversationId: conv.id, limit: 3 }).catch(() => {});
   const settings = await getSettings();
   return {
-    messages: await loadMessages(conv.id, after),
+    ...(await loadMessagePage(conv.id, query)),
+    manager: await getSessionManager(sessionId),
+    outcome: await getSessionOutcome(sessionId),
     attachmentsEnabled: settings.chatAttachmentsEnabled,
-    testimonial: await getVisitorTestimonial(sessionId),
   };
 }
 
 /**
  * Visitor sends a message. Idempotent by clientMessageId.
- * The lead is created on the visitor's first message once the automatic message has been
- * delivered (or right away if automatic messages are disabled) — exactly once, thanks to
- * the unique index on leads.session_id.
+ * Reuses the lead created when the visitor saved contact details.
  */
 export async function postVisitorMessage(sessionId: string, input: unknown): Promise<{ message: ChatMessage; leadId: number | null }> {
   const { clientMessageId, body, fileIds } = messageSchema.parse(input);
@@ -104,6 +133,8 @@ export async function postVisitorMessage(sessionId: string, input: unknown): Pro
 
   const now = new Date();
   const leadId = await db().transaction(async (tx) => {
+    await lockVisitor(tx, sessionId);
+    await assertVisitorChatOpen(tx, sessionId);
     const [inserted] = await tx
       .insert(schema.messages)
       .values({ conversationId: conv.id, sender: "visitor", body: text, clientMessageId, createdAt: now })
@@ -125,9 +156,7 @@ export async function postVisitorMessage(sessionId: string, input: unknown): Pro
     .from(schema.messages)
     .where(and(eq(schema.messages.conversationId, conv.id), eq(schema.messages.clientMessageId, clientMessageId)))
     .limit(1);
-  const [message] = await loadMessages(conv.id, new Date(msg.createdAt.getTime() - 1)).then((list) =>
-    list.filter((m) => m.id === msg.id),
-  );
+  const [message] = await hydrateMessages([msg]);
   return { message, leadId: leadId ?? null };
 }
 

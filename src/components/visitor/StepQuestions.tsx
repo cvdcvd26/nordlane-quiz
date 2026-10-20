@@ -1,7 +1,7 @@
 "use client";
 import { useRef } from "react";
-import { content } from "@/config/content";
 import { PixelHeading } from "../visual/PixelHeading";
+import { content } from "@/config/content";
 
 type Props = {
   answers: Record<string, string>;
@@ -53,15 +53,12 @@ export function StepQuestions({ answers, saving, error, onAnswer, onBack, onCont
         <span className="chip-dot" aria-hidden />
         {q.questionsEyebrow}
       </p>
-      <PixelHeading id="q-title" wrapperClassName="reveal mt-6" style={delay(1)} className="display text-[clamp(2.75rem,7vw,5.5rem)] font-bold">
-        {q.questionsTitle} <span className="accent-text">{q.questionsTitleAccent}</span>
+      <PixelHeading id="q-title" wrapperClassName="reveal mt-6" style={delay(1)} className="display max-w-[38ch] text-[clamp(1.6rem,3.5vw,2.65rem)] leading-snug font-bold">
+        {q.questionsTitle} <span className="accent-text">{q.questionsTitleAccent}</span> {q.questionsTitleEnding}
       </PixelHeading>
-      <p className="measure reveal mt-5 text-lg leading-relaxed text-ink-soft" style={delay(2)}>
-        {q.questionsIntro}
-      </p>
 
       {/* Questions */}
-      <div className="glass reveal mt-12 rounded-(--radius-tile) p-5 sm:p-7" style={delay(3)}>
+      <div className="glass reveal mt-8 rounded-(--radius-tile) p-5 sm:p-7" style={delay(3)}>
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-sm font-semibold text-slate" aria-live="polite">{remaining > 0 ? q.remaining(remaining) : q.saved}</h2>
           <span className="text-sm text-slate tabular-nums" aria-hidden>
@@ -111,6 +108,7 @@ export function StepQuestions({ answers, saving, error, onAnswer, onBack, onCont
                       <button
                         key={o.value}
                         type="button"
+                        disabled={saving !== null}
                         role="radio"
                         aria-checked={selected}
                         tabIndex={selected || (!answer && oi === 0) ? 0 : -1}
@@ -137,7 +135,7 @@ export function StepQuestions({ answers, saving, error, onAnswer, onBack, onCont
       </div>
 
       <div className="reveal mt-8 flex flex-wrap items-center gap-4" style={delay(4)}>
-        <button type="button" className="btn btn-ghost" onClick={onBack}>
+        <button type="button" className="btn btn-ghost" disabled={saving !== null} onClick={onBack}>
           <span aria-hidden>←</span> {content.task.back}
         </button>
         <button

@@ -1,3 +1,4 @@
+import { z } from "zod";
 /**
  * Creates or resets an administrator from the terminal:
  *   DATABASE_URL=... npm run admin:create -- admin@example.com 'long-password'
@@ -10,8 +11,8 @@ import { connect, databaseUrl } from "./connect";
 
 async function main() {
   const [email, password] = process.argv.slice(2);
-  if (!email || !password || password.length < 10) {
-    console.error("Usage: npm run admin:create -- <email> <password (10+ chars)>");
+  if (!z.email().safeParse(email?.trim()).success || !password || password.length < 10 || Buffer.byteLength(password, "utf8") > 72) {
+    console.error("Usage: npm run admin:create -- <email> <password (10+ chars, at most 72 UTF-8 bytes)>");
     process.exit(1);
   }
   const url = databaseUrl();

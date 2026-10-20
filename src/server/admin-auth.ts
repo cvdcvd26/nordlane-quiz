@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
-import { count, eq } from "drizzle-orm";
+import { count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { badRequest, unauthorized } from "./errors";
@@ -24,9 +24,10 @@ export const hashPassword = (password: string) => bcrypt.hash(password, BCRYPT_R
 export const passwordSchema = z
   .string()
   .min(10, content.admin.settings.password.tooShort)
-  .max(200, content.admin.settings.password.tooLong);
+  .max(72, content.admin.settings.password.tooLong)
+  .refine((value) => Buffer.byteLength(value, "utf8") <= 72, content.admin.settings.password.tooLong);
 
-const loginSchema = z.object({ email: z.string().trim().toLowerCase().email(content.admin.login.invalidEmail), password: z.string().min(1).max(200) });
+const loginSchema = z.object({ email: z.string().trim().toLowerCase().email(content.admin.login.invalidEmail), password: z.string().min(1).max(72).refine((value) => Buffer.byteLength(value, "utf8") <= 72) });
 
 /**
  * First-run bootstrap: if there are no admins yet and ADMIN_EMAIL / ADMIN_PASSWORD are set,
@@ -115,14 +116,14 @@ const changeSchema = z.object({ currentPassword: z.string().min(1), newPassword:
 export async function changePassword(adminId: string, input: unknown, ip: string) {
   const { currentPassword, newPassword } = changeSchema.parse(input);
   await rateLimit(`password:${adminId}:${ip}`, 5, 15 * 60);
-  const [admin] = await db().select().from(schema.adminUsers).where(eq(schema.adminUsers.id, adminId)).limit(1);
-  if (!admin || !(await bcrypt.compare(currentPassword, admin.passwordHash)))
-    throw badRequest(content.admin.settings.password.wrongCurrent, "wrong_password");
-  const [updated] = await db()
-    .update(schema.adminUsers)
-    .set({ passwordHash: await hashPassword(newPassword), tokenVersion: admin.tokenVersion + 1, updatedAt: new Date() })
-    .where(eq(schema.adminUsers.id, adminId))
-    .returning();
-  // Other sessions are invalidated by the version bump; keep this one signed in.
+  const updated = await db().transaction(async (tx) => {
+    const [admin] = await tx.select().from(schema.adminUsers).where(eq(schema.adminUsers.id, adminId)).for("update");
+    if (!admin || !(await bcrypt.compare(currentPassword, admin.passwordHash)))
+      throw badRequest(content.admin.settings.password.wrongCurrent, "wrong_password");
+    const [row] = await tx.update(schema.adminUsers).set({
+      passwordHash: await hashPassword(newPassword), tokenVersion: sql`${schema.adminUsers.tokenVersion} + 1`, updatedAt: new Date(),
+    }).where(eq(schema.adminUsers.id, adminId)).returning();
+    return row;
+  });
   await setSessionCookie(updated.id, updated.tokenVersion);
 }

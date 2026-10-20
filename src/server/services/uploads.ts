@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { lockVisitor } from "../session-lock";
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull, count } from "drizzle-orm";
 import { db, schema } from "@/db";
@@ -6,6 +8,7 @@ import { validateFile } from "../file-validation";
 import { badRequest, conflict, notFound } from "../errors";
 import { uploadConfig } from "@/config/settings";
 import { content } from "@/config/content";
+import { assertVisitorChatOpen } from "./candidate-outcome";
 
 export type PublicFile = { id: string; name: string; mime: string; size: number; url: string };
 
@@ -31,26 +34,14 @@ export async function uploadFile({ sessionId, purpose, uploadedBy, file }: Uploa
     { allowed, maxBytes: uploadConfig.maxFileSizeBytes },
   );
 
-  if (purpose === "submission") {
-    const [sub] = await db()
-      .select({ id: schema.taskSubmissions.id })
-      .from(schema.taskSubmissions)
-      .where(eq(schema.taskSubmissions.sessionId, sessionId))
-      .limit(1);
-    if (sub) throw conflict(content.errors.alreadySubmitted, "already_submitted");
-
-    const [{ n }] = await db()
-      .select({ n: count() })
-      .from(schema.files)
-      .where(
-        and(
-          eq(schema.files.sessionId, sessionId),
-          eq(schema.files.purpose, "submission"),
-          isNull(schema.files.submissionId),
-        ),
-      );
-    if (n >= uploadConfig.maxFilesPerSubmission)
-      throw badRequest(content.errors.fileCount(uploadConfig.maxFilesPerSubmission), "file_count");
+  const visitorChatUpload = purpose === "chat" && uploadedBy === "visitor";
+  if (visitorChatUpload) {
+    // Reject a closed chat before writing an object to storage. Do not keep the
+    // database lock across the external upload; the final transaction checks again.
+    await db().transaction(async (tx) => {
+      await lockVisitor(tx, sessionId);
+      await assertVisitorChatOpen(tx, sessionId);
+    });
   }
 
   // Storage key never contains user input.
@@ -58,19 +49,51 @@ export async function uploadFile({ sessionId, purpose, uploadedBy, file }: Uploa
   await storage().put(storageKey, file.buffer, v.mime);
 
   try {
-    const [row] = await db()
-      .insert(schema.files)
-      .values({
-        sessionId,
-        purpose,
-        uploadedBy,
-        storageKey,
-        originalName: v.displayName,
-        mimeType: v.mime,
-        sizeBytes: v.size,
-      })
-      .returning();
-    return toPublicFile(row);
+    return await db().transaction(async (tx) => {
+      await lockVisitor(tx, sessionId);
+      if (visitorChatUpload) await assertVisitorChatOpen(tx, sessionId);
+      if (purpose === "submission") {
+        const [sub] = await tx
+          .select({ id: schema.taskSubmissions.id })
+          .from(schema.taskSubmissions)
+          .where(eq(schema.taskSubmissions.sessionId, sessionId))
+          .limit(1);
+        if (sub) throw conflict(content.errors.alreadySubmitted, "already_submitted");
+
+        const [{ n }] = await tx
+          .select({ n: count() })
+          .from(schema.files)
+          .where(
+            and(
+              eq(schema.files.sessionId, sessionId),
+              eq(schema.files.purpose, "submission"),
+              isNull(schema.files.submissionId),
+            ),
+          );
+        if (n >= uploadConfig.maxFilesPerSubmission)
+          throw badRequest(content.errors.fileCount(uploadConfig.maxFilesPerSubmission), "file_count");
+      } else {
+        const [{ n }] = await tx.select({ n: count() }).from(schema.files).where(and(
+          eq(schema.files.sessionId, sessionId), eq(schema.files.purpose, "chat"),
+          eq(schema.files.uploadedBy, uploadedBy), isNull(schema.files.messageId)));
+        if (n >= uploadConfig.maxPendingChatFiles)
+          throw badRequest(content.errors.fileCount(uploadConfig.maxPendingChatFiles), "file_count");
+      }
+
+      const [row] = await tx
+        .insert(schema.files)
+        .values({
+          sessionId,
+          purpose,
+          uploadedBy,
+          storageKey,
+          originalName: v.displayName,
+          mimeType: v.mime,
+          sizeBytes: v.size,
+        })
+        .returning();
+      return toPublicFile(row);
+    });
   } catch (err) {
     await storage().delete(storageKey).catch(() => {});
     throw err;
@@ -78,16 +101,18 @@ export async function uploadFile({ sessionId, purpose, uploadedBy, file }: Uploa
 }
 
 /** Removes a file the visitor uploaded but hasn't sent yet. */
-export async function deletePendingFile(sessionId: string, fileId: string) {
-  const [f] = await db()
-    .select()
-    .from(schema.files)
-    .where(and(eq(schema.files.id, fileId), eq(schema.files.sessionId, sessionId)))
-    .limit(1);
-  if (!f || f.uploadedBy !== "visitor") throw notFound();
-  if (f.submissionId || f.messageId) throw conflict(content.errors.fileAlreadySent, "file_attached");
-  await db().delete(schema.files).where(eq(schema.files.id, f.id));
-  await storage().delete(f.storageKey).catch(() => {});
+export async function deletePendingFile(sessionId: string, fileId: string, owner: "visitor" | "admin" = "visitor") {
+  if (!z.uuid().safeParse(fileId).success) throw notFound();
+  const removed = await db().transaction(async (tx) => {
+    await lockVisitor(tx, sessionId);
+    const [f] = await tx.select().from(schema.files)
+      .where(and(eq(schema.files.id, fileId), eq(schema.files.sessionId, sessionId))).limit(1);
+    if (!f || f.uploadedBy !== owner) throw notFound();
+    if (f.submissionId || f.messageId) throw conflict(content.errors.fileAlreadySent, "file_attached");
+    await tx.delete(schema.files).where(eq(schema.files.id, f.id));
+    return f;
+  });
+  await storage().delete(removed.storageKey).catch(() => {});
 }
 
 export async function listPendingSubmissionFiles(sessionId: string) {
@@ -111,7 +136,7 @@ export async function listPendingSubmissionFiles(sessionId: string) {
  * - a visitor: only files of their own session that they uploaded or that were sent to them in a message.
  */
 export async function getReadableFile(fileId: string, viewer: { admin: true } | { sessionId: string }) {
-  if (!/^[0-9a-f-]{36}$/i.test(fileId)) return null;
+  if (!z.uuid().safeParse(fileId).success) return null;
   const [f] = await db().select().from(schema.files).where(eq(schema.files.id, fileId)).limit(1);
   if (!f) return null;
   if ("admin" in viewer) return f;

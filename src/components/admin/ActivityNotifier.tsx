@@ -8,7 +8,7 @@ import { toast } from "./toast";
 type Activity = {
   now: string;
   leads: { id: number; name: string | null; at: string }[];
-  messages: { leadId: number; name: string | null; preview: string; at: string }[];
+  messages: { id: string; leadId: number; name: string | null; preview: string; at: string }[];
   reviews?: { id: string; name: string; at: string }[];
 };
 
@@ -23,7 +23,8 @@ const POLL_MS = 5000;
 export function ActivityNotifier({ soundOn }: { soundOn: boolean }) {
   const { t } = useAdminI18n();
   const since = useRef<string | null>(null);
-  const seen = useRef(new Set<string>());
+  const seen = useRef(new Map<string, number>());
+  const polling = useRef(false);
   const sound = useRef(soundOn);
   const dict = useRef(t);
   useEffect(() => {
@@ -34,11 +35,14 @@ export function ActivityNotifier({ soundOn }: { soundOn: boolean }) {
   useEffect(() => {
     let stopped = false;
     const tick = async () => {
+      if (polling.current || stopped) return;
+      polling.current = true;
       try {
         const q = since.current ? `?since=${encodeURIComponent(since.current)}` : "";
         const res = await api<Activity>(`/api/admin/activity${q}`);
         const first = since.current === null;
-        since.current = res.now;
+        since.current = new Date(Date.parse(res.now) - 1000).toISOString();
+        for (const [key, at] of seen.current) if (at < Date.now() - 10 * 60_000) seen.current.delete(key);
         if (first || stopped) return; // the first call only sets the starting point
 
         const n = dict.current.ui.notify;
@@ -46,21 +50,21 @@ export function ActivityNotifier({ soundOn }: { soundOn: boolean }) {
         for (const l of res.leads) {
           const key = `lead-${l.id}`;
           if (seen.current.has(key)) continue;
-          seen.current.add(key);
+          seen.current.set(key, Date.now());
           count++;
           toast({ kind: "info", title: n.newLead(l.id, l.name), href: `/admin/leads/${l.id}` });
         }
         for (const m of res.messages) {
-          const key = `msg-${m.leadId}-${m.at}`;
+          const key = `msg-${m.id}`;
           if (seen.current.has(key)) continue;
-          seen.current.add(key);
+          seen.current.set(key, Date.now());
           count++;
           toast({ kind: "info", title: n.newMessage(m.leadId, m.name), body: m.preview, href: `/admin/leads/${m.leadId}` });
         }
         for (const r of res.reviews ?? []) {
           const key = `review-${r.id}`;
           if (seen.current.has(key)) continue;
-          seen.current.add(key);
+          seen.current.set(key, Date.now());
           count++;
           toast({ kind: "info", title: n.newReview(r.name), href: "/admin/reviews?tab=site" });
         }
@@ -69,7 +73,7 @@ export function ActivityNotifier({ soundOn }: { soundOn: boolean }) {
         window.dispatchEvent(new CustomEvent(ACTIVITY_EVENT));
       } catch {
         /* offline or logged out: try again on the next tick */
-      }
+      } finally { polling.current = false; }
     };
     void tick();
     const timer = setInterval(() => void tick(), POLL_MS);

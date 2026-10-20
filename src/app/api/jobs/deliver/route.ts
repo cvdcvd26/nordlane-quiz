@@ -25,7 +25,7 @@ export async function POST(req: Request) {
 
   try {
     const outcome = await deliverScheduledMessage(parsed.data.scheduledMessageId);
-    if (outcome === "busy") return json({ outcome }, 503); // another worker holds the lock → retry later
+    if (outcome === "busy" || outcome === "not_due") return json({ outcome }, 503); // another worker holds the lock → retry later
     return json({ outcome });
   } catch {
     return json({ error: "delivery failed" }, 500);

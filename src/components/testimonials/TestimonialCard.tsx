@@ -1,6 +1,8 @@
 import { content } from "@/config/content";
 
-export type TestimonialView = { id: string; name: string; rating: number; body: string; demo?: boolean };
+export type TestimonialView = { id: string; name: string; city?: string | null; age?: number | null; rating: number; body: string; demo?: boolean };
+
+const ageText = (age: number) => `${age} ${age === 1 ? "rok" : age % 10 >= 2 && age % 10 <= 4 && (age % 100 < 12 || age % 100 > 14) ? "lata" : "lat"}`;
 
 const initials = (name: string) =>
   name
@@ -39,7 +41,12 @@ export function TestimonialCard({ t }: { t: TestimonialView }) {
               </span>
             )}
           </span>
-          <Stars value={t.rating} className="mt-0.5 size-3" />
+          {(t.age != null || t.city) && (
+            <span className="mt-0.5 block truncate text-xs text-ink-soft">
+              {[t.age != null ? ageText(t.age) : null, t.city].filter(Boolean).join(" · ")}
+            </span>
+          )}
+          <Stars value={t.rating} className="mt-1 size-3" />
         </span>
       </figcaption>
       <blockquote className="mt-2.5 line-clamp-4 text-sm leading-relaxed text-ink">{t.body}</blockquote>
