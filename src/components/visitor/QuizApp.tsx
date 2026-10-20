@@ -5,6 +5,7 @@ import { content, QUESTION_KEYS } from "@/config/content";
 import { reviewConfig } from "@/config/settings";
 import type { CandidateOutcome } from "@/config/candidate-outcome";
 import { api, newId, type PublicFile } from "@/lib/api";
+import { QUIZ_HISTORY_STEP, QUIZ_STEP_PATHS, resolveQuizStep, type QuizProgress } from "@/lib/quiz-steps";
 import { Lane, type Step } from "./Lane";
 import { Backdrop } from "../visual/Backdrop";
 import { StepContact } from "./StepContact";
@@ -82,9 +83,36 @@ export function QuizApp() {
   const idem = useRef<string | null>(null);
   const heading = useRef<HTMLDivElement>(null);
   const autoTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const progress = useRef<QuizProgress | null>(null);
+  const navigationRevision = useRef(0);
   useEffect(() => {
     const t = autoTimer;
     return () => clearTimeout(t.current);
+  }, []);
+
+  const goTo = useCallback((next: Step, history: "push" | "replace" = "push", moveFocus = true) => {
+    if (!progress.current) return;
+    clearTimeout(autoTimer.current);
+    navigationRevision.current += 1;
+    const allowed = resolveQuizStep(QUIZ_STEP_PATHS[next], progress.current, next);
+    setStep(allowed);
+
+    const historyState = { [QUIZ_HISTORY_STEP]: allowed };
+    const path = QUIZ_STEP_PATHS[allowed];
+    if (window.location.pathname !== path) {
+      // Next's native History API integration updates the URL without remounting
+      // this shared layout, preserving uploads and unsaved form/chat drafts.
+      window.history[history === "push" ? "pushState" : "replaceState"](historyState, "", `${path}${window.location.search}`);
+    } else {
+      window.history.replaceState(historyState, "", window.location.href);
+    }
+
+    if (!moveFocus) return;
+    requestAnimationFrame(() => {
+      heading.current?.querySelector("h1")?.setAttribute("tabindex", "-1");
+      (heading.current?.querySelector("h1") as HTMLElement | null)?.focus({ preventScroll: true });
+      window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    });
   }, []);
 
   const fetchSession = useCallback(
@@ -98,11 +126,12 @@ export function QuizApp() {
           if (s.contact)
             setContact({ name: s.contact.name, phone: displayPhone(s.contact.phone), telegram: s.contact.telegram ?? "" });
           setItems(s.files.map(fromServer));
-          // Resume where the visitor left off.
-          setStep(s.submission ? 3 : !s.contact ? 0 : allAnswered(s.answers) ? 2 : 1);
+          progress.current = { contactSaved: Boolean(s.contact), questionsComplete: allAnswered(s.answers), submitted: Boolean(s.submission) };
+          const requested = resolveQuizStep(window.location.pathname, progress.current, window.history.state?.[QUIZ_HISTORY_STEP]);
+          goTo(requested, "replace", false);
         })
         .catch((err: Error) => setLoadError(err.message)),
-    [],
+    [goTo],
   );
 
   const load = () => {
@@ -114,21 +143,22 @@ export function QuizApp() {
     void fetchSession();
   }, [fetchSession]);
 
-  const goTo = (next: Step) => {
-    setStep(next);
-    // Move focus to the new step for keyboard and screen-reader users.
-    requestAnimationFrame(() => {
-      heading.current?.querySelector("h1")?.setAttribute("tabindex", "-1");
-      (heading.current?.querySelector("h1") as HTMLElement | null)?.focus({ preventScroll: true });
-      window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-    });
-  };
+  useEffect(() => {
+    const onPopState = () => {
+      if (!progress.current) return;
+      const requested = resolveQuizStep(window.location.pathname, progress.current, window.history.state?.[QUIZ_HISTORY_STEP]);
+      goTo(requested, "replace");
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [goTo]);
 
   const choose = async (questionKey: string, value: string) => {
     if (answerSaving.current) return;
     answerSaving.current = true;
     clearTimeout(autoTimer.current);
     const previous = answersRef.current;
+    const startedAtNavigation = navigationRevision.current;
     const next = { ...previous, [questionKey]: value };
     setAnswers(next);
     setAnswerError(null);
@@ -137,7 +167,8 @@ export function QuizApp() {
       await api("/api/quiz/answer", { method: "PUT", json: { questionKey, answer: value } });
       // The last missing answer just arrived: move on to the task automatically.
       answersRef.current = next;
-      if (!allAnswered(previous) && allAnswered(next)) {
+      if (progress.current) progress.current.questionsComplete = allAnswered(next);
+      if (startedAtNavigation === navigationRevision.current && !allAnswered(previous) && allAnswered(next)) {
         clearTimeout(autoTimer.current);
         autoTimer.current = setTimeout(() => goTo(2), 700);
       }
@@ -170,6 +201,7 @@ export function QuizApp() {
     try {
       await api("/api/contact", { method: "PUT", json: contact });
       setState((s) => s && { ...s, contact: { ...contact, telegram: contact.telegram || null } });
+      if (progress.current) progress.current.contactSaved = true;
       goTo(1);
     } catch (err) {
       setContactError((err as Error).message);
@@ -204,6 +236,7 @@ export function QuizApp() {
         json: { idempotencyKey: idem.current, fileIds: ready.map((i) => i.serverId), review: review.trim() },
       });
       setState((s) => (s ? { ...s, submission: { id: res.submissionId, submittedAt: res.submittedAt } } : s));
+      if (progress.current) progress.current.submitted = true;
       setItems(ready);
       try {
         sessionStorage.removeItem(IDEM_KEY);

@@ -1,4 +1,5 @@
 "use client";
+import { clearVisitorSoundPreference, readCookieConsent, VISITOR_SOUND_KEY } from "./cookie-consent";
 
 /**
  * Short notification chime generated with Web Audio (no audio files to host).
@@ -41,6 +42,10 @@ export function bindAudioUnlock() {
 const KEY_PREFIX = "nl-sound-";
 
 export function isSoundEnabled(scope: "visitor" | "admin") {
+  if (scope === "visitor" && !readCookieConsent()?.preferences) {
+    clearVisitorSoundPreference();
+    return true;
+  }
   try {
     return window.localStorage.getItem(KEY_PREFIX + scope) !== "off";
   } catch {
@@ -49,8 +54,13 @@ export function isSoundEnabled(scope: "visitor" | "admin") {
 }
 
 export function setSoundEnabled(scope: "visitor" | "admin", on: boolean) {
+  // Sound itself still works with necessary-only cookies; only remembering the choice is optional.
+  if (scope === "visitor" && !readCookieConsent()?.preferences) {
+    clearVisitorSoundPreference();
+    return;
+  }
   try {
-    window.localStorage.setItem(KEY_PREFIX + scope, on ? "on" : "off");
+    window.localStorage.setItem(scope === "visitor" ? VISITOR_SOUND_KEY : KEY_PREFIX + scope, on ? "on" : "off");
   } catch {
     /* storage unavailable: setting lasts for this page only */
   }

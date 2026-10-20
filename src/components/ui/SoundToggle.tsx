@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { bindAudioUnlock, isSoundEnabled, playChime, setSoundEnabled } from "@/lib/sound";
+import { COOKIE_CONSENT_EVENT } from "@/lib/cookie-consent";
 
 /** Speaker button that mutes/unmutes notification chimes; the choice is remembered in this browser. */
 export function SoundToggle({
@@ -19,18 +20,24 @@ export function SoundToggle({
   appearance?: "visitor" | "admin";
 }) {
   const [on, setOn] = useState(true);
+  const onRef = useRef(true);
   useEffect(() => {
     bindAudioUnlock();
     const v = isSoundEnabled(scope);
     // Read the stored preference after mount (localStorage is not available during SSR).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setOn(v);
+    onRef.current = v;
     onChange?.(v);
+    const rememberChoice = () => { if (scope === "visitor") setSoundEnabled(scope, onRef.current); };
+    window.addEventListener(COOKIE_CONSENT_EVENT, rememberChoice);
+    return () => window.removeEventListener(COOKIE_CONSENT_EVENT, rememberChoice);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope]);
 
   const toggle = () => {
     const next = !on;
+    onRef.current = next;
     setOn(next);
     setSoundEnabled(scope, next);
     onChange?.(next);
