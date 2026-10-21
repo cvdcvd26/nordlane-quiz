@@ -5,6 +5,12 @@ import { AppError, forbidden } from "./errors";
 import { log } from "./log";
 import { content } from "@/config/content";
 import { readBody } from "./body";
+import { assertVisitorAvailable } from "./maintenance";
+
+const visitorScopes = new Set([
+  "session", "contact", "quiz.answer", "submit", "uploads", "uploads.delete",
+  "chat.get", "chat.post", "testimonials.list", "files.get",
+]);
 
 export const json = (data: unknown, status = 200) =>
   NextResponse.json(data, { status, headers: { "Cache-Control": "no-store" } });
@@ -13,11 +19,17 @@ export const json = (data: unknown, status = 200) =>
 export function route<A extends unknown[]>(scope: string, fn: (...args: A) => Promise<Response>) {
   return async (...args: A): Promise<Response> => {
     try {
+      // Stop before cookies, rate limits, payload parsing, file reads, or any visitor writes.
+      if (visitorScopes.has(scope)) await assertVisitorAvailable({ allowAdmin: scope === "files.get" });
       return await fn(...args);
     } catch (err) {
       // Let Next.js internal signals through (e.g. "this route is dynamic" during prerendering).
       unstable_rethrow(err);
-      if (err instanceof AppError) return json({ error: err.message, code: err.code }, err.status);
+      if (err instanceof AppError) {
+        const response = json({ error: err.message, code: err.code }, err.status);
+        if (err.code === "maintenance") response.headers.set("Retry-After", "60");
+        return response;
+      }
       if (err instanceof ZodError)
         return json({ error: err.issues[0]?.message ?? content.errors.generic, code: "validation" }, 400);
       log.error(scope, "unhandled error", err);

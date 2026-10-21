@@ -1,5 +1,10 @@
 "use client";
 import { content } from "@/config/content";
+import { maintenanceEvent } from "@/config/maintenance";
+
+function notifyMaintenance(status: number, code?: string) {
+  if (status === 503 && code === "maintenance" && typeof window !== "undefined") window.dispatchEvent(new Event(maintenanceEvent));
+}
 
 export class ApiError extends Error {
   constructor(
@@ -25,7 +30,10 @@ export async function api<T>(url: string, init?: RequestInit & { json?: unknown 
     throw new ApiError(content.errors.network, 0, "network");
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(data.error ?? content.errors.generic, res.status, data.code);
+  if (!res.ok) {
+    notifyMaintenance(res.status, data.code);
+    throw new ApiError(data.error ?? content.errors.generic, res.status, data.code);
+  }
   return data as T;
 }
 
@@ -43,7 +51,10 @@ export function uploadWithProgress<T>(
     xhr.onload = () => {
       const data = xhr.response ?? {};
       if (xhr.status >= 200 && xhr.status < 300) resolve(data as T);
-      else reject(new ApiError(data.error ?? content.errors.generic, xhr.status, data.code));
+      else {
+        notifyMaintenance(xhr.status, data.code);
+        reject(new ApiError(data.error ?? content.errors.generic, xhr.status, data.code));
+      }
     };
     xhr.onerror = () => reject(new ApiError(content.errors.network, 0, "network"));
     xhr.onabort = () => reject(new ApiError("aborted", 0, "aborted"));

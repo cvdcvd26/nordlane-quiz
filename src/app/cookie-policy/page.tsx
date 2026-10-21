@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { CookieSettingsButton } from "@/components/privacy/CookieSettingsButton";
 import { LogoMark } from "@/components/ui/LogoMark";
+import { Suspense } from "react";
+import { CookieConsent } from "@/components/privacy/CookieConsent";
+import { SiteAccessGate } from "@/components/maintenance/SiteAccessGate";
 
 export const metadata: Metadata = {
   title: "Polityka plików cookie — AlleyBiz",
@@ -20,7 +23,7 @@ const entries = [
 
 export default function CookiePolicyPage() {
   return (
-    <>
+    <SiteAccessGate>
       <header className="border-b border-line bg-paper/70">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2.5" aria-label="AlleyBiz — strona główna">
@@ -77,6 +80,7 @@ export default function CookiePolicyPage() {
           <p className="leading-relaxed text-ink-soft">Informacje o firmie: <a href="https://alleybiz.com" target="_blank" rel="noopener noreferrer" className="text-paint underline underline-offset-4">alleybiz.com</a>.</p>
         </section>
       </main>
-    </>
+      <Suspense fallback={null}><CookieConsent /></Suspense>
+    </SiteAccessGate>
   );
 }
