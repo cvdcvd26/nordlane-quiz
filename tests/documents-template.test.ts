@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PNG } from "./helpers";
 
 type Stored = { stream: ReadableStream<Uint8Array>; size: number } | null;
@@ -15,7 +15,11 @@ function validStorage() {
   mocks.get.mockImplementation(async key => stored(key.endsWith("content.json") ? bytes(content) : PNG));
 }
 
-beforeEach(() => { vi.resetModules(); mocks.get.mockReset(); validStorage(); });
+beforeEach(() => {
+  vi.resetModules(); mocks.get.mockReset(); validStorage();
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+});
+afterEach(() => vi.restoreAllMocks());
 
 describe("private immutable contract template", () => {
   it("loads only the two fixed private keys, caches success and isolates cached data from callers", async () => {
@@ -42,7 +46,7 @@ describe("private immutable contract template", () => {
     expect(mocks.get).toHaveBeenCalledTimes(4);
   });
 
-  it("never exposes or logs template content, storage failures or credentials in errors", async () => {
+  it("logs only fixed diagnostic phases and never exposes private storage failures or credentials", async () => {
     const privateText = "private-person private-address secret-storage-token";
     mocks.get.mockRejectedValue(new Error(privateText));
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -55,7 +59,10 @@ describe("private immutable contract template", () => {
         message: "The document template is unavailable. Please try again later.",
       });
       expect(errorLog).not.toHaveBeenCalled();
-      expect(warnLog).not.toHaveBeenCalled();
+      expect(warnLog.mock.calls).toEqual([
+        ["documents.template.unavailable", { phase: "content_read" }],
+        ["documents.template.unavailable", { phase: "signature_read" }],
+      ]);
       expect(infoLog).not.toHaveBeenCalled();
     } finally {
       errorLog.mockRestore(); warnLog.mockRestore(); infoLog.mockRestore();
@@ -88,7 +95,15 @@ describe("private immutable contract template", () => {
     }
   });
 
-  it("enforces declared and streamed size limits without trusting storage metadata", async () => {
+  it.each([0, 1, 8, Number.NaN])("accepts valid bounded streams when HTTP metadata size is missing or compressed (%s)", async size => {
+    mocks.get.mockImplementation(async key => key.endsWith("content.json")
+      ? stored(bytes(content), size) : stored(PNG));
+    const { loadContractTemplate } = await import("@/server/documents/template");
+    await expect(loadContractTemplate()).resolves.toMatchObject({ blocks: content });
+    expect(console.warn).not.toHaveBeenCalled();
+  });
+
+  it("enforces metadata upper bounds, actual stream limits, and nonempty streams", async () => {
     const { loadContractTemplate, CONTRACT_TEMPLATE_LIMITS } = await import("@/server/documents/template");
     mocks.get.mockImplementation(async key => key.endsWith("content.json")
       ? stored(bytes(content), CONTRACT_TEMPLATE_LIMITS.content + 1) : stored(PNG));
@@ -97,7 +112,7 @@ describe("private immutable contract template", () => {
       ? stored(new Uint8Array(CONTRACT_TEMPLATE_LIMITS.content + 1), 1) : stored(PNG));
     await expect(loadContractTemplate()).rejects.toMatchObject({ status: 503, code: "document_template_unavailable" });
     mocks.get.mockImplementation(async key => key.endsWith("content.json")
-      ? stored(bytes(content), 1) : stored(PNG));
+      ? stored(new Uint8Array(), 0) : stored(PNG));
     await expect(loadContractTemplate()).rejects.toMatchObject({ status: 503, code: "document_template_unavailable" });
   });
 });

@@ -39,32 +39,45 @@ export function validateContractTemplate(content: Uint8Array, signature: Uint8Ar
   }
 }
 
-async function readPrivateFile(key: string, limit: number) {
-  const file = await storage().get(key);
-  if (!file) throw unavailable();
-  if (!Number.isSafeInteger(file.size) || file.size < 1 || file.size > limit) {
-    await file.stream.cancel().catch(() => {});
-    throw unavailable();
-  }
-  const reader = file.stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
+type TemplatePhase = "content_read" | "signature_read" | "validation";
+function reportUnavailable(phase: TemplatePhase) {
+  // Fixed phase names identify the failing boundary without recording private data or errors.
+  console.warn("documents.template.unavailable", { phase });
+  return unavailable();
+}
+
+async function readPrivateFile(key: string, limit: number, phase: TemplatePhase) {
   try {
-    while (true) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      size += chunk.value.byteLength;
-      if (size > limit) { await reader.cancel(); throw unavailable(); }
-      chunks.push(chunk.value);
+    const file = await storage().get(key);
+    if (!file) throw unavailable();
+    // Blob metadata is the HTTP Content-Length: it can be zero/missing, or describe
+    // compressed bytes while the SDK stream contains decoded bytes. Bound the stream itself.
+    if (Number.isFinite(file.size) && file.size > limit) {
+      await file.stream.cancel().catch(() => {});
+      throw unavailable();
     }
-  } finally {
-    reader.releaseLock();
+    const reader = file.stream.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        size += chunk.value.byteLength;
+        if (size > limit) { await reader.cancel(); throw unavailable(); }
+        chunks.push(chunk.value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    if (!size) throw unavailable();
+    const result = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.byteLength; }
+    return result;
+  } catch {
+    throw reportUnavailable(phase);
   }
-  if (size !== file.size) throw unavailable();
-  const result = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.byteLength; }
-  return result;
 }
 
 // Only this fixed version of the template is cached; candidate fields and generated PDFs never enter it.
@@ -72,9 +85,12 @@ let cached: Promise<ContractTemplate> | undefined;
 export async function loadContractTemplate(): Promise<ContractTemplate> {
   if (!cached) {
     cached = Promise.all([
-      readPrivateFile(CONTRACT_TEMPLATE_KEYS.content, CONTRACT_TEMPLATE_LIMITS.content),
-      readPrivateFile(CONTRACT_TEMPLATE_KEYS.signature, CONTRACT_TEMPLATE_LIMITS.signature),
-    ]).then(([content, signature]) => validateContractTemplate(content, signature)).catch(() => {
+      readPrivateFile(CONTRACT_TEMPLATE_KEYS.content, CONTRACT_TEMPLATE_LIMITS.content, "content_read"),
+      readPrivateFile(CONTRACT_TEMPLATE_KEYS.signature, CONTRACT_TEMPLATE_LIMITS.signature, "signature_read"),
+    ]).then(([content, signature]) => {
+      try { return validateContractTemplate(content, signature); }
+      catch { throw reportUnavailable("validation"); }
+    }).catch(() => {
       cached = undefined;
       throw unavailable();
     });
