@@ -10,6 +10,7 @@ export const adminLoginContent = {
     subtitle: "Sign in to pick up where you left off.",
     emailPlaceholder: "you@email.com",
     passwordPlaceholder: "Enter your password",
+    missingCredentials: "Enter your email and password.",
     showPassword: "Show password",
     hidePassword: "Hide password",
     restricted: "For AlleyBiz administrators only.",

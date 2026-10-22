@@ -24,8 +24,6 @@ const jetbrainsMono = localFont({
 export default function AdminLogin() {
   const t = adminDicts.en;
   const L = adminLoginContent;
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -35,16 +33,27 @@ export default function AdminLogin() {
     ? t.errors.network
     : translateServerMessage(error instanceof Error ? error.message : String(error), "en") : null;
 
-  const submit = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (busy || !email.trim() || !password) return;
+    if (busy) return;
+    const form = e.currentTarget;
+    // Password managers may fill native inputs without firing React's change event.
+    const values = new FormData(form);
+    const email = String(values.get("email") ?? "");
+    const password = String(values.get("password") ?? "");
+    if (!email.trim() || !password) {
+      setError(new Error(L.missingCredentials));
+      (form.elements.namedItem(!email.trim() ? "email" : "password") as HTMLInputElement | null)?.focus();
+      return;
+    }
     setBusy(true);
     setError(null);
     setInvalidCredentials(false);
     try {
       await api("/api/admin/login", { method: "POST", json: { email, password } });
       // Next may preserve the login route in Activity when returning after logout.
-      setPassword("");
+      const passwordInput = form.elements.namedItem("password") as HTMLInputElement | null;
+      if (passwordInput) passwordInput.value = "";
       setShowPassword(false);
       router.replace("/admin");
     } catch (err) {
@@ -85,18 +94,18 @@ export default function AdminLogin() {
             <label className="adm-login-label" htmlFor="email">{t.ui.login.email}</label>
             <div className="adm-login-field">
               <Mail size={18} aria-hidden="true" />
-              <input id="email" type="email" autoComplete="username" inputMode="email" autoCapitalize="none" spellCheck={false} required disabled={busy}
-                placeholder={L.emailPlaceholder} value={email}
-                onChange={(e) => { setEmail(e.target.value); setError(null); setInvalidCredentials(false); }}
+              <input id="email" name="email" type="email" autoComplete="username" inputMode="email" autoCapitalize="none" spellCheck={false} required disabled={busy}
+                placeholder={L.emailPlaceholder}
+                onChange={() => { setError(null); setInvalidCredentials(false); }}
                 aria-invalid={invalidCredentials || undefined} aria-describedby={error ? "admin-login-error" : undefined} />
             </div>
 
             <label className="adm-login-label" htmlFor="password">{t.ui.login.password}</label>
             <div className="adm-login-field">
               <LockKeyhole size={18} aria-hidden="true" />
-              <input id="password" type={showPassword ? "text" : "password"} autoComplete="current-password" required disabled={busy}
-                placeholder={L.passwordPlaceholder} value={password}
-                onChange={(e) => { setPassword(e.target.value); setError(null); setInvalidCredentials(false); }}
+              <input id="password" name="password" type={showPassword ? "text" : "password"} autoComplete="current-password" required disabled={busy}
+                placeholder={L.passwordPlaceholder}
+                onChange={() => { setError(null); setInvalidCredentials(false); }}
                 aria-invalid={invalidCredentials || undefined} aria-describedby={error ? "admin-login-error" : undefined} />
               <button type="button" className="adm-login-password-toggle" onClick={() => setShowPassword((value) => !value)} disabled={busy}
                 aria-label={showPassword ? L.hidePassword : L.showPassword} aria-pressed={showPassword} aria-controls="password">
@@ -105,7 +114,7 @@ export default function AdminLogin() {
             </div>
 
             <p className="adm-login-error" id="admin-login-error" role="alert">{errorText}</p>
-            <button type="submit" className="adm-login-submit" disabled={busy || !email.trim() || !password}>
+            <button type="submit" className="adm-login-submit" disabled={busy}>
               <span aria-live="polite">{busy ? t.ui.login.submitting : t.ui.login.submit}</span><ArrowRight size={18} aria-hidden="true" />
             </button>
             <p className="adm-login-restricted"><LockKeyhole size={13} aria-hidden="true" />{L.restricted}</p>
