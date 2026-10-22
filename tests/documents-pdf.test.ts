@@ -34,6 +34,15 @@ describe("contract PDF generation", () => {
     expect(drawn.filter(row => row.text === input.fullName)).toHaveLength(2);
     expect(drawn.filter(row => row.text === input.address)).toHaveLength(1);
     expect(drawn.filter(row => row.text.includes("29.02.2028"))).toHaveLength(1);
+    const title = drawn.find(row => row.text === "UMOWA O ŚWIADCZENIE USŁUG")!;
+    const date = drawn.find(row => row.text.includes("29.02.2028"))!;
+    const label = drawn.find(row => row.text === "Wykonawcą: ")!;
+    const firstName = drawn.find(row => row.text === input.fullName)!;
+    expect(title.x).toBe(52);
+    expect(date.x).toBe(52);
+    expect(label.x).toBe(52);
+    expect(firstName.y).toBe(label.y);
+    expect(firstName.x).toBeGreaterThan(label.x);
   });
 
   it("wraps long names and addresses while keeping every drawn line inside the page margins", async () => {

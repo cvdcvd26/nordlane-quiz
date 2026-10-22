@@ -87,26 +87,40 @@ export async function generateContractPdf(input: ContractData): Promise<Uint8Arr
       cursor -= leading;
     }
   };
+  const left = (text: string, size: number, font: PDFFont = regular, leading = size * 1.45) => {
+    for (const line of wrap(text, font, size, WIDTH)) {
+      ensure(leading);
+      page.drawText(line, { x: MARGIN, y: cursor, font, size, color: INK });
+      cursor -= leading;
+    }
+  };
   newPage();
-  centered("UMOWA O ŚWIADCZENIE USŁUG", 17, bold);
+  left("UMOWA O ŚWIADCZENIE USŁUG", 17, bold);
   cursor -= 5;
   const [year, month, day] = data.date.split("-");
-  centered(`zawarta w dniu ${day}.${month}.${year} r. w Lublinie, pomiędzy:`, 10.2);
+  left(`zawarta w dniu ${day}.${month}.${year} r. w Lublinie, pomiędzy:`, 10.2);
   cursor -= 23;
-  centered("Zamawiającym:", 10.2, bold);
-  centered("Alleybizcom Spółka z ograniczoną odpowiedzialnością z siedzibą przy", 10.2);
-  centered("Al. Generała Władysława Sikorskiego 20, 59-300 Lublin", 10.2);
+  left("Zamawiającym:", 10.2, bold);
+  left("Alleybizcom Spółka z ograniczoną odpowiedzialnością z siedzibą przy", 10.2);
+  left("Al. Generała Władysława Sikorskiego 20, 59-300 Lublin", 10.2);
   cursor -= 5;
-  centered("NIP: 7123509615  |  KRS: 0001227235  |  REGON: 544149844", 9.2);
-  centered("reprezentowaną przez: Ewę Dąbrowską - Prezesa Zarządu", 10.2);
+  left("NIP: 7123509615  |  KRS: 0001227235  |  REGON: 544149844", 9.2);
+  left("reprezentowaną przez: Ewę Dąbrowską - Prezesa Zarządu", 10.2);
   cursor -= 8;
-  centered("a", 10.2);
+  left("a", 10.2);
   cursor -= 8;
-  centered("Wykonawcą:", 10.2, bold);
-  centered(data.fullName, 11, bold, 16);
-  centered(data.address, 10.2, regular, 15, WIDTH - 20);
+  const contractorLabel = "Wykonawcą: ";
+  const contractorLabelWidth = bold.widthOfTextAtSize(contractorLabel, 10.2);
+  const contractorLines = wrap(data.fullName, regular, 10.2, WIDTH - contractorLabelWidth);
+  ensure(contractorLines.length * 15);
+  page!.drawText(contractorLabel, { x: MARGIN, y: cursor, font: bold, size: 10.2, color: INK });
+  for (const line of contractorLines) {
+    page!.drawText(line, { x: MARGIN + contractorLabelWidth, y: cursor, font: regular, size: 10.2, color: INK });
+    cursor -= 15;
+  }
+  left(data.address, 10.2, regular, 15);
   cursor -= 12;
-  centered("zwanymi dalej łącznie „Stronami”, a każda z osobna „Stroną”.", 10.2);
+  left("zwanymi dalej łącznie „Stronami”, a każda z osobna „Stroną”.", 10.2);
   cursor -= 7;
 
   for (const block of template.blocks) {
