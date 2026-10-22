@@ -2,6 +2,7 @@
 import { useRef, useState } from "react";
 import { content } from "@/config/content";
 import { api, formatBytes, uploadWithProgress, type PublicFile } from "@/lib/api";
+import type { QuickReply } from "@/lib/quick-replies";
 
 type Attachment = { key: string; name: string; size: number; status: "uploading" | "done" | "error"; file?: PublicFile; error?: string };
 
@@ -20,6 +21,7 @@ export function Composer({
   placeholder = labels.placeholder,
   translateError = (e: Error) => e.message,
   appearance = "visitor",
+  quickReplies,
 }: {
   onSend: (body: string, files: PublicFile[]) => void | Promise<void>;
   uploadUrl: string;
@@ -32,11 +34,13 @@ export function Composer({
   text?: { placeholder: string; send: string; attach: string; removeAttachment: (name: string) => string };
   translateError?: (e: Error) => string;
   appearance?: "visitor" | "admin";
+  quickReplies?: { items: QuickReply[]; label: string; select: string; hint: string; manage: string; empty: string; tooLong: string };
 }) {
   const adm = appearance === "admin";
   const [text, setText] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
+  const [templateError, setTemplateError] = useState(false);
   const busyRef = useRef(false);
   const removed = useRef(new Set<string>());
   const input = useRef<HTMLInputElement>(null);
@@ -45,6 +49,22 @@ export function Composer({
   const uploading = files.some((f) => f.status === "uploading");
   const ready = files.filter((f) => f.status === "done" && f.file).map((f) => f.file!);
   const canSend = !busy && !uploading && (text.trim().length > 0 || ready.length > 0);
+
+  const insertReply = (id: string) => {
+    const reply = quickReplies?.items.find(item => item.id === id);
+    if (!reply || busyRef.current) return;
+    const next = text.trim() ? `${text.trimEnd()}\n\n${reply.body}` : reply.body;
+    if (next.length > 4000) { setTemplateError(true); return; }
+    setText(next); setTemplateError(false);
+    requestAnimationFrame(() => {
+      const element = area.current;
+      if (!element) return;
+      element.style.height = "auto";
+      element.style.height = `${Math.min(element.scrollHeight, 180)}px`;
+      element.focus();
+      element.setSelectionRange(next.length, next.length);
+    });
+  };
 
   const send = async () => {
     if (!canSend || busyRef.current) return;
@@ -106,6 +126,18 @@ export function Composer({
           : "rounded-(--radius-tile) border border-line-strong bg-white/[0.03] p-2 transition-[border-color,box-shadow] focus-within:border-paint focus-within:shadow-[0_0_0_4px_#2ee6a01f]"
       }
     >
+      {adm && quickReplies && <div className="border-b border-adm-line px-2 pt-1.5 pb-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="composer-quick-reply" className="sr-only">{quickReplies.label}</label>
+          <select id="composer-quick-reply" className="adm-input min-w-0 flex-1 text-[12.5px]" value="" disabled={busy || !quickReplies.items.length} onChange={event => insertReply(event.target.value)}>
+            <option value="">{quickReplies.items.length ? quickReplies.select : quickReplies.empty}</option>
+            {quickReplies.items.map(reply => <option key={reply.id} value={reply.id}>{reply.title}</option>)}
+          </select>
+          <a href="/admin/settings#quick-replies" className="text-[12px] font-medium text-adm-accent hover:underline">{quickReplies.manage}</a>
+        </div>
+        <p className="adm-help mt-1.5 leading-relaxed">{quickReplies.hint}</p>
+        {templateError && <p role="alert" className="mt-1 text-[12px] text-adm-red">{quickReplies.tooLong}</p>}
+      </div>}
       {files.length > 0 && (
         <ul className="flex flex-wrap gap-2 px-2 pt-1 pb-2">
           {files.map((f) => (
@@ -170,6 +202,7 @@ export function Composer({
           value={text}
           onChange={(e) => {
             setText(e.target.value);
+            setTemplateError(false);
             e.target.style.height = "auto";
             e.target.style.height = `${Math.min(e.target.scrollHeight, 180)}px`;
           }}

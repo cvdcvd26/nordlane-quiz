@@ -7,6 +7,7 @@ import { ErrorState, PageHeader } from "@/components/admin/ui";
 import { toast } from "@/components/admin/toast";
 import TestAccessManager from "@/components/admin/TestAccessManager";
 import MaintenanceManager from "@/components/admin/MaintenanceManager";
+import QuickReplyManager from "@/components/admin/QuickReplyManager";
 
 function Row({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -141,6 +142,8 @@ export default function SettingsPage() {
           </div>
         </form>
       )}
+
+      <QuickReplyManager />
 
       <MaintenanceManager />
 

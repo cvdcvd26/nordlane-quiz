@@ -12,11 +12,13 @@ import { getLeadTestimonial } from "./testimonials";
 import { getManager } from "./managers";
 import { candidateOutcomeConfig } from "@/config/candidate-outcome";
 import { toCandidateOutcome } from "./candidate-outcome";
+import { getReplyQueueState, replyQueueFields } from "./reply-queue";
 
 const listSchema = z.object({
   q: z.string().trim().max(200).optional().default(""),
   status: z.enum(LEAD_STATUSES as [string, ...string[]]).optional(),
   sort: z.enum(["desc", "asc"]).optional().default("desc"),
+  queue: z.enum(["all", "needs_reply"]).optional().default("all"),
   page: z.coerce.number().int().min(1).optional().default(1),
   pageSize: z.coerce.number().int().min(5).max(100).optional().default(20),
 });
@@ -24,6 +26,7 @@ const listSchema = z.object({
 export async function listLeads(input: Record<string, string | undefined>) {
   const p = listSchema.parse({ ...input, status: input.status || undefined, q: input.q || undefined });
   const L = schema.leads;
+  const { waitingAt, needsReply, replyWaitingSince, lastVisitorMessage } = replyQueueFields();
   // Explicit "leads".* references: inside subqueries Drizzle may render bare column names.
   const leadSession = sql.raw(`"leads"."session_id"`);
   const leadIdCol = sql.raw(`"leads"."id"`);
@@ -41,6 +44,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
     qDigits.length >= 3 ? sql`regexp_replace(vc.phone, '\D', '', 'g') like ${"%" + qDigits + "%"}` : sql`false`;
 
   const filters: SQL[] = [];
+  if (p.queue === "needs_reply") filters.push(needsReply);
   if (p.status) filters.push(eq(L.status, p.status as (typeof LEAD_STATUSES)[number]));
   if (p.q) {
     const asId = /^#?\d+$/.test(p.q) ? Number(p.q.replace("#", "")) : null;
@@ -59,7 +63,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
   }
   const where = filters.length ? and(...filters) : undefined;
 
-  const [rows, [{ total }]] = await Promise.all([
+  const [rows, [{ total }], [{ needsReplyCount }]] = await Promise.all([
     db()
       .select({
         id: L.id,
@@ -73,14 +77,19 @@ export async function listLeads(input: Record<string, string | undefined>) {
         contactName,
         contactPhone,
         submitted,
+        needsReply,
+        replyWaitingSince,
+        lastVisitorMessage,
       })
       .from(L)
       .innerJoin(schema.managers, eq(schema.managers.id, L.managerId))
       .where(where)
-      .orderBy(p.sort === "asc" ? asc(L.createdAt) : desc(L.createdAt), desc(L.id))
+      .orderBy(...(p.queue === "needs_reply" ? [asc(waitingAt), asc(L.id)] :
+        [p.sort === "asc" ? asc(L.createdAt) : desc(L.createdAt), desc(L.id)]))
       .limit(p.pageSize)
       .offset((p.page - 1) * p.pageSize),
     db().select({ total: sql<number>`count(*)::int` }).from(L).where(where),
+    db().select({ needsReplyCount: sql<number>`count(*)::int` }).from(L).where(needsReply),
   ]);
 
   return {
@@ -92,6 +101,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
       lastMessageAt: r.lastMessageAt?.toISOString() ?? null,
     })),
     total,
+    needsReplyCount,
     page: p.page,
     pageSize: p.pageSize,
   };
@@ -120,11 +130,12 @@ export async function getLeadDetails(leadId: number) {
     .from(schema.visitorContacts)
     .where(eq(schema.visitorContacts.sessionId, lead.sessionId))
     .limit(1);
-  const [answers, [submission], [conversation], notes] = await Promise.all([
+  const [answers, [submission], [conversation], notes, replyState] = await Promise.all([
     db().select().from(schema.quizAnswers).where(eq(schema.quizAnswers.sessionId, lead.sessionId)),
     db().select().from(schema.taskSubmissions).where(eq(schema.taskSubmissions.sessionId, lead.sessionId)).limit(1),
     db().select().from(schema.conversations).where(eq(schema.conversations.sessionId, lead.sessionId)).limit(1),
     db().select().from(schema.leadNotes).where(eq(schema.leadNotes.leadId, leadId)).orderBy(desc(schema.leadNotes.createdAt)),
+    getReplyQueueState(leadId),
   ]);
   const submissionFiles = submission
     ? await db().select().from(schema.files).where(eq(schema.files.submissionId, submission.id)).orderBy(asc(schema.files.createdAt))
@@ -136,6 +147,7 @@ export async function getLeadDetails(leadId: number) {
   const messagePage = conversation ? await loadMessagePage(conversation.id) : null;
   return {
     lead: {
+      ...replyState,
       id: lead.id,
       status: lead.status,
       outcome: toCandidateOutcome(lead),

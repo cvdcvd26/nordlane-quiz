@@ -4,13 +4,13 @@ import { useParams, useRouter } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, ChevronRight, Trash2 } from "lucide-react";
 import { LEAD_STATUSES, QUESTION_KEYS, type LeadStatus } from "@/config/content";
-import { uploadConfig } from "@/config/settings";
 import { api, formatBytes, newId, type ChatMessage, type PublicFile, type MessagePage } from "@/lib/api";
 import { mergeMessages } from "@/lib/chat";
 import { MessageList } from "@/components/chat/MessageList";
 import { ManagerAvatar } from "@/components/chat/ManagerAvatar";
 import type { ManagerProfile } from "@/config/managers";
-import { Composer } from "@/components/chat/Composer";
+import { AdminChatComposer } from "@/components/admin/AdminChatComposer";
+import { inboxCopy } from "@/config/admin-inbox";
 import { ACTIVITY_EVENT } from "@/components/admin/ActivityNotifier";
 import { AdmStars, ErrorState, NEXT_STATUS, StageStepper, STATUS_TONE, StatusBadge, TestimonialBadge, type TestimonialStatus } from "@/components/admin/ui";
 import { toast } from "@/components/admin/toast";
@@ -20,7 +20,7 @@ import { CandidateOutcomeEditor } from "@/components/admin/CandidateOutcomeEdito
 import type { CandidateOutcome } from "@/config/candidate-outcome";
 
 type Details = {
-  lead: { manager: ManagerProfile; outcome: CandidateOutcome | null; id: number; status: LeadStatus; createdAt: string; updatedAt: string; messageCount: number; lastMessageAt: string | null; stage: string; answered: number };
+  lead: { manager: ManagerProfile; outcome: CandidateOutcome | null; id: number; status: LeadStatus; createdAt: string; updatedAt: string; messageCount: number; lastMessageAt: string | null; stage: string; answered: number; needsReply: boolean; replyWaitingSince: string | null };
   contact: { name: string; phone: string; telegram: string | null } | null;
   answers: { question: string; answer: string; value: string | null; updatedAt: string | null }[];
   submission: {
@@ -66,7 +66,7 @@ function Section({ title, children, id }: { title: string; children: React.React
 }
 
 function Lead({ id }: { id: string }) {
-  const { t, time, err: tErr } = useAdminI18n();
+  const { lang, t, time, err: tErr } = useAdminI18n();
   const T = t.ui.lead;
   const W = t.ui.workflow;
   const [d, setD] = useState<Details | null>(null);
@@ -210,6 +210,7 @@ function Lead({ id }: { id: string }) {
       });
       replyKey.current = null;
       setD((prev) => prev && { ...prev, messages });
+      window.dispatchEvent(new Event(ACTIVITY_EVENT));
     } catch (e) {
       setSendError(tErr(e));
       throw e;
@@ -347,6 +348,7 @@ function Lead({ id }: { id: string }) {
         <section aria-labelledby="thread" className="adm-panel">
           <h2 id="thread" className="adm-section-title border-b border-adm-line px-4 py-3">
             {T.thread}
+            {d.lead.needsReply && <span className="ml-2 rounded-full bg-adm-amber-bg px-2 py-1 text-[11px] text-adm-amber">{inboxCopy[lang].needsReply}</span>}
           </h2>
           <div className="max-h-[60vh] min-h-72 overflow-y-auto px-4 py-4">
             {before && <button type="button" className="adm-btn mb-4" disabled={loadingEarlier} onClick={() => void loadEarlier()}>{t.chat.loadEarlier}</button>}
@@ -361,17 +363,7 @@ function Lead({ id }: { id: string }) {
             />
           </div>
           <div className="border-t border-adm-line p-3">
-            <Composer
-              onSend={reply}
-              uploadUrl={`/api/admin/leads/${id}/uploads`}
-              accept={[...uploadConfig.adminAttachmentTypes]}
-              attachmentsEnabled
-              maxFiles={uploadConfig.maxFilesPerMessage}
-              placeholder={T.replyPlaceholder}
-              text={t.chat}
-              translateError={tErr}
-              appearance="admin"
-            />
+            <AdminChatComposer leadId={id} onSend={reply} />
             {sendError && <p className="mt-2 text-[13px] text-adm-red">{sendError}</p>}
           </div>
         </section>

@@ -11,6 +11,7 @@ import { EmptyState, ErrorState, PageHeader, SkeletonRows, StageTrack, StatusFil
 import { toast } from "@/components/admin/toast";
 import { formatPhone, nationalDigits } from "@/lib/contact";
 import { useAdminI18n } from "@/components/admin/i18n";
+import { inboxCopy } from "@/config/admin-inbox";
 
 const displayPhone = (p: string) => formatPhone(nationalDigits(p));
 
@@ -26,15 +27,19 @@ type Item = {
   contactPhone: string | null;
   stage: string;
   answered: number;
+  needsReply: boolean;
+  replyWaitingSince: string | null;
+  lastVisitorMessage: string | null;
 };
-type ListResponse = { items: Item[]; total: number; page: number; pageSize: number };
-type Filters = { q: string; status: string; sort: "desc" | "asc"; page: number };
+type ListResponse = { items: Item[]; total: number; needsReplyCount: number; page: number; pageSize: number };
+type Filters = { q: string; status: string; sort: "desc" | "asc"; page: number; queue: "all" | "needs_reply" };
 
 const fromParams = (p: URLSearchParams): Filters => ({
   q: p.get("q") ?? "",
   status: p.get("status") ?? "",
   sort: p.get("sort") === "asc" ? "asc" : "desc",
   page: Number(p.get("page")) || 1,
+  queue: p.get("queue") === "needs_reply" ? "needs_reply" : "all",
 });
 
 const toParams = (f: Filters) => {
@@ -43,6 +48,7 @@ const toParams = (f: Filters) => {
   if (f.status) params.set("status", f.status);
   if (f.sort !== "desc") params.set("sort", f.sort);
   if (f.page > 1) params.set("page", String(f.page));
+  if (f.queue === "needs_reply") params.set("queue", f.queue);
   return params.toString();
 };
 
@@ -57,8 +63,9 @@ export default function LeadsPage() {
 }
 
 function Leads() {
-  const { t, time, err: tErr } = useAdminI18n();
+  const { lang, t, time, err: tErr } = useAdminI18n();
   const L = t.ui.list;
+  const I = inboxCopy[lang];
   const searchParams = useSearchParams();
   const [filters, setFilters] = useState<Filters>(() => fromParams(new URLSearchParams(searchParams.toString())));
   const [query, setQuery] = useState(filters.q);
@@ -70,6 +77,7 @@ function Leads() {
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState<number | null>(null);
+  const [now, setNow] = useState(0);
   const key = toParams(filters);
   const loading = loadedKey !== `${key}#${reload}`;
 
@@ -79,6 +87,9 @@ function Leads() {
     api<ListResponse>(`/api/admin/leads?${key}`)
       .then((d) => {
         if (cancelled) return;
+        const lastPage = Math.max(1, Math.ceil(d.total / d.pageSize));
+        if (d.page > lastPage) { setFilters(current => ({ ...current, page: lastPage })); return; }
+        setNow(Date.now());
         setData(d);
         setError(null);
       })
@@ -92,8 +103,9 @@ function Leads() {
   // New lead / message anywhere → refresh the list.
   useEffect(() => {
     const onActivity = () => setReload((n) => n + 1);
+    const timer = setInterval(() => { if (document.visibilityState === "visible") onActivity(); }, 8000);
     window.addEventListener(ACTIVITY_EVENT, onActivity);
-    return () => window.removeEventListener(ACTIVITY_EVENT, onActivity);
+    return () => { clearInterval(timer); window.removeEventListener(ACTIVITY_EVENT, onActivity); };
   }, []);
 
   // Debounced search.
@@ -157,6 +169,18 @@ function Leads() {
     <div>
       <PageHeader title={L.title} meta={data ? L.total(data.total) : undefined} description={L.description} />
 
+      <div role="group" aria-label={I.filter} className="mb-3 flex flex-wrap gap-2">
+        {(["all", "needs_reply"] as const).map(queue => (
+          <button key={queue} type="button" aria-pressed={filters.queue === queue}
+            onClick={() => { setSelected(new Set()); setFilters(current => ({ ...current, queue, page: 1 })); }}
+            className={`adm-btn ${filters.queue === queue ? "border-adm-accent! bg-adm-accent-soft! text-adm-accent!" : ""}`}>
+            {queue === "all" ? I.all : I.needsReply}
+            {queue === "needs_reply" && data && <span className="rounded-full bg-adm-amber-bg px-2 py-0.5 text-[11px] text-adm-amber tabular-nums">{data.needsReplyCount}</span>}
+          </button>
+        ))}
+      </div>
+      {filters.queue === "needs_reply" && <p className="adm-help mb-3 max-w-3xl leading-relaxed">{I.hint}</p>}
+
       {/* Toolbar or bulk actions */}
       <div className="adm-panel">
         <div className="flex min-h-12 flex-wrap items-center gap-2 border-b border-adm-line px-3 py-2">
@@ -213,10 +237,11 @@ function Leads() {
                 id="sort"
                 className="adm-input w-auto"
                 value={filters.sort}
+                disabled={filters.queue === "needs_reply"}
                 onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value as Filters["sort"], page: 1 }))}
               >
-                <option value="desc">{L.newestFirst}</option>
-                <option value="asc">{L.oldestFirst}</option>
+                <option value="desc">{filters.queue === "needs_reply" ? I.oldestFirst : L.newestFirst}</option>
+                <option value="asc">{filters.queue === "needs_reply" ? I.oldestFirst : L.oldestFirst}</option>
               </select>
             </>
           )}
@@ -239,7 +264,7 @@ function Leads() {
                 <th>{L.columns.stage}</th>
                 <th>{L.columns.status}</th>
                 <th>{L.columns.answer}</th>
-                <th>{L.columns.lastMessage}</th>
+                <th>{filters.queue === "needs_reply" ? I.latest : L.columns.lastMessage}</th>
                 <th className="text-right">{L.columns.messages}</th>
                 <th>{L.columns.created}</th>
               </tr>
@@ -260,6 +285,7 @@ function Leads() {
                       {l.contactPhone ? ` · ${displayPhone(l.contactPhone)}` : ""}
                     </span>
                     <span className="mt-0.5 block text-[12px] text-adm-accent">{l.manager.name}</span>
+                    {l.needsReply && <span className="mt-1 inline-block rounded-full bg-adm-amber-bg px-2 py-0.5 text-[11px] font-semibold text-adm-amber">{I.needsReply}</span>}
                   </td>
                   <td>
                     <StageTrack stage={l.stage} answered={l.answered} total={QUESTION_KEYS.length} />
@@ -268,14 +294,20 @@ function Leads() {
                     <StatusSelect value={l.status} label={L.statusFor(l.id)} disabled={saving === l.id} onChange={(s) => void changeStatus(l.id, s)} />
                   </td>
                   <td className="whitespace-nowrap text-adm-ink-2">{l.answer ? l.answer.split(",").map((x) => t.ui.answers[x] ?? x).join(" · ") : "—"}</td>
-                  <td className="whitespace-nowrap text-adm-ink-2 tabular-nums">{l.lastMessageAt ? time(l.lastMessageAt) : "—"}</td>
+                  <td className="text-adm-ink-2">
+                    {filters.queue === "needs_reply" && <span className="mb-1 block max-w-64 truncate text-[13px]" title={l.lastVisitorMessage || I.attachment}>{l.lastVisitorMessage || I.attachment}</span>}
+                    {l.replyWaitingSince ? <>
+                      <span className="block whitespace-nowrap text-[12px] font-semibold text-adm-amber tabular-nums">{I.waiting(Math.max(0, Math.floor((now - Date.parse(l.replyWaitingSince)) / 60000)))}</span>
+                      <span className="block whitespace-nowrap text-[12px] text-adm-ink-3 tabular-nums">{time(l.replyWaitingSince)}</span>
+                    </> : <span className="whitespace-nowrap tabular-nums">{l.lastMessageAt ? time(l.lastMessageAt) : "—"}</span>}
+                  </td>
                   <td className="text-right text-adm-ink-2 tabular-nums">{l.messageCount}</td>
                   <td className="whitespace-nowrap text-adm-ink-2 tabular-nums">{time(l.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {data && data.items.length === 0 && <EmptyState text={filters.q || filters.status ? L.noResults : L.empty} />}
+          {data && data.items.length === 0 && <EmptyState text={filters.q || filters.status ? L.noResults : filters.queue === "needs_reply" ? I.empty : L.empty} />}
         </div>
 
         {data && data.total > 0 && (
