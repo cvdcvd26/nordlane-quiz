@@ -63,11 +63,11 @@
   overflow: hidden;
   border-right: 1px solid transparent;
   white-space: pre;
-  animation: adm-login-type var(--code-duration) steps(var(--code-chars), end) var(--code-delay) forwards,
+  animation: adm-login-type var(--code-duration) steps(var(--code-chars), start) var(--code-delay) forwards,
     adm-login-type-caret var(--code-duration) linear var(--code-delay) forwards;
 }
 .adm-login-code-text[data-final] {
-  animation: adm-login-type var(--code-duration) steps(var(--code-chars), end) var(--code-delay) forwards,
+  animation: adm-login-type var(--code-duration) steps(var(--code-chars), start) var(--code-delay) forwards,
     adm-login-cursor 1.4s steps(1) calc(var(--code-delay) + var(--code-duration)) infinite;
 }
 .adm-login-line-number { width: 29px; flex: none; color: #546e5e; user-select: none; }
