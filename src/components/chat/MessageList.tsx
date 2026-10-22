@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Clock3 } from "lucide-react";
 import { content } from "@/config/content";
 import { defaultManager, type ManagerProfile } from "@/config/managers";
@@ -19,6 +19,7 @@ export function MessageList({
   locale = content.locale,
   appearance = "visitor",
   manager,
+  actions,
 }: {
   messages: LocalMessage[];
   viewer: "visitor" | "admin";
@@ -29,15 +30,21 @@ export function MessageList({
   locale?: string;
   appearance?: "visitor" | "admin";
   manager?: ManagerProfile | null;
+  actions?: (message: ChatMessage) => ReactNode;
 }) {
   const adm = appearance === "admin";
   const operator = manager ?? defaultManager;
   const end = useRef<HTMLLIElement>(null);
   const count = messages.length;
   const lastMessageId = messages.at(-1)?.id;
+  const lastSequence = messages.at(-1)?.sequence;
+  const previousSequence = useRef<string | undefined>(undefined);
   useEffect(() => {
+    const previous = previousSequence.current;
+    previousSequence.current = lastSequence;
+    if (previous && lastSequence && BigInt(lastSequence) <= BigInt(previous)) return;
     end.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [lastMessageId]);
+  }, [lastMessageId, lastSequence]);
 
   if (count === 0) return <p className={`px-1 py-10 text-center text-sm ${adm ? "text-adm-ink-3" : "text-slate"}`}>{emptyText}</p>;
 
@@ -133,7 +140,7 @@ export function MessageList({
                   </ul>
                 )}
               </div>
-              <p className={`mt-1 flex gap-2 text-xs ${adm ? "text-adm-ink-3" : "text-slate"} ${mine ? "justify-end" : ""}`}>
+              <div className={`mt-1 flex flex-wrap items-center gap-2 text-xs ${adm ? "text-adm-ink-3" : "text-slate"} ${mine ? "justify-end" : ""}`}>
                 <span>{who}</span>
                 {m.local === "sending" ? (
                   <span>{text.sending}</span>
@@ -149,7 +156,8 @@ export function MessageList({
                 ) : (
                   <time dateTime={m.createdAt}>{formatTime(m.createdAt, locale)}</time>
                 )}
-              </p>
+                {adm && viewer === "admin" && m.sender === "admin" && !m.local && actions?.(m)}
+              </div>
             </div>
           </li>
         );

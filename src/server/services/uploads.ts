@@ -139,6 +139,10 @@ export async function getReadableFile(fileId: string, viewer: { admin: true } | 
   if (!z.uuid().safeParse(fileId).success) return null;
   const [f] = await db().select().from(schema.files).where(eq(schema.files.id, fileId)).limit(1);
   if (!f) return null;
+  if (f.messageId) {
+    const [message] = await db().select({ deletedAt: schema.messages.deletedAt }).from(schema.messages).where(eq(schema.messages.id, f.messageId));
+    if (!message || message.deletedAt) return null;
+  }
   if ("admin" in viewer) return f;
   if (f.sessionId !== viewer.sessionId) return null;
   if (f.uploadedBy === "admin" && !f.messageId) return null;

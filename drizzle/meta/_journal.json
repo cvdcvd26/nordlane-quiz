@@ -64,6 +64,13 @@
       "when": 1792520670100,
       "tag": "0008_temporary_admin_access",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792677703993,
+      "tag": "0009_message_management",
+      "breakpoints": true
     }
   ]
 }

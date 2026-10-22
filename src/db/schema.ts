@@ -177,6 +177,7 @@ export const conversations = pgTable(
     sessionId: uuid("session_id").notNull().references(() => visitorSessions.id, { onDelete: "cascade" }),
     leadId: bigint("lead_id", { mode: "number" }).references(() => leads.id, { onDelete: "set null" }),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
+    messageRevision: integer("message_revision").notNull().default(0),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("conversations_session_uq").on(t.sessionId), uniqueIndex("conversations_lead_uq").on(t.leadId)],
@@ -193,12 +194,15 @@ export const messages = pgTable(
     // Client-generated id: retries of the same send never create a second message.
     clientMessageId: text("client_message_id").notNull(),
     createdAt: createdAt(),
+    changeRevision: integer("change_revision").notNull().default(0),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (t) => [
     uniqueIndex("messages_client_id_uq").on(t.conversationId, t.clientMessageId),
     uniqueIndex("messages_sequence_uq").on(t.sequence),
     index("messages_conversation_sequence_idx").on(t.conversationId, t.sequence),
     index("messages_conversation_created_idx").on(t.conversationId, t.createdAt),
+    index("messages_conversation_changes_idx").on(t.conversationId, t.changeRevision),
   ],
 );
 

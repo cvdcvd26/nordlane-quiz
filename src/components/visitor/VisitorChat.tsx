@@ -4,14 +4,14 @@ import { content } from "@/config/content";
 import type { ManagerProfile } from "@/config/managers";
 import type { CandidateOutcome } from "@/config/candidate-outcome";
 import { chatConfig, uploadConfig } from "@/config/settings";
-import { api, newId, type ChatMessage, type PublicFile, type MessagePage } from "@/lib/api";
-import { mergeMessages } from "@/lib/chat";
+import { api, newId, type ChatMessage, type PublicFile, type MessagePage, type MessageChanges } from "@/lib/api";
+import { mergeMessages, reconcileMessageChanges, rememberMessageChanges } from "@/lib/chat";
 import { MessageList, type LocalMessage } from "../chat/MessageList";
 import { Composer } from "../chat/Composer";
 import { SoundToggle } from "../ui/SoundToggle";
 import { playChime } from "@/lib/sound";
 
-type ChatResponse = MessagePage & { attachmentsEnabled: boolean; manager: ManagerProfile; outcome: CandidateOutcome | null };
+type ChatResponse = MessagePage & { attachmentsEnabled: boolean; manager: ManagerProfile; outcome: CandidateOutcome | null; changes: MessageChanges };
 
 /**
  * Built-in chat. New messages arrive by polling every few seconds (paused while the tab is hidden).
@@ -33,6 +33,8 @@ export function VisitorChat({ onOutcome, closed = false }: { onOutcome?: (outcom
   const [offline, setOffline] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const last = useRef<string | undefined>(undefined);
+  const changesAfter = useRef<string | undefined>(undefined);
+  const changes = useRef(new Map<string, ChatMessage | null>());
   const polling = useRef(false);
   const [before, setBefore] = useState<string | null>(null);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
@@ -53,7 +55,7 @@ export function VisitorChat({ onOutcome, closed = false }: { onOutcome?: (outcom
 
   const merge = useCallback((incoming: ChatMessage[]) => {
     if (!incoming.length) return;
-    setMessages((prev) => mergeMessages(prev, incoming));
+    setMessages((prev) => mergeMessages(reconcileMessageChanges(prev, changes.current), reconcileMessageChanges(incoming, changes.current)));
     const ids = new Set(incoming.map((m) => m.clientMessageId));
     setPending((p) => p.filter((m) => !ids.has(m.clientMessageId)));
   }, []);
@@ -65,15 +67,20 @@ export function VisitorChat({ onOutcome, closed = false }: { onOutcome?: (outcom
       let more = true;
       while (more) {
         const initial = !last.current;
-        const q = last.current ? `?after=${encodeURIComponent(last.current)}` : "";
-        const res = await api<ChatResponse>(`/api/chat${q}`);
+        const params = new URLSearchParams();
+        if (last.current) params.set("after", last.current);
+        if (changesAfter.current !== undefined) params.set("changesAfter", changesAfter.current);
+        const res = await api<ChatResponse>(`/api/chat?${params}`);
+        rememberMessageChanges(changes.current, res.changes.updates, res.changes.deletedIds);
+        setMessages(previous => reconcileMessageChanges(previous, changes.current));
+        changesAfter.current = res.changes.cursor;
         closedRef.current = Boolean(res.outcome);
-        notify(res.messages, closedRef.current);
+        notify(reconcileMessageChanges(res.messages, changes.current), closedRef.current);
         merge(res.messages);
         if (initial) setBefore(res.hasMore ? res.previousCursor : null);
         // A send response must never advance this receive cursor.
         last.current = res.nextCursor ?? last.current;
-        more = !initial && res.hasMore && res.messages.length > 0;
+        more = res.changes.hasMore || (!initial && res.hasMore && res.messages.length > 0);
         setAttachments(res.attachmentsEnabled);
         setManager(res.manager);
         outcomeCallback.current?.(res.outcome);

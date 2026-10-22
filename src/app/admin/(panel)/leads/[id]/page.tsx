@@ -4,12 +4,13 @@ import { useParams, useRouter } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, ChevronRight, Trash2 } from "lucide-react";
 import { LEAD_STATUSES, QUESTION_KEYS, type LeadStatus } from "@/config/content";
-import { api, formatBytes, newId, type ChatMessage, type PublicFile, type MessagePage } from "@/lib/api";
-import { mergeMessages } from "@/lib/chat";
+import { api, formatBytes, newId, type ChatMessage, type PublicFile, type MessagePage, type MessageChanges, type MessageChange } from "@/lib/api";
+import { mergeMessages, reconcileMessageChanges, rememberMessageChanges } from "@/lib/chat";
 import { MessageList } from "@/components/chat/MessageList";
 import { ManagerAvatar } from "@/components/chat/ManagerAvatar";
 import type { ManagerProfile } from "@/config/managers";
 import { AdminChatComposer } from "@/components/admin/AdminChatComposer";
+import { AdminMessageActions } from "@/components/admin/AdminMessageActions";
 import { inboxCopy } from "@/config/admin-inbox";
 import { ACTIVITY_EVENT } from "@/components/admin/ActivityNotifier";
 import { AdmStars, ErrorState, NEXT_STATUS, StageStepper, STATUS_TONE, StatusBadge, TestimonialBadge, type TestimonialStatus } from "@/components/admin/ui";
@@ -31,6 +32,7 @@ type Details = {
     autoMessage: { status: string; scheduledFor: string; sentAt: string | null; attempts: number; lastError: string | null } | null;
   } | null;
   messages: ChatMessage[];
+  changes: MessageChanges;
   hasEarlierMessages: boolean;
   oldestMessageCursor: string | null;
   notes: { id: string; body: string; createdAt: string }[];
@@ -79,30 +81,42 @@ function Lead({ id }: { id: string }) {
   const router = useRouter();
   const replyKey = useRef<{ signature: string; id: string } | null>(null);
   const loadVersion = useRef(0);
+  const changesAfter = useRef<string | undefined>(undefined);
+  const changes = useRef(new Map<string, ChatMessage | null>());
   const [history, setHistory] = useState<{ leadId: string; messages: ChatMessage[]; before: string | null } | null>(null);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
 
 
   const load = useCallback(() => {
     const version = ++loadVersion.current;
-    api<Details>(`/api/admin/leads/${id}`)
-      .then((r) => {
+    const run = async () => {
+      let more = true;
+      while (more) {
+        const query = changesAfter.current === undefined ? "" : `?changesAfter=${encodeURIComponent(changesAfter.current)}`;
+        const r = await api<Details>(`/api/admin/leads/${id}${query}`);
         if (version !== loadVersion.current) return;
-        setD(r);
+        rememberMessageChanges(changes.current, r.changes.updates, r.changes.deletedIds);
+        changesAfter.current = r.changes.cursor;
+        setD({ ...r, messages: reconcileMessageChanges(r.messages, changes.current) });
+        setHistory(previous => previous && ({ ...previous, messages: reconcileMessageChanges(previous.messages, changes.current) }));
         setError(null);
-      })
-      .catch((e) => { if (version === loadVersion.current) setError(tErr(e)); });
+        more = r.changes.hasMore;
+      }
+    };
+    void run().catch((e) => { if (version === loadVersion.current) setError(tErr(e)); });
   }, [id, tErr]);
 
+  const invalidateLoads = useCallback(() => { ++loadVersion.current; }, []);
   useEffect(() => {
     load();
     const timer = setInterval(() => document.visibilityState === "visible" && load(), 8000);
     window.addEventListener(ACTIVITY_EVENT, load);
     return () => {
+      invalidateLoads();
       clearInterval(timer);
       window.removeEventListener(ACTIVITY_EVENT, load);
     };
-  }, [load]);
+  }, [load, invalidateLoads]);
 
   if (error && !d)
     return (
@@ -132,7 +146,7 @@ function Lead({ id }: { id: string }) {
     try {
       const details = await api<Details>(`/api/admin/leads/${id}`, { method: "PATCH", json: { status } });
       ++loadVersion.current;
-      setD(details);
+      setD({ ...details, messages: reconcileMessageChanges(details.messages, changes.current) });
       toast({ kind: "success", title: W.statusChanged(d.lead.id, t.ui.statuses[status]) });
     } catch (e) {
       toast({ kind: "error", title: tErr(e) });
@@ -165,7 +179,7 @@ function Lead({ id }: { id: string }) {
         json: action === "publish" ? { action, body } : { action },
       });
       ++loadVersion.current;
-      setD(details);
+      setD({ ...details, messages: reconcileMessageChanges(details.messages, changes.current) });
       toast({ kind: "success", title: action === "publish" ? t.ui.candidateOutcome.saved : t.ui.candidateOutcome.retracted });
     } finally {
       setBusy(false);
@@ -209,12 +223,23 @@ function Lead({ id }: { id: string }) {
         json: { clientMessageId: replyKey.current.id, body, fileIds: files.map((f) => f.id) },
       });
       replyKey.current = null;
-      setD((prev) => prev && { ...prev, messages });
+      setD((prev) => prev && { ...prev, messages: reconcileMessageChanges(messages, changes.current) });
       window.dispatchEvent(new Event(ACTIVITY_EVENT));
     } catch (e) {
       setSendError(tErr(e));
       throw e;
     }
+  };
+
+  const changeMessage = async (message: ChatMessage, action: "edit" | "delete", body: string) => {
+    const result = await api<MessageChange>(`/api/admin/leads/${id}/messages/${encodeURIComponent(message.id)}`, {
+      method: action === "edit" ? "PATCH" : "DELETE",
+      json: action === "edit" ? { body, expectedBody: message.body } : { expectedBody: message.body },
+    });
+    rememberMessageChanges(changes.current, result.deleted ? [] : [{ ...message, body: result.body, changeRevision: result.changeRevision }], result.deleted ? [result.id] : []);
+    setD(previous => previous && ({ ...previous, messages: reconcileMessageChanges(previous.messages, changes.current) }));
+    setHistory(previous => previous && ({ ...previous, messages: reconcileMessageChanges(previous.messages, changes.current) }));
+    window.dispatchEvent(new Event(ACTIVITY_EVENT));
   };
 
   const currentHistory = history?.leadId === id ? history : null;
@@ -225,7 +250,7 @@ function Lead({ id }: { id: string }) {
     try {
       const page = await api<MessagePage>(`/api/admin/leads/${id}/messages?before=${encodeURIComponent(before)}`);
       setHistory((prev) => ({ leadId: id,
-        messages: mergeMessages(prev?.leadId === id ? prev.messages : [], page.messages),
+        messages: reconcileMessageChanges(mergeMessages(prev?.leadId === id ? prev.messages : [], page.messages), changes.current),
         before: page.hasMore ? page.previousCursor : null }));
     } catch (e) { toast({ kind: "error", title: tErr(e) }); }
     finally { setLoadingEarlier(false); }
@@ -360,6 +385,7 @@ function Lead({ id }: { id: string }) {
               appearance="admin"
               manager={d.lead.manager}
               emptyText={d.submission ? T.noMessages : T.noSubmissionYet}
+              actions={message => <AdminMessageActions message={message} onChange={changeMessage} />}
             />
           </div>
           <div className="border-t border-adm-line p-3">

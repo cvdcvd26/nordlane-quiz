@@ -3,10 +3,12 @@ import { requireAdmin } from "@/server/admin-auth";
 import { getLeadDetails, updateLeadStatus } from "@/server/services/admin";
 import { deleteLeads } from "@/server/services/leads";
 import { leadIdFrom } from "../lead-id";
+import { changeCursorSchema } from "@/server/services/chat";
 
-export const GET = route("admin.lead", async (_req: Request, ctx: RouteContext<"/api/admin/leads/[id]">) => {
+export const GET = route("admin.lead", async (req: Request, ctx: RouteContext<"/api/admin/leads/[id]">) => {
   await requireAdmin();
-  return json(await getLeadDetails(leadIdFrom((await ctx.params).id)));
+  const changesAfter = changeCursorSchema.optional().parse(new URL(req.url).searchParams.get("changesAfter") ?? undefined);
+  return json(await getLeadDetails(leadIdFrom((await ctx.params).id), changesAfter));
 });
 
 export const PATCH = route("admin.lead.patch", async (req: Request, ctx: RouteContext<"/api/admin/leads/[id]">) => {

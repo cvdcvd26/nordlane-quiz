@@ -22,8 +22,8 @@ export async function refreshLeadStats(tx: Tx, leadId: number, conversationId: s
   await tx
     .update(schema.leads)
     .set({
-      messageCount: sql`(select count(*)::int from messages m where m.conversation_id = ${conversationId})`,
-      lastMessageAt: sql`(select max(m.created_at) from messages m where m.conversation_id = ${conversationId})`,
+      messageCount: sql`(select count(*)::int from messages m where m.conversation_id = ${conversationId} and m.deleted_at is null)`,
+      lastMessageAt: sql`(select max(m.created_at) from messages m where m.conversation_id = ${conversationId} and m.deleted_at is null)`,
       updatedAt: new Date(),
     })
     .where(eq(schema.leads.id, leadId));

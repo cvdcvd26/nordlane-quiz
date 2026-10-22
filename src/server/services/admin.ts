@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db, schema } from "@/db";
 import { badRequest, conflict, notFound } from "../errors";
 import { LEAD_STATUSES, QUESTION_KEYS, content } from "@/config/content";
-import { loadMessages, loadMessagePage, attachFiles, messageSchema } from "./chat";
+import { loadMessages, loadMessagePage, loadMessageChanges, attachFiles, messageSchema } from "./chat";
 import { toPublicFile } from "./uploads";
 import { touchConversation } from "./conversation";
 import { ensureConversation } from "./leads";
@@ -123,7 +123,7 @@ async function findLead(leadId: number) {
   return lead;
 }
 
-export async function getLeadDetails(leadId: number) {
+export async function getLeadDetails(leadId: number, changesAfter?: string) {
   const lead = await findLead(leadId);
   const [contact] = await db()
     .select({ name: schema.visitorContacts.name, phone: schema.visitorContacts.phone, telegram: schema.visitorContacts.telegram })
@@ -189,6 +189,8 @@ export async function getLeadDetails(leadId: number) {
     messages: messagePage?.messages ?? [],
     hasEarlierMessages: messagePage?.hasMore ?? false,
     oldestMessageCursor: messagePage?.previousCursor ?? null,
+    changes: conversation ? await loadMessageChanges(conversation.id, conversation.messageRevision, changesAfter)
+      : { updates: [], deletedIds: [], cursor: "0", hasMore: false },
     notes: notes.map((n) => ({ id: n.id, body: n.body, createdAt: n.createdAt.toISOString() })),
     siteReview: await getLeadTestimonial(leadId),
   };

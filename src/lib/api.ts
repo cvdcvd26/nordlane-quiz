@@ -104,8 +104,12 @@ export type ChatMessage = {
   body: string;
   createdAt: string;
   clientMessageId: string;
+  changeRevision?: number;
   files: PublicFile[];
 };
+
+export type MessageChanges = { updates: ChatMessage[]; deletedIds: string[]; cursor: string; hasMore: boolean };
+export type MessageChange = { id: string; body: string; changeRevision: number; deleted: boolean };
 
 export type MessagePage = {
   messages: ChatMessage[];

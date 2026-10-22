@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, lt, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lt, lte, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import type { Db } from "@/db";
@@ -23,6 +23,7 @@ export type ChatMessage = {
   body: string;
   createdAt: string;
   clientMessageId: string;
+  changeRevision: number;
   files: PublicFile[];
 };
 
@@ -42,7 +43,8 @@ export async function getConversationBySession(sessionId: string) {
 }
 
 const cursorSchema = z.string().refine((s) => /^[1-9]\d{0,18}$/.test(s) && BigInt(s) <= BigInt("9223372036854775807"));
-export const messageQuerySchema = z.object({ after: cursorSchema.optional(), before: cursorSchema.optional() })
+export const changeCursorSchema = z.string().regex(/^(0|[1-9]\d{0,9})$/).refine(value => Number(value) <= 2147483647);
+export const messageQuerySchema = z.object({ after: cursorSchema.optional(), before: cursorSchema.optional(), changesAfter: changeCursorSchema.optional() })
   .refine((q) => !(q.after && q.before));
 export type MessageQuery = z.infer<typeof messageQuerySchema>;
 
@@ -54,7 +56,7 @@ export async function loadMessagePage(conversationId: string, input: MessageQuer
     .select()
     .from(schema.messages)
     .where(
-      and(eq(schema.messages.conversationId, conversationId),
+      and(eq(schema.messages.conversationId, conversationId), isNull(schema.messages.deletedAt),
         query.after ? gt(schema.messages.sequence, BigInt(query.after)) : undefined,
         query.before ? lt(schema.messages.sequence, BigInt(query.before)) : undefined),
     )
@@ -87,8 +89,26 @@ async function hydrateMessages(rows: (typeof schema.messages.$inferSelect)[]): P
     body: m.body,
     createdAt: m.createdAt.toISOString(),
     clientMessageId: m.clientMessageId,
+    changeRevision: m.changeRevision,
     files: attached.filter((f) => f.messageId === m.id).map(toPublicFile),
   }));
+}
+
+/** A separate bounded cursor delivers edits/deletions without turning them into new messages. */
+export async function loadMessageChanges(conversationId: string, revision: number, after?: string) {
+  if (after === undefined) return { updates: [], deletedIds: [], cursor: String(revision), hasMore: false };
+  const since = Number(changeCursorSchema.parse(after));
+  const rows = await db().select().from(schema.messages)
+    .where(and(eq(schema.messages.conversationId, conversationId), gt(schema.messages.changeRevision, since), lte(schema.messages.changeRevision, revision)))
+    .orderBy(asc(schema.messages.changeRevision)).limit(chatConfig.pageSize + 1);
+  const page = rows.slice(0, chatConfig.pageSize);
+  const hasMore = rows.length > chatConfig.pageSize;
+  return {
+    updates: await hydrateMessages(page.filter(message => !message.deletedAt)),
+    deletedIds: page.filter(message => message.deletedAt).map(message => message.id),
+    cursor: hasMore ? String(page.at(-1)!.changeRevision) : String(revision),
+    hasMore,
+  };
 }
 
 /** The chat opens once the task is submitted. */
@@ -111,6 +131,7 @@ export async function getVisitorChat(sessionId: string, query: MessageQuery = {}
   const settings = await getSettings();
   return {
     ...(await loadMessagePage(conv.id, query)),
+    changes: await loadMessageChanges(conv.id, conv.messageRevision, query.changesAfter),
     manager: await getSessionManager(sessionId),
     outcome: await getSessionOutcome(sessionId),
     attachmentsEnabled: settings.chatAttachmentsEnabled,

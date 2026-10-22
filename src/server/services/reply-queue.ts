@@ -3,9 +3,9 @@ import { db, schema } from "@/db";
 
 /** Ignore system messages; sequence orders replies even when timestamps are equal. */
 export function replyQueueFields() {
-  const pendingVisitor = sql`c.session_id = "leads"."session_id" and m.sender = 'visitor'
+  const pendingVisitor = sql`c.session_id = "leads"."session_id" and m.sender = 'visitor' and m.deleted_at is null
     and m.sequence > coalesce((select max(a.sequence) from messages a
-      where a.conversation_id = c.id and a.sender = 'admin'), 0)`;
+      where a.conversation_id = c.id and a.sender = 'admin' and a.deleted_at is null), 0)`;
   const waitingAt = sql`case when "leads"."candidate_result_published_at" is null then
     (select m.created_at from messages m join conversations c on c.id = m.conversation_id
       where ${pendingVisitor} order by m.sequence asc limit 1) else null end`;
