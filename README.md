@@ -139,6 +139,28 @@ npm run typecheck && npm run lint && npm test && npm run build
 
 ---
 
+## Owner-only document generator
+
+The last admin navigation item opens `/admin/documents`. Only the main administrator (`is_temporary = false`) can render the form or call `POST /api/admin/documents/generate`. Additional administrators receive no navigation item; the server rejects direct requests. The form accepts three labelled or ordered lines (date, full name, address) in PL/RU/EN, lets the owner review the fields, then downloads a Polish PDF. Candidate fields and generated PDFs are not stored on the server.
+
+The contract text and supplied company signature are private assets, **excluded from this public repository**. The server reads only the fixed private storage keys `system/documents/contract-v1/content.json` and `system/documents/contract-v1/company-signature.png`. Keep a separate private backup of these two assets. Fonts in `src/server/documents/assets` are unmodified Noto Sans, with their license included.
+
+Provision the template from a directory outside the repository containing `contract-content.json` and `company-signature.png`:
+
+```bash
+node --conditions=react-server --import tsx scripts/provision-document-template.ts /absolute/private/template-directory
+```
+
+With `BLOB_READ_WRITE_TOKEN`, the script uses private Vercel Blob storage. For local development, append `--local` to seed ignored `.data`. On a standalone production host, set `UPLOAD_DIR` to a persistent private directory outside the web root before provisioning and starting the app. The script validates both assets, skips identical existing files, and refuses to overwrite a different immutable version. Provisioning does not require a database migration. Without the template, generation returns a safe unavailable response.
+
+For a local PDF preview from a private JSON file with `date`, `fullName` and `address`:
+
+```bash
+node --conditions=react-server --import tsx scripts/preview-contract.ts /private/input.json /private/output.pdf
+```
+
+The generator retains the supplied contract wording and numbering. Changes to contract terms require a separate template revision.
+
 ## Changing the copy
 
 - All texts, the three questions, answer options, contact form labels, instructions, errors and statuses: `src/config/content.ts`.

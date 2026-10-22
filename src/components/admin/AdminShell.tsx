@@ -2,7 +2,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { LogOut, MessageSquareText, Settings, Users } from "lucide-react";
+import { FileText, LogOut, MessageSquareText, Settings, Users } from "lucide-react";
+import { documentAdminContent } from "@/config/document-admin";
 import { api, ApiError } from "@/lib/api";
 import { SoundToggle } from "../ui/SoundToggle";
 import { ActivityNotifier } from "./ActivityNotifier";
@@ -10,23 +11,33 @@ import { LangSwitch, useAdminI18n } from "./i18n";
 import { Toaster } from "./toast";
 import { BrandMark } from "./BrandMark";
 
-export function AdminShell({ children }: { children: React.ReactNode }) {
-  const { t } = useAdminI18n();
+export function AdminShell({ children, canManageDocuments = false }: { children: React.ReactNode; canManageDocuments?: boolean }) {
+  const { t, lang } = useAdminI18n();
   const [email, setEmail] = useState<string | null>(null);
+  const [permanentAdmin, setPermanentAdmin] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
   const path = usePathname();
   const router = useRouter();
 
   useEffect(() => {
-    api<{ admin: { email: string } }>("/api/admin/me")
-      .then((r) => setEmail(r.admin.email))
+    const controller = new AbortController();
+    api<{ admin: { email: string; isTemporary: boolean } }>("/api/admin/me", { signal: controller.signal })
+      .then((r) => {
+        if (controller.signal.aborted) return;
+        setEmail(r.admin.email);
+        setPermanentAdmin(r.admin.isTemporary === false);
+      })
       .catch((err) => {
+        if (controller.signal.aborted) return;
         if (err instanceof ApiError && err.status === 401) router.replace("/admin/login");
       });
+    return () => controller.abort();
   }, [router]);
 
   const logout = async () => {
     await api("/api/admin/logout", { method: "POST" }).catch(() => {});
+    setEmail(null);
+    setPermanentAdmin(false);
     router.replace("/admin/login");
   };
 
@@ -34,6 +45,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     { href: "/admin", label: t.ui.nav.leads, icon: Users, active: path === "/admin" || path.startsWith("/admin/leads") },
     { href: "/admin/reviews", label: t.ui.nav.reviews, icon: MessageSquareText, active: path.startsWith("/admin/reviews") },
     { href: "/admin/settings", label: t.ui.nav.settings, icon: Settings, active: path.startsWith("/admin/settings") },
+    ...(canManageDocuments && permanentAdmin ? [{ href: "/admin/documents", label: documentAdminContent[lang].nav, icon: FileText, active: path.startsWith("/admin/documents") }] : []),
   ];
 
   const navLinks = (compact: boolean) =>
@@ -42,12 +54,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         key={n.href}
         href={n.href}
         aria-current={n.active ? "page" : undefined}
-        className={`relative flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13.5px] whitespace-nowrap transition-colors ${
+        className={`relative flex min-h-8 items-center gap-2.5 rounded-md px-2.5 text-[13.5px] transition-colors ${n.href === "/admin/documents" && !compact ? "py-1.5 leading-snug whitespace-normal" : "h-8 whitespace-nowrap"} ${
           n.active ? "bg-adm-subtle font-semibold text-adm-ink" : "text-adm-ink-2 hover:bg-adm-subtle/70 hover:text-adm-ink"
         } ${compact ? "" : "w-full"}`}
       >
         {n.active && !compact && <span aria-hidden className="absolute top-1.5 bottom-1.5 -left-3 w-[3px] rounded-r bg-adm-accent" />}
-        <n.icon aria-hidden className={`size-4 ${n.active ? "text-adm-accent" : ""}`} strokeWidth={1.8} />
+        <n.icon aria-hidden className={`size-4 shrink-0 ${n.active ? "text-adm-accent" : ""}`} strokeWidth={1.8} />
         {n.label}
       </Link>
     ));

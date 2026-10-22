@@ -1,5 +1,11 @@
 import { Suspense } from "react";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { getAdmin } from "@/server/admin-auth";
+
+async function AuthenticatedShell({ children }: { children: React.ReactNode }) {
+  const admin = await getAdmin();
+  return <AdminShell canManageDocuments={admin?.isTemporary === false}>{children}</AdminShell>;
+}
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -10,7 +16,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
       }
     >
-      <AdminShell>{children}</AdminShell>
+      <AuthenticatedShell>{children}</AuthenticatedShell>
     </Suspense>
   );
 }
