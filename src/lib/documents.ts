@@ -30,3 +30,20 @@ export const contractDataSchema = z.object({
 }).strict();
 
 export type ContractData = z.infer<typeof contractDataSchema>;
+
+/** One safe Unicode filename shared by the browser download and HTTP attachment. */
+export function contractPdfFilename(fullName: string): string {
+  const cleaned = fullName.normalize("NFC").trim()
+    .replace(/[^\p{L}\p{M}\p{N}'’-]+/gu, "_")
+    .replace(/^_+|_+$/g, "");
+  let name = "";
+  let bytes = 0;
+  const encoder = new TextEncoder();
+  for (const character of cleaned) {
+    const length = encoder.encode(character).byteLength;
+    if (bytes + length > 200) break;
+    name += character;
+    bytes += length;
+  }
+  return `Umowa_${name || "dokument"}.pdf`;
+}

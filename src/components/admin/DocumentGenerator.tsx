@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Check, ClipboardPaste, Download, FileText, LoaderCircle, ShieldCheck } from "lucide-react";
 import { documentAdminContent } from "@/config/document-admin";
 import { parseDocumentInput, type DocumentInputError } from "@/lib/document-input";
-import { CONTRACT_LIMITS, contractDataSchema, type ContractData } from "@/lib/documents";
+import { CONTRACT_LIMITS, contractDataSchema, contractPdfFilename, type ContractData } from "@/lib/documents";
 import { useAdminI18n } from "./i18n";
 import { PageHeader } from "./ui";
 
@@ -136,7 +136,7 @@ export default function DocumentGenerator() {
         setError("unavailable");
         return;
       }
-      const file = { url: URL.createObjectURL(blob), filename: `Umowa_${validated.data.date}.pdf` };
+      const file = { url: URL.createObjectURL(blob), filename: contractPdfFilename(validated.data.fullName) };
       downloadUrl.current = file.url;
       setDownload(file);
       startDownload(file);

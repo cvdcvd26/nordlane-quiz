@@ -3,7 +3,7 @@ import { readBody } from "@/server/body";
 import { generateContractPdf } from "@/server/documents/pdf";
 import { AppError, badRequest } from "@/server/errors";
 import { assertSameOrigin, route } from "@/server/http";
-import { contractDataSchema } from "@/lib/documents";
+import { contractDataSchema, contractPdfFilename } from "@/lib/documents";
 
 const generateDocument = route("admin.documents.generate", async (req: Request) => {
   assertSameOrigin(req);
@@ -33,10 +33,12 @@ const generateDocument = route("admin.documents.generate", async (req: Request) 
     throw new AppError(500, "document_generation_failed", "The PDF could not be generated. Please try again.");
   }
 
+  const filename = encodeURIComponent(contractPdfFilename(parsed.data.fullName))
+    .replace(/['()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
   return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="Umowa_${parsed.data.date}.pdf"`,
+      "Content-Disposition": `attachment; filename="Umowa.pdf"; filename*=UTF-8''${filename}`,
       "Content-Length": String(pdf.byteLength),
     },
   });

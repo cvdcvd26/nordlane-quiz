@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { schema } from "@/db";
 import { POST } from "@/app/api/admin/documents/generate/route";
 import { AppError } from "@/server/errors";
-import { contractDataSchema } from "@/lib/documents";
+import { contractDataSchema, contractPdfFilename } from "@/lib/documents";
 import { setupTestEnv } from "./helpers";
 
 const mocks = vi.hoisted(() => ({
@@ -91,14 +91,14 @@ describe("private document-generation API", () => {
     expect(mocks.render).not.toHaveBeenCalled();
   });
 
-  it("returns a private PDF attachment with a neutral filename and normalized fields", async () => {
+  it("returns a private PDF attachment named after the normalized recipient", async () => {
     await authenticate();
     const response = await POST(request({
       ...valid, fullName: "  Jan   Kowalski  ", address: " ul. Długa 10,  20-001 Lublin ",
     }));
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("application/pdf");
-    expect(response.headers.get("content-disposition")).toBe('attachment; filename="Umowa_2026-10-22.pdf"');
+    expect(response.headers.get("content-disposition")).toBe('attachment; filename="Umowa.pdf"; filename*=UTF-8\'\'Umowa_Jan_Kowalski.pdf');
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("content-length")).toBe(String(pdfBytes.byteLength));
@@ -109,6 +109,13 @@ describe("private document-generation API", () => {
     for (const table of [schema.files, schema.leads, schema.appSettings, schema.rateLimits]) {
       expect(await env.db.select().from(table)).toEqual([]);
     }
+  });
+
+  it("sends Polish letters and apostrophes in a valid UTF-8 attachment filename", async () => {
+    await authenticate();
+    const response = await POST(request({ ...valid, fullName: "Łucja O'Żuk" }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-disposition")).toBe('attachment; filename="Umowa.pdf"; filename*=UTF-8\'\'Umowa_%C5%81ucja_O%27%C5%BBuk.pdf');
   });
 
   it.each([
@@ -162,6 +169,11 @@ describe("private document-generation API", () => {
 });
 
 describe("shared contract field validation", () => {
+  it("keeps download names safe for paths and within filesystem byte limits", () => {
+    expect(contractPdfFilename("  Łucja   Żuk  ")).toBe("Umowa_Łucja_Żuk.pdf");
+    expect(contractPdfFilename("Jan / Kowalski\\Test: <>\"|?*")).toBe("Umowa_Jan_Kowalski_Test.pdf");
+    expect(new TextEncoder().encode(contractPdfFilename("Ż".repeat(160))).byteLength).toBeLessThan(255);
+  });
   it.each(["1900-01-01", "2000-02-29", "2024-02-29", "2100-12-31"])("accepts a real ISO calendar date (%s)", date => {
     expect(contractDataSchema.safeParse({ ...valid, date }).success).toBe(true);
   });
