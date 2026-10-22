@@ -95,19 +95,23 @@ export async function generateContractPdf(input: ContractData): Promise<Uint8Arr
     }
   };
   newPage();
-  left("UMOWA O ŚWIADCZENIE USŁUG", 17, bold);
-  cursor -= 5;
+  centered("UMOWA O ŚWIADCZENIE USŁUG", 17, bold, 19.2);
   const [year, month, day] = data.date.split("-");
-  left(`zawarta w dniu ${day}.${month}.${year} r. w Lublinie, pomiędzy:`, 10.2);
+  centered(`zawarta w dniu ${day}.${month}.${year} r. w Lublinie, pomiędzy:`, 10.2);
   cursor -= 23;
-  left("Zamawiającym:", 10.2, bold);
-  left("Alleybizcom Spółka z ograniczoną odpowiedzialnością z siedzibą przy", 10.2);
-  left("Al. Generała Władysława Sikorskiego 20, 59-300 Lublin", 10.2);
+  const companyLabel = "Zamawiającym: ";
+  const companyLabelWidth = bold.widthOfTextAtSize(companyLabel, 10.2);
+  const companyLines = wrap("Alleybizcom Spółka z ograniczoną odpowiedzialnością z siedzibą przy Al. Generała Władysława Sikorskiego 20, 59-300 Lublin", regular, 10.2, WIDTH - companyLabelWidth);
+  page!.drawText(companyLabel, { x: MARGIN, y: cursor, font: bold, size: 10.2, color: INK });
+  companyLines.forEach((line, index) => {
+    page!.drawText(line, { x: MARGIN + (index === 0 ? companyLabelWidth : 0), y: cursor, font: regular, size: 10.2, color: INK });
+    cursor -= 15;
+  });
   cursor -= 5;
   left("NIP: 7123509615  |  KRS: 0001227235  |  REGON: 544149844", 9.2);
   left("reprezentowaną przez: Ewę Dąbrowską - Prezesa Zarządu", 10.2);
   cursor -= 8;
-  left("a", 10.2);
+  centered("a", 10.2);
   cursor -= 8;
   const contractorLabel = "Wykonawcą: ";
   const contractorLabelWidth = bold.widthOfTextAtSize(contractorLabel, 10.2);

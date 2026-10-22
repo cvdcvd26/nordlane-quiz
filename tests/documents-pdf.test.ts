@@ -38,8 +38,15 @@ describe("contract PDF generation", () => {
     const date = drawn.find(row => row.text.includes("29.02.2028"))!;
     const label = drawn.find(row => row.text === "Wykonawcą: ")!;
     const firstName = drawn.find(row => row.text === input.fullName)!;
-    expect(title.x).toBe(52);
-    expect(date.x).toBe(52);
+    expect(title.x + title.width / 2).toBeCloseTo(595.28 / 2);
+    expect(date.x + date.width / 2).toBeCloseTo(595.28 / 2);
+    expect(title.y - date.y).toBeLessThanOrEqual(20);
+    const separator = drawn.find(row => row.text === "a")!;
+    expect(separator.x + separator.width / 2).toBeCloseTo(595.28 / 2);
+    const companyLabel = drawn.find(row => row.text === "Zamawiającym: ")!;
+    const companyText = drawn.find(row => row.text.startsWith("Alleybizcom Spółka"))!;
+    expect(companyLabel.x).toBe(52);
+    expect(companyLabel.y).toBe(companyText.y);
     expect(label.x).toBe(52);
     expect(firstName.y).toBe(label.y);
     expect(firstName.x).toBeGreaterThan(label.x);
