@@ -102,6 +102,8 @@ Tables: `admin_users`, `visitor_sessions`, `visitor_contacts`, `quiz_answers`, `
 
 Open `/admin` and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`: the admin is created on the first login with a hashed password. Then **remove `ADMIN_PASSWORD`** from the environment and change the password in `/admin/settings`.
 
+The main administrator can replace their sign-in email and password together in **Settings → Main administrator access**, after entering the current password. This updates the same account, preserves its permissions and data, rotates the current session, and invalidates all previously issued session tokens. Additional administrators only see their own password-change form; the replacement API also rejects their requests. The email is a login identifier and does not require an email delivery service.
+
 From a terminal: `DATABASE_URL=... npm run admin:create -- admin@example.com 'long-password'` (also resets an existing admin's password).
 
 ---

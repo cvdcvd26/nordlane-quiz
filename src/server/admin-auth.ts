@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
-import { AppError, badRequest, unauthorized } from "./errors";
+import { AppError, badRequest, conflict, unauthorized } from "./errors";
 import { rateLimit, resetRateLimit } from "./rate-limit";
 import { log } from "./log";
 import { content } from "@/config/content";
@@ -133,4 +133,51 @@ export async function changePassword(adminId: string, input: unknown, ip: string
     return row;
   });
   await setSessionCookie(updated.id, updated.tokenVersion);
+}
+
+const replaceAccessSchema = z.object({
+  email: z.string().trim().toLowerCase().max(254).email(content.admin.login.invalidEmail),
+  currentPassword: z.string().min(1).max(72).refine(value => Buffer.byteLength(value, "utf8") <= 72),
+  newPassword: passwordSchema,
+}).strict();
+
+function isUniqueViolation(error: unknown): boolean {
+  for (let depth = 0; error && typeof error === "object" && depth < 5; depth++) {
+    if ("code" in error && error.code === "23505") return true;
+    error = "cause" in error ? error.cause : null;
+  }
+  return false;
+}
+
+/** Replace this owner's credentials atomically; no new account or permissions are created. */
+export async function replaceMainAdminAccess(adminId: string, input: unknown, ip: string) {
+  await rateLimit(`main-access:${adminId}`, 5, 15 * 60);
+  await rateLimit(`main-access:ip:${ip}`, 10, 15 * 60);
+  const { email, currentPassword, newPassword } = replaceAccessSchema.parse(input);
+  let updated: typeof schema.adminUsers.$inferSelect;
+  try {
+    updated = await db().transaction(async tx => {
+      const [admin] = await tx.select().from(schema.adminUsers).where(eq(schema.adminUsers.id, adminId)).for("update");
+      if (!admin) throw unauthorized();
+      if (admin.isTemporary !== false)
+        throw new AppError(403, "main_access_forbidden", "Only the main administrator can replace this access.");
+      if (!(await bcrypt.compare(currentPassword, admin.passwordHash)))
+        throw badRequest(content.admin.settings.password.wrongCurrent, "wrong_password");
+      if (await bcrypt.compare(newPassword, admin.passwordHash))
+        throw badRequest("Choose a password different from the current one.", "password_unchanged");
+      const [row] = await tx.update(schema.adminUsers).set({
+        email, passwordHash: await hashPassword(newPassword),
+        tokenVersion: sql`${schema.adminUsers.tokenVersion} + 1`, updatedAt: new Date(),
+      }).where(eq(schema.adminUsers.id, adminId)).returning();
+      return row;
+    });
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    if (isUniqueViolation(error)) throw conflict("This email is already used by another administrator.", "admin_email_in_use");
+    // Database errors can contain query parameters, including an email and password hash.
+    console.warn("admin.credentials_change_failed");
+    throw new AppError(500, "main_access_failed", "The administrator access could not be changed.");
+  }
+  await setSessionCookie(updated.id, updated.tokenVersion);
+  return { email: updated.email };
 }

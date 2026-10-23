@@ -8,6 +8,7 @@ import { toast } from "@/components/admin/toast";
 import TestAccessManager from "@/components/admin/TestAccessManager";
 import MaintenanceManager from "@/components/admin/MaintenanceManager";
 import QuickReplyManager from "@/components/admin/QuickReplyManager";
+import AdminAccountSettings from "@/components/admin/AdminAccountSettings";
 
 function Row({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -28,8 +29,6 @@ export default function SettingsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [pw, setPw] = useState({ currentPassword: "", newPassword: "", repeat: "" });
-  const [pwError, setPwError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
@@ -55,19 +54,6 @@ export default function SettingsPage() {
       setFormError(tErr(err));
     } finally {
       setBusy(false);
-    }
-  };
-
-  const changePw = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPwError(null);
-    if (pw.newPassword !== pw.repeat) return setPwError(S.password.mismatch);
-    try {
-      await api("/api/admin/password", { method: "POST", json: { currentPassword: pw.currentPassword, newPassword: pw.newPassword } });
-      setPw({ currentPassword: "", newPassword: "", repeat: "" });
-      toast({ kind: "success", title: S.password.changed });
-    } catch (err) {
-      setPwError(tErr(err));
     }
   };
 
@@ -149,32 +135,7 @@ export default function SettingsPage() {
 
       <TestAccessManager />
 
-      <form onSubmit={changePw} className="adm-panel mt-4" noValidate>
-        <Row title={S.password.title}>
-          <div className="max-w-sm space-y-3">
-            {(
-              [
-                ["currentPassword", S.password.current, "current-password"],
-                ["newPassword", S.password.next, "new-password"],
-                ["repeat", S.password.repeat, "new-password"],
-              ] as const
-            ).map(([key, label, ac]) => (
-              <label key={key} className="adm-label">
-                {label}
-                <input type="password" autoComplete={ac} className="adm-input mt-1.5" value={pw[key]} onChange={(e) => setPw({ ...pw, [key]: e.target.value })} />
-              </label>
-            ))}
-            {pwError && (
-              <p role="alert" className="text-[13px] text-adm-red">
-                {pwError}
-              </p>
-            )}
-            <button type="submit" className="adm-btn" disabled={!pw.currentPassword || pw.newPassword.length < 10}>
-              {S.password.submit}
-            </button>
-          </div>
-        </Row>
-      </form>
+      <AdminAccountSettings />
     </div>
   );
 }

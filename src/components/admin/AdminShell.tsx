@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { FileText, LogOut, MessageSquareText, Settings, Users } from "lucide-react";
 import { documentAdminContent } from "@/config/document-admin";
+import { adminAccountUpdatedEvent } from "@/config/admin-account";
 import { api, ApiError } from "@/lib/api";
 import { SoundToggle } from "../ui/SoundToggle";
 import { ActivityNotifier } from "./ActivityNotifier";
@@ -20,18 +21,25 @@ export function AdminShell({ children, canManageDocuments = false }: { children:
   const router = useRouter();
 
   useEffect(() => {
-    const controller = new AbortController();
-    api<{ admin: { email: string; isTemporary: boolean } }>("/api/admin/me", { signal: controller.signal })
-      .then((r) => {
-        if (controller.signal.aborted) return;
-        setEmail(r.admin.email);
-        setPermanentAdmin(r.admin.isTemporary === false);
-      })
-      .catch((err) => {
-        if (controller.signal.aborted) return;
-        if (err instanceof ApiError && err.status === 401) router.replace("/admin/login");
-      });
-    return () => controller.abort();
+    let controller: AbortController;
+    const loadAccount = () => {
+      controller?.abort();
+      controller = new AbortController();
+      const signal = controller.signal;
+      void api<{ admin: { email: string; isTemporary: boolean } }>("/api/admin/me", { signal })
+        .then((r) => {
+          if (signal.aborted) return;
+          setEmail(r.admin.email);
+          setPermanentAdmin(r.admin.isTemporary === false);
+        })
+        .catch((err) => {
+          if (signal.aborted) return;
+          if (err instanceof ApiError && err.status === 401) router.replace("/admin/login");
+        });
+    };
+    loadAccount();
+    window.addEventListener(adminAccountUpdatedEvent, loadAccount);
+    return () => { controller.abort(); window.removeEventListener(adminAccountUpdatedEvent, loadAccount); };
   }, [router]);
 
   const logout = async () => {
