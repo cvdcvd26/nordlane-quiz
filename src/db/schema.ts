@@ -59,6 +59,22 @@ export const visitorSessions = pgTable("visitor_sessions", {
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Optional source fields require analytics consent; taskViewedAt is operational progress. */
+export const visitorAttribution = pgTable("visitor_attribution", {
+  sessionId: uuid("session_id").primaryKey().references(() => visitorSessions.id, { onDelete: "cascade" }),
+  consentAll: boolean("consent_all").notNull().default(false),
+  consentUpdatedAt: timestamp("consent_updated_at", { withTimezone: true }),
+  utmSource: text("utm_source"),
+  utmMedium: text("utm_medium"),
+  utmCampaign: text("utm_campaign"),
+  utmContent: text("utm_content"),
+  utmTerm: text("utm_term"),
+  referrerHost: text("referrer_host"),
+  taskViewedAt: timestamp("task_viewed_at", { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
 export const quizAnswers = pgTable(
   "quiz_answers",
   {
@@ -207,6 +223,25 @@ export const messages = pgTable(
 );
 
 /* ---------- Files ---------- */
+/** Structured correction rounds retain the initial submission and chat attachment history. */
+export const taskRevisions = pgTable("task_revisions", {
+  id: id(),
+  leadId: bigint("lead_id", { mode: "number" }).notNull().references(() => leads.id, { onDelete: "cascade" }),
+  instructions: text("instructions").notNull(),
+  status: text("status").notNull().default("pending"),
+  requestMessageId: uuid("request_message_id").references(() => messages.id, { onDelete: "set null" }),
+  responseMessageId: uuid("response_message_id").references(() => messages.id, { onDelete: "set null" }),
+  createdBy: uuid("created_by").references(() => adminUsers.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+  submittedAt: timestamp("submitted_at", { withTimezone: true }),
+}, t => [
+  index("task_revisions_lead_idx").on(t.leadId),
+  uniqueIndex("task_revisions_pending_uq").on(t.leadId).where(sql`${t.status} = 'pending'`),
+  check("task_revisions_status_ck", sql`${t.status} in ('pending', 'submitted', 'cancelled')`),
+  check("task_revisions_instructions_ck", sql`length(btrim(${t.instructions})) between 1 and 4000`),
+]);
+
 export const files = pgTable(
   "files",
   {
@@ -263,6 +298,24 @@ export const leadNotes = pgTable(
   },
   (t) => [index("lead_notes_lead_idx").on(t.leadId), check("lead_notes_body_nonempty", sql`length(btrim(${t.body})) > 0`)],
 );
+
+/** Shared follow-up tasks, without assigning leads to individual operators. */
+export const leadReminders = pgTable("lead_reminders", {
+  id: id(),
+  leadId: bigint("lead_id", { mode: "number" }).notNull().references(() => leads.id, { onDelete: "cascade" }),
+  body: text("body").notNull(),
+  dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdBy: uuid("created_by").references(() => adminUsers.id, { onDelete: "set null" }),
+  revision: integer("revision").notNull().default(0),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, t => [
+  index("lead_reminders_lead_idx").on(t.leadId),
+  index("lead_reminders_due_idx").on(t.dueAt).where(sql`${t.completedAt} is null`),
+  check("lead_reminders_body_ck", sql`length(btrim(${t.body})) between 1 and 500`),
+  check("lead_reminders_revision_ck", sql`${t.revision} >= 0`),
+]);
 
 export const appSettings = pgTable("app_settings", {
   key: text("key").primaryKey(),

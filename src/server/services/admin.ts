@@ -18,13 +18,16 @@ const listSchema = z.object({
   q: z.string().trim().max(200).optional().default(""),
   status: z.enum(LEAD_STATUSES as [string, ...string[]]).optional(),
   sort: z.enum(["desc", "asc"]).optional().default("desc"),
-  queue: z.enum(["all", "needs_reply"]).optional().default("all"),
+  queue: z.enum(["all", "needs_reply", "unfinished"]).optional().default("all"),
+  stage: z.enum(["questions", "task", "submitted"]).optional(),
+  inactiveMinutes: z.coerce.number().int().min(0).max(10080).optional().default(0),
   page: z.coerce.number().int().min(1).optional().default(1),
   pageSize: z.coerce.number().int().min(5).max(100).optional().default(20),
 });
 
 export async function listLeads(input: Record<string, string | undefined>) {
-  const p = listSchema.parse({ ...input, status: input.status || undefined, q: input.q || undefined });
+  const p = listSchema.parse({ ...input, status: input.status || undefined, q: input.q || undefined,
+    stage: input.stage || undefined, inactiveMinutes: input.inactiveMinutes ?? (input.queue === "unfinished" ? "30" : undefined) });
   const L = schema.leads;
   const { waitingAt, needsReply, replyWaitingSince, lastVisitorMessage } = replyQueueFields();
   // Explicit "leads".* references: inside subqueries Drizzle may render bare column names.
@@ -37,6 +40,11 @@ export async function listLeads(input: Record<string, string | undefined>) {
   const contactName = sql<string | null>`(select vc.name from visitor_contacts vc where vc.session_id = ${leadSession})`;
   const contactPhone = sql<string | null>`(select vc.phone from visitor_contacts vc where vc.session_id = ${leadSession})`;
   const submitted = sql<boolean>`exists (select 1 from task_submissions ts where ts.session_id = ${leadSession})`;
+  const answerCount = sql<number>`(select count(*)::int from quiz_answers qa where qa.session_id = ${leadSession} and qa.question_key in ${QUESTION_KEYS})`;
+  const lastSeenAt = sql<Date>`(select vs.last_seen_at from visitor_sessions vs where vs.id = ${leadSession})`.mapWith(value => new Date(value));
+  const now = new Date();
+  const unfinished = sql`not (${submitted}) and ${L.status} not in ('completed', 'rejected')`;
+  const defaultInactive = sql`${lastSeenAt} <= ${new Date(now.getTime() - 30 * 60_000)}`;
 
   // Phone search compares digits only, so "600 123", "+48600123" and "600-123" all match.
   const qDigits = p.q.replace(/\D/g, "");
@@ -45,6 +53,11 @@ export async function listLeads(input: Record<string, string | undefined>) {
 
   const filters: SQL[] = [];
   if (p.queue === "needs_reply") filters.push(needsReply);
+  if (p.queue === "unfinished") filters.push(unfinished);
+  if (p.inactiveMinutes > 0) filters.push(sql`${lastSeenAt} <= ${new Date(now.getTime() - p.inactiveMinutes * 60_000)}`);
+  if (p.stage === "submitted") filters.push(submitted);
+  if (p.stage === "questions") filters.push(sql`not (${submitted}) and ${answerCount} < ${QUESTION_KEYS.length}`);
+  if (p.stage === "task") filters.push(sql`not (${submitted}) and ${answerCount} = ${QUESTION_KEYS.length}`);
   if (p.status) filters.push(eq(L.status, p.status as (typeof LEAD_STATUSES)[number]));
   if (p.q) {
     const asId = /^#?\d+$/.test(p.q) ? Number(p.q.replace("#", "")) : null;
@@ -53,7 +66,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
       or(
         asId !== null ? eq(L.id, asId) : undefined,
         sql`exists (select 1 from messages m join conversations c on c.id = m.conversation_id
-          where c.session_id = ${leadSession} and m.body ilike ${like})`,
+          where c.session_id = ${leadSession} and m.deleted_at is null and m.body ilike ${like})`,
         sql`exists (select 1 from lead_notes n where n.lead_id = ${leadIdCol} and n.body ilike ${like})`,
         sql`exists (select 1 from task_submissions ts where ts.session_id = ${leadSession} and ts.review ilike ${like})`,
         sql`exists (select 1 from visitor_contacts vc where vc.session_id = ${leadSession}
@@ -63,7 +76,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
   }
   const where = filters.length ? and(...filters) : undefined;
 
-  const [rows, [{ total }], [{ needsReplyCount }]] = await Promise.all([
+  const [rows, [{ total }], [{ needsReplyCount }], [{ unfinishedCount }]] = await Promise.all([
     db()
       .select({
         id: L.id,
@@ -77,6 +90,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
         contactName,
         contactPhone,
         submitted,
+        lastSeenAt,
         needsReply,
         replyWaitingSince,
         lastVisitorMessage,
@@ -84,12 +98,13 @@ export async function listLeads(input: Record<string, string | undefined>) {
       .from(L)
       .innerJoin(schema.managers, eq(schema.managers.id, L.managerId))
       .where(where)
-      .orderBy(...(p.queue === "needs_reply" ? [asc(waitingAt), asc(L.id)] :
+      .orderBy(...(p.queue === "needs_reply" ? [asc(waitingAt), asc(L.id)] : p.queue === "unfinished" ? [asc(lastSeenAt), asc(L.id)] :
         [p.sort === "asc" ? asc(L.createdAt) : desc(L.createdAt), desc(L.id)]))
       .limit(p.pageSize)
       .offset((p.page - 1) * p.pageSize),
     db().select({ total: sql<number>`count(*)::int` }).from(L).where(where),
     db().select({ needsReplyCount: sql<number>`count(*)::int` }).from(L).where(needsReply),
+    db().select({ unfinishedCount: sql<number>`count(*)::int` }).from(L).where(and(unfinished, defaultInactive)),
   ]);
 
   return {
@@ -99,9 +114,12 @@ export async function listLeads(input: Record<string, string | undefined>) {
       answered: r.answer ? r.answer.split(",").length : 0,
       createdAt: r.createdAt.toISOString(),
       lastMessageAt: r.lastMessageAt?.toISOString() ?? null,
+      lastSeenAt: r.lastSeenAt.toISOString(),
+      isActive: r.lastSeenAt.getTime() >= now.getTime() - 2 * 60_000,
     })),
     total,
     needsReplyCount,
+    unfinishedCount,
     page: p.page,
     pageSize: p.pageSize,
   };
@@ -243,6 +261,8 @@ export async function updateCandidateOutcome(leadId: number, input: unknown) {
     await tx.update(schema.scheduledMessages).set({ status: "cancelled", lockedAt: null, lastError: "candidate result published" })
       .where(and(sql`${schema.scheduledMessages.conversationId} in (${conversationIds})`,
         sql`${schema.scheduledMessages.status} not in ('sent', 'cancelled')`));
+    await tx.update(schema.taskRevisions).set({ status: "cancelled", updatedAt: now })
+      .where(and(eq(schema.taskRevisions.leadId, leadId), eq(schema.taskRevisions.status, "pending")));
     return toCandidateOutcome(updated);
   });
 }

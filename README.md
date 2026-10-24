@@ -45,6 +45,16 @@ Kontakt ──► Pytania (3× "Tak / Nie") ──► Step 2: task + PDF + scree
 
 **Lead workflow.** The lead page shows the four visitor screens (Kontakt → Pytania → Zadanie → Gotowe) with the current one highlighted — this updates automatically. The handling status is separate: change it from the lead page (buttons + “move to next status”) or straight from the leads table.
 
+**Conversation workspace.** Lead pages include a searchable, paginated conversation list next to the chat and candidate details. On narrow screens the list opens in a drawer. Queue, stage, inactivity, status and sorting context are retained in candidate links. Registered unsaved lead/reminder/revision forms warn before internal link navigation, logout or a page unload; browser history navigation is not intercepted.
+
+**Unfinished applications.** The leads page has a separate queue for candidates who saved contact details but have not submitted the initial task, excluding completed/rejected leads. Its default inactivity threshold is 30 minutes; stage and inactivity filters are adjustable. The badge always counts all stages at that default threshold. Recent activity means a visible session heartbeat within two minutes; it is not a guarantee of continuous online presence.
+
+**Reminders.** Shared lead follow-up tasks support creation, editing, completion, reopening, deletion and optimistic conflict checks. `/admin/reminders` lists due, upcoming and completed tasks. Dates use Poland's calendar and handle daylight saving transitions. In-panel alerts work while an administrator has the panel open; no email, SMS or browser push service is connected.
+
+**Task corrections.** After the initial submission, an administrator may request one pending correction round with instructions. Candidates respond with corrected text/screenshots above their existing chat. The original submission and previous rounds remain available. Publishing a refusal cancels any pending correction; terminal draft files become inaccessible and storage cleanup retries through the existing sweep.
+
+**Funnel and sources.** `/admin/analytics` reports cohorts of currently stored browser sessions by their creation date, with contact, answer, recorded task-view and initial-submission counts. Calendar ranges use Europe/Warsaw. Historical task views are unknown rather than fabricated, and deleting a session also removes it from these reports. UTM labels and referrer host are stored only after the current optional-cookie consent; withdrawal clears those fields. Version 1 sound-only consent does not authorize attribution, so version 2 requests a fresh choice. No external trackers or advertising click IDs are used.
+
 **Reviews page.** `/admin/reviews` lists every review with the employee, date, lead status and a link to the lead (no rating — the form does not collect one).
 
 **Admin languages.** The admin panel is available in Polish, Russian and English (PL / RU / EN switch in the header and on the login page). The first visit picks the browser language; the choice is remembered per browser. Copy lives in `src/config/admin-i18n.ts` (Polish comes from `content.ts`; TypeScript checks that every language has the same keys). Server error messages are translated in the panel. The visitor site stays Polish.

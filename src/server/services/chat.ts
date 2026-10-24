@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, lt, lte, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lt, lte, inArray, isNull, notLike } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import type { Db } from "@/db";
@@ -6,6 +6,7 @@ import { badRequest, conflict, forbidden } from "../errors";
 import { getSettings } from "../settings";
 import { chatConfig, uploadConfig } from "@/config/settings";
 import { content } from "@/config/content";
+import { revisionFilePrefix } from "@/config/task-revisions";
 import { toPublicFile, type PublicFile } from "./uploads";
 import { touchConversation, refreshLeadStats } from "./conversation";
 import { ensureConversation, ensureLead } from "./leads";
@@ -196,6 +197,7 @@ export async function attachFiles(
         eq(schema.files.purpose, "chat"),
         eq(schema.files.uploadedBy, p.uploadedBy),
         isNull(schema.files.messageId),
+        notLike(schema.files.storageKey, `${revisionFilePrefix(p.sessionId)}%`),
       ),
     )
     .returning({ id: schema.files.id });

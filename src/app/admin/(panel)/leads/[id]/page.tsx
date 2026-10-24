@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, ChevronRight, Trash2 } from "lucide-react";
 import { LEAD_STATUSES, QUESTION_KEYS, type LeadStatus } from "@/config/content";
@@ -12,6 +12,10 @@ import type { ManagerProfile } from "@/config/managers";
 import { AdminChatComposer } from "@/components/admin/AdminChatComposer";
 import { AdminMessageActions } from "@/components/admin/AdminMessageActions";
 import { inboxCopy } from "@/config/admin-inbox";
+import LeadInboxSidebar from "@/components/admin/LeadInboxSidebar";
+import LeadReminders from "@/components/admin/LeadReminders";
+import LeadRevisionManager from "@/components/admin/LeadRevisionManager";
+import { useAdminDraftGuard } from "@/lib/admin-draft-guard";
 import { ACTIVITY_EVENT } from "@/components/admin/ActivityNotifier";
 import { AdmStars, ErrorState, NEXT_STATUS, StageStepper, STATUS_TONE, StatusBadge, TestimonialBadge, type TestimonialStatus } from "@/components/admin/ui";
 import { toast } from "@/components/admin/toast";
@@ -52,8 +56,12 @@ export default function LeadPage() {
 
 function LeadRoute() {
   const { id } = useParams<{ id: string }>();
+  const params = useSearchParams();
   // A route change must discard the previous lead's draft, history and request state.
-  return <Lead key={id} id={id} />;
+  return <div className="grid items-start gap-4 xl:grid-cols-[224px_minmax(0,1fr)]">
+    <LeadInboxSidebar key={`${id}?${params.toString()}`} selectedId={id} />
+    <div className="min-w-0"><Lead key={id} id={id} /></div>
+  </div>;
 }
 
 function Section({ title, children, id }: { title: string; children: React.ReactNode; id?: string }) {
@@ -85,6 +93,8 @@ function Lead({ id }: { id: string }) {
   const changes = useRef(new Map<string, ChatMessage | null>());
   const [history, setHistory] = useState<{ leadId: string; messages: ChatMessage[]; before: string | null } | null>(null);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
+  const [composerDirty, setComposerDirty] = useState(false);
+  useAdminDraftGuard(`lead:${id}`, Boolean(note.trim()) || composerDirty);
 
 
   const load = useCallback(() => {
@@ -368,8 +378,9 @@ function Lead({ id }: { id: string }) {
         />
       )}
 
-      <div className="grid items-start gap-4 lg:grid-cols-[1fr_340px]">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(0,1fr)_340px]">
         {/* Conversation */}
+        <div className="min-w-0 space-y-4">
         <section aria-labelledby="thread" className="adm-panel">
           <h2 id="thread" className="adm-section-title border-b border-adm-line px-4 py-3">
             {T.thread}
@@ -389,10 +400,13 @@ function Lead({ id }: { id: string }) {
             />
           </div>
           <div className="border-t border-adm-line p-3">
-            <AdminChatComposer leadId={id} onSend={reply} />
+            <AdminChatComposer leadId={id} onSend={reply} onDirtyChange={setComposerDirty} />
             {sendError && <p className="mt-2 text-[13px] text-adm-red">{sendError}</p>}
           </div>
         </section>
+        {d.submission && <LeadRevisionManager leadId={Number(id)} onChange={load} />}
+        <LeadReminders leadId={Number(id)} />
+        </div>
 
         {/* Details */}
         <aside className="adm-panel">

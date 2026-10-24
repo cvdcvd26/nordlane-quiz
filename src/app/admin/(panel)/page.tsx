@@ -12,6 +12,7 @@ import { toast } from "@/components/admin/toast";
 import { formatPhone, nationalDigits } from "@/lib/contact";
 import { useAdminI18n } from "@/components/admin/i18n";
 import { inboxCopy } from "@/config/admin-inbox";
+import { workflowCopy } from "@/config/admin-workflow";
 
 const displayPhone = (p: string) => formatPhone(nationalDigits(p));
 
@@ -30,16 +31,20 @@ type Item = {
   needsReply: boolean;
   replyWaitingSince: string | null;
   lastVisitorMessage: string | null;
+  lastSeenAt: string;
+  isActive: boolean;
 };
-type ListResponse = { items: Item[]; total: number; needsReplyCount: number; page: number; pageSize: number };
-type Filters = { q: string; status: string; sort: "desc" | "asc"; page: number; queue: "all" | "needs_reply" };
+type ListResponse = { items: Item[]; total: number; needsReplyCount: number; unfinishedCount: number; page: number; pageSize: number };
+type Filters = { q: string; status: string; sort: "desc" | "asc"; page: number; queue: "all" | "needs_reply" | "unfinished"; stage: string; inactiveMinutes: number };
 
 const fromParams = (p: URLSearchParams): Filters => ({
   q: p.get("q") ?? "",
   status: p.get("status") ?? "",
   sort: p.get("sort") === "asc" ? "asc" : "desc",
   page: Number(p.get("page")) || 1,
-  queue: p.get("queue") === "needs_reply" ? "needs_reply" : "all",
+  queue: p.get("queue") === "needs_reply" ? "needs_reply" : p.get("queue") === "unfinished" ? "unfinished" : "all",
+  stage: ["questions", "task"].includes(p.get("stage") ?? "") ? p.get("stage")! : "",
+  inactiveMinutes: p.has("inactiveMinutes") ? Math.max(0, Math.min(10080, Number(p.get("inactiveMinutes")) || 0)) : p.get("queue") === "unfinished" ? 30 : 0,
 });
 
 const toParams = (f: Filters) => {
@@ -48,7 +53,11 @@ const toParams = (f: Filters) => {
   if (f.status) params.set("status", f.status);
   if (f.sort !== "desc") params.set("sort", f.sort);
   if (f.page > 1) params.set("page", String(f.page));
-  if (f.queue === "needs_reply") params.set("queue", f.queue);
+  if (f.queue !== "all") params.set("queue", f.queue);
+  if (f.queue === "unfinished") {
+    if (f.stage) params.set("stage", f.stage);
+    params.set("inactiveMinutes", String(f.inactiveMinutes));
+  }
   return params.toString();
 };
 
@@ -66,6 +75,7 @@ function Leads() {
   const { lang, t, time, err: tErr } = useAdminI18n();
   const L = t.ui.list;
   const I = inboxCopy[lang];
+  const W = workflowCopy[lang];
   const searchParams = useSearchParams();
   const [filters, setFilters] = useState<Filters>(() => fromParams(new URLSearchParams(searchParams.toString())));
   const [query, setQuery] = useState(filters.q);
@@ -170,16 +180,28 @@ function Leads() {
       <PageHeader title={L.title} meta={data ? L.total(data.total) : undefined} description={L.description} />
 
       <div role="group" aria-label={I.filter} className="mb-3 flex flex-wrap gap-2">
-        {(["all", "needs_reply"] as const).map(queue => (
+        {(["all", "needs_reply", "unfinished"] as const).map(queue => (
           <button key={queue} type="button" aria-pressed={filters.queue === queue}
-            onClick={() => { setSelected(new Set()); setFilters(current => ({ ...current, queue, page: 1 })); }}
+            onClick={() => { setSelected(new Set()); setFilters(current => ({ ...current, queue, stage: "", inactiveMinutes: queue === "unfinished" ? 30 : 0, page: 1 })); }}
             className={`adm-btn ${filters.queue === queue ? "border-adm-accent! bg-adm-accent-soft! text-adm-accent!" : ""}`}>
-            {queue === "all" ? I.all : I.needsReply}
+            {queue === "all" ? I.all : queue === "needs_reply" ? I.needsReply : W.unfinished}
             {queue === "needs_reply" && data && <span className="rounded-full bg-adm-amber-bg px-2 py-0.5 text-[11px] text-adm-amber tabular-nums">{data.needsReplyCount}</span>}
+            {queue === "unfinished" && data && <span className="rounded-full bg-adm-subtle px-2 py-0.5 text-[11px] text-adm-ink-2 tabular-nums">{data.unfinishedCount}</span>}
           </button>
         ))}
       </div>
       {filters.queue === "needs_reply" && <p className="adm-help mb-3 max-w-3xl leading-relaxed">{I.hint}</p>}
+      {filters.queue === "unfinished" && <div className="mb-3 space-y-2">
+        <p className="adm-help max-w-3xl leading-relaxed">{W.unfinishedHint}</p>
+        <div className="flex flex-wrap gap-3">
+          <label className="adm-label">{W.stage}<select className="adm-input mt-1 w-auto" value={filters.stage} onChange={event => { setSelected(new Set()); setFilters(f => ({ ...f, stage: event.target.value, page: 1 })); }}>
+            <option value="">{W.allStages}</option><option value="questions">{W.questions}</option><option value="task">{W.task}</option>
+          </select></label>
+          <label className="adm-label">{W.inactive}<select className="adm-input mt-1 w-auto" value={filters.inactiveMinutes} onChange={event => { setSelected(new Set()); setFilters(f => ({ ...f, inactiveMinutes: Number(event.target.value), page: 1 })); }}>
+            <option value={0}>{W.anyActivity}</option>{[5, 30, 120, 1440].map(n => <option key={n} value={n}>{W.minutes(n)}</option>)}
+          </select></label>
+        </div>
+      </div>}
 
       {/* Toolbar or bulk actions */}
       <div className="adm-panel">
@@ -237,10 +259,10 @@ function Leads() {
                 id="sort"
                 className="adm-input w-auto"
                 value={filters.sort}
-                disabled={filters.queue === "needs_reply"}
+                disabled={filters.queue !== "all"}
                 onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value as Filters["sort"], page: 1 }))}
               >
-                <option value="desc">{filters.queue === "needs_reply" ? I.oldestFirst : L.newestFirst}</option>
+                <option value="desc">{filters.queue === "needs_reply" ? I.oldestFirst : filters.queue === "unfinished" ? W.oldestActivity : L.newestFirst}</option>
                 <option value="asc">{filters.queue === "needs_reply" ? I.oldestFirst : L.oldestFirst}</option>
               </select>
             </>
@@ -277,7 +299,7 @@ function Leads() {
                     <input type="checkbox" className="adm-check" aria-label={L.selectOne(l.id)} checked={selected.has(l.id)} onChange={() => toggleOne(l.id)} />
                   </td>
                   <td>
-                    <Link href={`/admin/leads/${l.id}`} className="font-semibold after:absolute after:inset-0 hover:text-adm-accent">
+                    <Link href={`/admin/leads/${l.id}${key ? `?${key}` : ""}`} className="font-semibold after:absolute after:inset-0 hover:text-adm-accent">
                       {l.contactName ?? "—"}
                     </Link>
                     <span className="block text-[12.5px] whitespace-nowrap text-adm-ink-3 tabular-nums">
@@ -289,6 +311,9 @@ function Leads() {
                   </td>
                   <td>
                     <StageTrack stage={l.stage} answered={l.answered} total={QUESTION_KEYS.length} />
+                    <span className={`mt-1 block text-[11.5px] ${l.isActive ? "text-adm-green" : "text-adm-ink-3"}`}>
+                      {l.isActive ? W.active : `${W.lastActive}: ${time(l.lastSeenAt)}`}
+                    </span>
                   </td>
                   <td className="relative z-10">
                     <StatusSelect value={l.status} label={L.statusFor(l.id)} disabled={saving === l.id} onChange={(s) => void changeStatus(l.id, s)} />

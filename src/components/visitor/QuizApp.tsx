@@ -16,6 +16,8 @@ import { fromServer, type UploadItem } from "./Uploader";
 import { displayPhone, validateContact, type ContactDraft, type ContactErrors } from "./ContactFields";
 import { SubmissionConfirmation, SubmissionFilesSummary } from "./SubmissionConfirmation";
 import { CandidateOutcomeCard } from "./CandidateOutcomeCard";
+import { VisitorTelemetry } from "./VisitorTelemetry";
+import { TaskRevisionPanel } from "./TaskRevisionPanel";
 
 type SessionState = {
   answers: Record<string, string>;
@@ -251,6 +253,8 @@ export function QuizApp() {
   };
 
   return (
+    <>
+    <VisitorTelemetry ready={Boolean(state)} step={step} />
     <div className="min-h-dvh overflow-x-clip" data-outcome={outcome?.status}>
       <Backdrop />
       {/* Top bar */}
@@ -344,6 +348,7 @@ export function QuizApp() {
                   <SubmissionConfirmation fileCount={items.filter((item) => item.status === "done" && item.serverId).length} />
                 )}
               </div>
+              <TaskRevisionPanel closed={Boolean(outcome)} />
               <div hidden={Boolean(outcome)} className="reveal" style={{ "--i": 2 } as React.CSSProperties}>
                 <VisitorChat onOutcome={setOutcome} closed={Boolean(outcome)} />
               </div>
@@ -352,5 +357,6 @@ export function QuizApp() {
         </main>
       </div>
     </div>
+    </>
   );
 }

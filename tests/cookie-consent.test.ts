@@ -26,10 +26,10 @@ function browser() {
 describe("cookie choices and optional sound preferences", () => {
   it("does not treat malformed, obsolete or expired records as consent", () => {
     const now = 1_800_000_000_000;
-    const encode = (changes: object) => encodeURIComponent(JSON.stringify({ version: 1, necessary: true, preferences: true, updatedAt: now, ...changes }));
+    const encode = (changes: object) => encodeURIComponent(JSON.stringify({ version: 2, necessary: true, preferences: true, updatedAt: now, ...changes }));
     expect(parseCookieConsent(undefined, now)).toBeNull();
     expect(parseCookieConsent("%zz", now)).toBeNull();
-    for (const changes of [{version: 2}, {necessary: false}, {preferences: "yes"}, {updatedAt: now + 120_000}, {updatedAt: now - COOKIE_CONSENT_MAX_AGE_SECONDS * 1000}])
+    for (const changes of [{version: 1}, {version: 3}, {necessary: false}, {preferences: "yes"}, {updatedAt: now + 120_000}, {updatedAt: now - COOKIE_CONSENT_MAX_AGE_SECONDS * 1000}])
       expect(parseCookieConsent(encode(changes), now)).toBeNull();
     expect(parseCookieConsent(encode({preferences: false}), now)?.preferences).toBe(false);
   });

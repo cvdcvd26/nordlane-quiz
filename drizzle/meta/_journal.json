@@ -71,6 +71,20 @@
       "when": 1792677703993,
       "tag": "0009_message_management",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792833350166,
+      "tag": "0010_admin_workflow",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792833411162,
+      "tag": "0011_attribution_consent_revision",
+      "breakpoints": true
     }
   ]
 }

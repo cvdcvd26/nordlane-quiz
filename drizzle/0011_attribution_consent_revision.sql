@@ -1,0 +1,1 @@
+ALTER TABLE "visitor_attribution" ADD COLUMN "consent_updated_at" timestamp with time zone;

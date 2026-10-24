@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { lockVisitor } from "../session-lock";
 import { randomUUID } from "node:crypto";
-import { and, eq, isNull, count } from "drizzle-orm";
+import { and, eq, isNull, count, notLike } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { storage } from "../storage";
 import { validateFile } from "../file-validation";
@@ -9,6 +9,7 @@ import { badRequest, conflict, notFound } from "../errors";
 import { uploadConfig } from "@/config/settings";
 import { content } from "@/config/content";
 import { assertVisitorChatOpen } from "./candidate-outcome";
+import { revisionFilePrefix, revisionIdForFileKey } from "@/config/task-revisions";
 
 export type PublicFile = { id: string; name: string; mime: string; size: number; url: string };
 
@@ -75,7 +76,8 @@ export async function uploadFile({ sessionId, purpose, uploadedBy, file }: Uploa
       } else {
         const [{ n }] = await tx.select({ n: count() }).from(schema.files).where(and(
           eq(schema.files.sessionId, sessionId), eq(schema.files.purpose, "chat"),
-          eq(schema.files.uploadedBy, uploadedBy), isNull(schema.files.messageId)));
+          eq(schema.files.uploadedBy, uploadedBy), isNull(schema.files.messageId),
+          notLike(schema.files.storageKey, `${revisionFilePrefix(sessionId)}%`)));
         if (n >= uploadConfig.maxPendingChatFiles)
           throw badRequest(content.errors.fileCount(uploadConfig.maxPendingChatFiles), "file_count");
       }
@@ -134,11 +136,18 @@ export async function listPendingSubmissionFiles(sessionId: string) {
  * Who may read a file:
  * - an admin: any file;
  * - a visitor: only files of their own session that they uploaded or that were sent to them in a message.
+ * - cancelled or unused terminal revision drafts: inaccessible while storage cleanup is retried.
  */
 export async function getReadableFile(fileId: string, viewer: { admin: true } | { sessionId: string }) {
   if (!z.uuid().safeParse(fileId).success) return null;
   const [f] = await db().select().from(schema.files).where(eq(schema.files.id, fileId)).limit(1);
   if (!f) return null;
+  const revisionId = revisionIdForFileKey(f.sessionId, f.storageKey);
+  if (revisionId) {
+    const [revision] = await db().select({ status: schema.taskRevisions.status, responseMessageId: schema.taskRevisions.responseMessageId })
+      .from(schema.taskRevisions).where(eq(schema.taskRevisions.id, revisionId));
+    if (!revision || (f.messageId ? revision.status !== "submitted" || revision.responseMessageId !== f.messageId : revision.status !== "pending")) return null;
+  }
   if (f.messageId) {
     const [message] = await db().select({ deletedAt: schema.messages.deletedAt }).from(schema.messages).where(eq(schema.messages.id, f.messageId));
     if (!message || message.deletedAt) return null;

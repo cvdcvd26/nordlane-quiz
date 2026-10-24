@@ -4,6 +4,7 @@ import { Check, Eye } from "lucide-react";
 import { candidateOutcomeConfig, type CandidateOutcome } from "@/config/candidate-outcome";
 import { CandidateOutcomeCard } from "@/components/visitor/CandidateOutcomeCard";
 import { useAdminI18n } from "./i18n";
+import { useAdminDraftGuard } from "@/lib/admin-draft-guard";
 
 export function CandidateOutcomeEditor({
   outcome,
@@ -22,6 +23,7 @@ export function CandidateOutcomeEditor({
   const [body, setBody] = useState(outcome?.body ?? candidateOutcomeConfig.defaultBody);
   const [action, setAction] = useState<"publish" | "retract" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  useAdminDraftGuard(`candidate-outcome:${id}`, body !== (outcome?.body ?? candidateOutcomeConfig.defaultBody) || action !== null);
   const busy = disabled || action !== null;
   const changed = body.trim() !== outcome?.body;
 

@@ -2,9 +2,13 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { FileText, LogOut, MessageSquareText, Settings, Users } from "lucide-react";
+import { BellRing, ChartNoAxesCombined, FileText, LogOut, MessageSquareText, Settings, Users } from "lucide-react";
 import { documentAdminContent } from "@/config/document-admin";
 import { adminAccountUpdatedEvent } from "@/config/admin-account";
+import { reminderCopy } from "@/config/admin-reminders";
+import { analyticsCopy } from "@/config/analytics";
+import { workflowCopy } from "@/config/admin-workflow";
+import { confirmAdminDraftNavigation, hasDirtyAdminDrafts, installAdminDraftLinkGuard } from "@/lib/admin-draft-guard";
 import { api, ApiError } from "@/lib/api";
 import { SoundToggle } from "../ui/SoundToggle";
 import { ActivityNotifier } from "./ActivityNotifier";
@@ -19,6 +23,16 @@ export function AdminShell({ children, canManageDocuments = false }: { children:
   const [soundOn, setSoundOn] = useState(true);
   const path = usePathname();
   const router = useRouter();
+  const draftWarning = workflowCopy[lang].draftWarning;
+  useEffect(() => {
+    const releaseLinks = installAdminDraftLinkGuard(() => draftWarning);
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasDirtyAdminDrafts()) return;
+      event.preventDefault(); event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => { releaseLinks(); window.removeEventListener("beforeunload", beforeUnload); };
+  }, [draftWarning]);
 
   useEffect(() => {
     let controller: AbortController;
@@ -43,6 +57,7 @@ export function AdminShell({ children, canManageDocuments = false }: { children:
   }, [router]);
 
   const logout = async () => {
+    if (!confirmAdminDraftNavigation(draftWarning)) return;
     await api("/api/admin/logout", { method: "POST" }).catch(() => {});
     setEmail(null);
     setPermanentAdmin(false);
@@ -51,6 +66,8 @@ export function AdminShell({ children, canManageDocuments = false }: { children:
 
   const nav = [
     { href: "/admin", label: t.ui.nav.leads, icon: Users, active: path === "/admin" || path.startsWith("/admin/leads") },
+    { href: "/admin/reminders", label: reminderCopy[lang].title, icon: BellRing, active: path.startsWith("/admin/reminders") },
+    { href: "/admin/analytics", label: analyticsCopy[lang].title, icon: ChartNoAxesCombined, active: path.startsWith("/admin/analytics") },
     { href: "/admin/reviews", label: t.ui.nav.reviews, icon: MessageSquareText, active: path.startsWith("/admin/reviews") },
     { href: "/admin/settings", label: t.ui.nav.settings, icon: Settings, active: path.startsWith("/admin/settings") },
     ...(canManageDocuments && permanentAdmin ? [{ href: "/admin/documents", label: documentAdminContent[lang].nav, icon: FileText, active: path.startsWith("/admin/documents") }] : []),
@@ -122,7 +139,7 @@ export function AdminShell({ children, canManageDocuments = false }: { children:
       </header>
 
       <main className="min-w-0 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
-        <div className="mx-auto max-w-[1180px]">
+        <div className={`mx-auto ${path.startsWith("/admin/leads/") ? "max-w-[1600px]" : "max-w-[1180px]"}`}>
           {email ? (
             children
           ) : (

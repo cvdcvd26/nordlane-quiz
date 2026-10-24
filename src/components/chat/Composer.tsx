@@ -1,5 +1,6 @@
 "use client";
-import { useRef, useState } from "react";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { content } from "@/config/content";
 import { api, formatBytes, uploadWithProgress, type PublicFile } from "@/lib/api";
 import type { QuickReply } from "@/lib/quick-replies";
@@ -22,6 +23,7 @@ export function Composer({
   translateError = (e: Error) => e.message,
   appearance = "visitor",
   quickReplies,
+  onDirtyChange,
 }: {
   onSend: (body: string, files: PublicFile[]) => void | Promise<void>;
   uploadUrl: string;
@@ -35,6 +37,7 @@ export function Composer({
   translateError?: (e: Error) => string;
   appearance?: "visitor" | "admin";
   quickReplies?: { items: QuickReply[]; label: string; select: string; hint: string; manage: string; empty: string; tooLong: string };
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const adm = appearance === "admin";
   const [text, setText] = useState("");
@@ -49,6 +52,8 @@ export function Composer({
   const uploading = files.some((f) => f.status === "uploading");
   const ready = files.filter((f) => f.status === "done" && f.file).map((f) => f.file!);
   const canSend = !busy && !uploading && (text.trim().length > 0 || ready.length > 0);
+  const dirty = Boolean(text.trim()) || files.length > 0 || busy;
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
 
   const insertReply = (id: string) => {
     const reply = quickReplies?.items.find(item => item.id === id);
@@ -133,7 +138,7 @@ export function Composer({
             <option value="">{quickReplies.items.length ? quickReplies.select : quickReplies.empty}</option>
             {quickReplies.items.map(reply => <option key={reply.id} value={reply.id}>{reply.title}</option>)}
           </select>
-          <a href="/admin/settings#quick-replies" className="text-[12px] font-medium text-adm-accent hover:underline">{quickReplies.manage}</a>
+          <Link href="/admin/settings#quick-replies" className="text-[12px] font-medium text-adm-accent hover:underline">{quickReplies.manage}</Link>
         </div>
         <p className="adm-help mt-1.5 leading-relaxed">{quickReplies.hint}</p>
         {templateError && <p role="alert" className="mt-1 text-[12px] text-adm-red">{quickReplies.tooLong}</p>}

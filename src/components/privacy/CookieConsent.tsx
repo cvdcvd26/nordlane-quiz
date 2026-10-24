@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { cookieContent as copy } from "@/config/cookies";
 import { COOKIE_CONSENT_EVENT, COOKIE_SETTINGS_EVENT, readCookieConsent, writeCookieConsent } from "@/lib/cookie-consent";
+import { observeAttributionConsent } from "@/lib/attribution-consent-sync";
 
 type ConsentSnapshot = "pending" | "unset" | "necessary" | "preferences";
 
@@ -64,6 +65,7 @@ function VisitorCookieConsent() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(observeAttributionConsent, []);
 
   const openSettings = useCallback(() => {
     setPreferences(readCookieConsent()?.preferences ?? false);

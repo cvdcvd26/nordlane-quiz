@@ -17,6 +17,7 @@ const entries = [
   ["nl_admin", "Cookie", "Utrzymuje sesję zalogowanego administratora. Jest ustawiany dopiero po zalogowaniu do panelu.", "12 godzin; usuwany przy wylogowaniu"],
   ["nl_review_draft", "sessionStorage", "Zachowuje roboczy tekst odpowiedzi do zadania w bieżącej karcie.", "Do zamknięcia karty lub poprawnego wysłania zadania"],
   ["nl_submit_key", "sessionStorage", "Pomaga zapobiegać podwójnemu wysłaniu tego samego zadania.", "Do zamknięcia karty lub poprawnego wysłania zadania"],
+  ["Robocza odpowiedź do poprawy", "sessionStorage", "Zachowuje tekst odpowiedzi na konkretną prośbę o poprawę zadania w bieżącej karcie.", "Do zamknięcia karty lub wysłania poprawy"],
   ["nl-sound-visitor", "localStorage", "Po zgodzie na preferencje zapamiętuje ustawienie dźwięku powiadomień kandydata.", "Do wycofania zgody lub usunięcia danych przeglądarki; odczytywany przy ważnej zgodzie"],
   ["nl-sound-admin, nl-admin-lang", "localStorage", "Zapamiętują ustawienia dźwięku i języka wybrane przez administratora w panelu.", "Do usunięcia danych przeglądarki"],
 ];
@@ -37,7 +38,7 @@ export default function CookiePolicyPage() {
         <p className="chip"><span className="chip-dot" />Prywatność</p>
         <h1 className="display mt-6 text-4xl font-semibold sm:text-5xl">Polityka plików cookie</h1>
         <p className="mt-5 max-w-2xl leading-relaxed text-ink-soft">Wyjaśniamy, co zapisujemy w przeglądarce, do czego służą te informacje i jak możesz zarządzać swoim wyborem.</p>
-        <p className="mt-3 text-xs text-slate">Ostatnia aktualizacja: 20 października 2026 r.</p>
+        <p className="mt-3 text-xs text-slate">Ostatnia aktualizacja: 24 października 2026 r.</p>
 
         <section className="mt-10 space-y-3" aria-labelledby="cookies-what">
           <h2 id="cookies-what" className="text-xl font-semibold">Czym są pliki cookie?</h2>
@@ -46,8 +47,8 @@ export default function CookiePolicyPage() {
         <section className="mt-9 space-y-3" aria-labelledby="cookies-purpose">
           <h2 id="cookies-purpose" className="text-xl font-semibold">Jak korzystamy z pamięci przeglądarki?</h2>
           <p className="leading-relaxed text-ink-soft">Sesja łączy Twoje kontakty, odpowiedzi, zadanie i rozmowę. Dzięki niej możesz wrócić do zgłoszenia w tej samej przeglądarce i uzyskać dostęp do swoich plików. W przeglądarce zapisujemy też wybór cookies oraz roboczą odpowiedź do zadania.</p>
-          <p className="leading-relaxed text-ink-soft">Dodatkowe preferencje służą zapamiętaniu ustawienia dźwięku kandydata. Są wyłączone do czasu udzielenia zgody. Wybór „Tylko niezbędne” pozwala nadal korzystać z formularza, czatu i dźwięku, bez trwałego zapamiętywania tego dodatkowego ustawienia.</p>
-          <p className="leading-relaxed text-ink-soft">W obecnej wersji serwisu nie korzystamy z cookies analitycznych ani reklamowych. Nie uruchamiamy Google Analytics ani reklamowych pikseli Meta. Informacje techniczne o działaniu strony mogą być rejestrowane po stronie serwera; nie jest to dodatkowa kategoria cookies w tej przeglądarce.</p>
+          <p className="leading-relaxed text-ink-soft">Dodatkowe preferencje obejmują zapamiętanie dźwięku oraz analizę źródła wizyty. Dopiero po zgodzie zapisujemy w naszym systemie oznaczenia kampanii UTM i nazwę domeny odsyłającej, połączone z sesją zgłoszenia. Nie zapisujemy pełnego adresu strony odsyłającej ani reklamowych identyfikatorów kliknięć. Wybór „Tylko niezbędne” pozwala nadal korzystać z formularza i czatu bez zapisu opcjonalnego źródła wizyty.</p>
+          <p className="leading-relaxed text-ink-soft">Postęp zgłoszenia i czas ostatniej aktywności pomagają przywrócić formularz oraz rozpoznać niedokończone zadania. Na ich podstawie pokazujemy zespołowi zbiorczą ścieżkę zgłoszeń. Nie uruchamiamy Google Analytics, zewnętrznych narzędzi śledzących ani reklamowych pikseli Meta. Po zmianie zakresu opcjonalnej analizy ponownie prosimy o wybór; wcześniejsza zgoda dotycząca samego dźwięku jej nie włącza.</p>
         </section>
 
         <section className="mt-9" aria-labelledby="cookies-list">
@@ -66,7 +67,7 @@ export default function CookiePolicyPage() {
 
         <section className="mt-9 space-y-3" aria-labelledby="cookies-choice">
           <h2 id="cookies-choice" className="text-xl font-semibold">Jak zmienić lub wycofać wybór?</h2>
-          <p className="leading-relaxed text-ink-soft">Otwórz ustawienia poniższym przyciskiem lub linkiem „Ustawienia cookies” w stopce. Możesz pozostawić tylko niezbędne mechanizmy albo włączyć zapamiętywanie dodatkowych preferencji. Po wycofaniu zgody usuwamy zapamiętane ustawienie dźwięku kandydata. Nie usuwamy przy tym zgłoszenia ani historii rozmowy.</p>
+          <p className="leading-relaxed text-ink-soft">Otwórz ustawienia poniższym przyciskiem lub linkiem „Ustawienia cookies” w stopce. Po wycofaniu zgody usuwamy zapamiętane ustawienie dźwięku, a przy połączeniu z serwerem usuwamy opcjonalne oznaczenia źródła tej sesji. Nie usuwamy przy tym zgłoszenia ani historii rozmowy.</p>
           <p className="leading-relaxed text-ink-soft">Wybór zapisujemy na 180 dni. Możesz również usunąć cookies i pamięć witryny w ustawieniach przeglądarki. Całkowite zablokowanie cookies może utrudnić zapis formularza, dostęp do czatu i logowanie administratora.</p>
           <div className="pt-2"><CookieSettingsButton /></div>
         </section>
