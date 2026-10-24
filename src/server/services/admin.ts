@@ -45,6 +45,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
   const now = new Date();
   const unfinished = sql`not (${submitted}) and ${L.status} not in ('completed', 'rejected')`;
   const defaultInactive = sql`${lastSeenAt} <= ${new Date(now.getTime() - 30 * 60_000)}`;
+  const isUnfinished = sql<boolean>`(${unfinished}) and (${defaultInactive})`;
 
   // Phone search compares digits only, so "600 123", "+48600123" and "600-123" all match.
   const qDigits = p.q.replace(/\D/g, "");
@@ -92,6 +93,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
         submitted,
         lastSeenAt,
         needsReply,
+        isUnfinished,
         replyWaitingSince,
         lastVisitorMessage,
       })
@@ -104,7 +106,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
       .offset((p.page - 1) * p.pageSize),
     db().select({ total: sql<number>`count(*)::int` }).from(L).where(where),
     db().select({ needsReplyCount: sql<number>`count(*)::int` }).from(L).where(needsReply),
-    db().select({ unfinishedCount: sql<number>`count(*)::int` }).from(L).where(and(unfinished, defaultInactive)),
+    db().select({ unfinishedCount: sql<number>`count(*)::int` }).from(L).where(isUnfinished),
   ]);
 
   return {

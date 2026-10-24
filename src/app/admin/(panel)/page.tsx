@@ -29,6 +29,7 @@ type Item = {
   stage: string;
   answered: number;
   needsReply: boolean;
+  isUnfinished: boolean;
   replyWaitingSince: string | null;
   lastVisitorMessage: string | null;
   lastSeenAt: string;
@@ -307,7 +308,10 @@ function Leads() {
                       {l.contactPhone ? ` · ${displayPhone(l.contactPhone)}` : ""}
                     </span>
                     <span className="mt-0.5 block text-[12px] text-adm-accent">{l.manager.name}</span>
-                    {l.needsReply && <span className="mt-1 inline-block rounded-full bg-adm-amber-bg px-2 py-0.5 text-[11px] font-semibold text-adm-amber">{I.needsReply}</span>}
+                    {(l.needsReply || l.isUnfinished) && <div className="mt-1 flex flex-wrap gap-1">
+                      {l.needsReply && <span className="inline-block rounded-full bg-adm-amber-bg px-2 py-0.5 text-[11px] font-semibold text-adm-amber">{I.needsReply}</span>}
+                      {l.isUnfinished && <span className="inline-block rounded-full bg-[#eaf0f8] px-2 py-0.5 text-[11px] font-semibold text-[#41638a]">{W.unfinishedBadge}</span>}
+                    </div>}
                   </td>
                   <td>
                     <StageTrack stage={l.stage} answered={l.answered} total={QUESTION_KEYS.length} />

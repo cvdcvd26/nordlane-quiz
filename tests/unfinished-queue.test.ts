@@ -33,17 +33,21 @@ it("defaults to inactive unfinished leads, excludes decided/submitted leads and 
   const active = await candidate("Aktywny", 1);
   const questions = await candidate("Pytania", 120, 1);
   const task = await candidate("Zadanie", 70, 3);
-  await candidate("Gotowy", 300, 3, true);
-  await candidate("Zakończony", 400, 0, false, "completed");
-  await candidate("Odrzucony", 500, 0, false, "rejected");
+  const submitted = await candidate("Gotowy", 300, 3, true);
+  const completed = await candidate("Zakończony", 400, 0, false, "completed");
+  const rejected = await candidate("Odrzucony", 500, 0, false, "rejected");
   const result = await listLeads({ queue: "unfinished" });
   expect(result.items.map(row => row.id)).toEqual([questions.id, task.id]);
   expect(result.total).toBe(2); expect(result.unfinishedCount).toBe(2);
   expect(result.items.map(row => row.stage)).toEqual(["questions", "task"]);
   expect(result.items.every(row => !row.isActive && typeof row.lastSeenAt === "string")).toBe(true);
+  expect(result.items.every(row => row.isUnfinished === true)).toBe(true);
   const all = await listLeads({});
   expect(all.total).toBe(6);
   expect(all.items.find(row => row.id === active.id)?.isActive).toBe(true);
+  expect(all.items.filter(row => row.isUnfinished).map(row => row.id).sort((a, b) => a - b)).toEqual([questions.id, task.id].sort((a, b) => a - b));
+  expect(all.items.filter(row => row.isUnfinished)).toHaveLength(all.unfinishedCount);
+  for (const candidate of [active, submitted, completed, rejected]) expect(all.items.find(row => row.id === candidate.id)?.isUnfinished).toBe(false);
 });
 
 it("combines stage, inactivity, search and status without treating missing answers as a submission", async () => {
@@ -52,7 +56,9 @@ it("combines stage, inactivity, search and status without treating missing answe
   const task = await candidate("Jan Zadanie", 40, 3);
   expect((await listLeads({ queue: "unfinished", stage: "questions" })).items.map(row => row.id)).toEqual([questions.id]);
   expect((await listLeads({ queue: "unfinished", stage: "task" })).items.map(row => row.id)).toEqual([task.id]);
-  expect((await listLeads({ queue: "unfinished", inactiveMinutes: "0", stage: "questions" })).items.map(row => row.id)).toEqual([questions.id, active.id]);
+  const includingActive = await listLeads({ queue: "unfinished", inactiveMinutes: "0", stage: "questions" });
+  expect(includingActive.items.map(row => row.id)).toEqual([questions.id, active.id]);
+  expect(includingActive.items.map(row => row.isUnfinished)).toEqual([true, false]);
   expect((await listLeads({ queue: "unfinished", inactiveMinutes: "120" })).total).toBe(0);
   expect((await listLeads({ queue: "unfinished", q: "Pytania", status: "in_progress" })).items.map(row => row.id)).toEqual([questions.id]);
   expect((await listLeads({ queue: "unfinished", stage: "submitted" })).total).toBe(0);
@@ -61,8 +67,11 @@ it("combines stage, inactivity, search and status without treating missing answe
 it("removes a resumed lead from the inactive queue and validates filter bounds", async () => {
   const lead = await candidate("Powracający", 90, 3);
   expect((await listLeads({ queue: "unfinished" })).total).toBe(1);
+  expect((await listLeads({})).items[0].isUnfinished).toBe(true);
   await env.db.update(schema.visitorSessions).set({ lastSeenAt: new Date() }).where(eq(schema.visitorSessions.id, lead.sessionId));
   expect((await listLeads({ queue: "unfinished" })).total).toBe(0);
+  expect((await listLeads({})).items[0].isUnfinished).toBe(false);
+  expect((await listLeads({ queue: "unfinished", inactiveMinutes: "0" })).items[0].isUnfinished).toBe(false);
   expect((await listLeads({ queue: "unfinished", inactiveMinutes: "0" })).items[0].isActive).toBe(true);
   for (const filter of [{ stage: "invented" }, { inactiveMinutes: "-1" }, { inactiveMinutes: "10081" }]) await expect(listLeads(filter)).rejects.toBeDefined();
 });
