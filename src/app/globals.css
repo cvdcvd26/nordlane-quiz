@@ -316,34 +316,34 @@ html:has(.adm) body::before {
 /* Scoped to the admin workspace, including its loading shell. Login and visitor pages
    keep their own palettes; a saved preference never changes document/PDF output. */
 .adm:not([data-admin-theme="light"]) {
-  --color-adm-bg: #090d17;
-  --color-adm-surface: #111a27;
-  --color-adm-subtle: #182332;
-  --color-adm-line: #253247;
-  --color-adm-line-strong: #3b4c64;
-  --color-adm-ink: #edf3fc;
-  --color-adm-ink-2: #bbc8da;
-  --color-adm-ink-3: #8fa1b9;
+  --color-adm-bg: #222831;
+  --color-adm-surface: #2b323e;
+  --color-adm-subtle: #333d49;
+  --color-adm-line: #414e60;
+  --color-adm-line-strong: #58677b;
+  --color-adm-ink: #f1f4f8;
+  --color-adm-ink-2: #cbd4df;
+  --color-adm-ink-3: #adbaca;
   --color-adm-accent: #54e4b0;
   --color-adm-accent-hover: #7aefc3;
-  --color-adm-accent-soft: #13372f;
+  --color-adm-accent-soft: #2a4840;
   --color-adm-on-accent: #062219;
   --color-adm-blue: #80b6ff;
-  --color-adm-blue-bg: #172b45;
+  --color-adm-blue-bg: #2d4158;
   --color-adm-amber: #f4c470;
-  --color-adm-amber-bg: #372b19;
+  --color-adm-amber-bg: #4b3f2b;
   --color-adm-violet: #bcabff;
-  --color-adm-violet-bg: #2a2347;
+  --color-adm-violet-bg: #423952;
   --color-adm-green: #70dc9a;
-  --color-adm-green-bg: #173529;
+  --color-adm-green-bg: #2c453d;
   --color-adm-red: #ff9c9a;
-  --color-adm-red-bg: #3b222c;
+  --color-adm-red-bg: #50363f;
   --color-adm-on-danger: #2c080d;
   --color-adm-red-hover: #ffb4b1;
-  --adm-field-hover: #617791;
-  --adm-row-hover: #172334;
-  --adm-skeleton: #192536;
-  --adm-skeleton-bright: #25374d;
+  --adm-field-hover: #7a8da6;
+  --adm-row-hover: #364251;
+  --adm-skeleton: #343f4d;
+  --adm-skeleton-bright: #455367;
   color-scheme: dark;
 }
 
