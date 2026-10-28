@@ -22,6 +22,8 @@ type Copy = {
   discardWarning: string; responsibleHint: string; invalidResponsible: string; history: string; noHistory: string;
   changedBy: string; unknownAccount: string; lastSaved: string; signalRule: string; unsuitableRule: string;
   historyHint: string; selectedSource: string; dailyData: string; date: string;
+  successesTitle: string; successesOpen: string; successesHint: string; successesEmpty: string; successesFailed: string;
+  closedAt: string; phone: string; openNewTab: string;
   qualifications: Record<LeadQualification, string>;
   closures: Record<LeadClosure, string>;
   reasonLabels: Record<LeadResultReason, string>;
@@ -43,6 +45,7 @@ export const leadResultsCopy: Record<AdminLang, Copy> = {
     closures: { open: "В работе", signal_working: "🎉 Перевели в Signal / Работаем", not_suitable: "Не подходит", candidate_declined: "Кандидат отказался", no_contact: "Нет контакта" },
     reasonLabels: { task: "Тестовое задание", skills: "Навыки", conditions: "Условия", schedule: "График", communication: "Коммуникация", candidate_choice: "Выбор кандидата", other: "Другое" },
     dailyData: "Данные по дням", date: "Дата",
+    successesTitle: "С кем работаем", successesOpen: "Посмотреть всех", successesHint: "Все успешные лиды, созданные в выбранный период. Период и фильтры зафиксированы по открытому отчёту. Карточки открываются в новой вкладке.", successesEmpty: "В этой выборке пока нет лидов с этим результатом.", successesFailed: "Не удалось загрузить список успешных лидов. Попробуйте ещё раз.", closedAt: "Результат отмечен", phone: "Телефон", openNewTab: "Открыть в новой вкладке",
   },
   pl: {
     chartHint: "Najedź, dotknij wykresu lub użyj klawiszy ← →.", lossRate: "Utraceni / wszyscy kandydaci",
@@ -59,6 +62,7 @@ export const leadResultsCopy: Record<AdminLang, Copy> = {
     closures: { open: "W toku", signal_working: "🎉 Przeniesiono do Signal / Współpracujemy", not_suitable: "Nieodpowiedni", candidate_declined: "Kandydat zrezygnował", no_contact: "Brak kontaktu" },
     reasonLabels: { task: "Zadanie testowe", skills: "Umiejętności", conditions: "Warunki", schedule: "Grafik", communication: "Komunikacja", candidate_choice: "Decyzja kandydata", other: "Inne" },
     dailyData: "Dane dzienne", date: "Data",
+    successesTitle: "Z kim pracujemy", successesOpen: "Zobacz wszystkich", successesHint: "Wszyscy kandydaci z sukcesem utworzeni w wybranym okresie. Okres i filtry są zapisane z otwartego raportu. Karty otwierają się w nowej karcie przeglądarki.", successesEmpty: "W tym zbiorze nie ma jeszcze kandydatów z tym wynikiem.", successesFailed: "Nie udało się wczytać listy kandydatów z sukcesem. Spróbuj ponownie.", closedAt: "Wynik oznaczono", phone: "Telefon", openNewTab: "Otwórz w nowej karcie",
   },
   en: {
     chartHint: "Hover, touch the chart or use the ← → keys.", lossRate: "Lost / all leads",
@@ -75,5 +79,6 @@ export const leadResultsCopy: Record<AdminLang, Copy> = {
     closures: { open: "In progress", signal_working: "🎉 Moved to Signal / Working together", not_suitable: "Unsuitable", candidate_declined: "Candidate declined", no_contact: "No contact" },
     reasonLabels: { task: "Test task", skills: "Skills", conditions: "Conditions", schedule: "Schedule", communication: "Communication", candidate_choice: "Candidate choice", other: "Other" },
     dailyData: "Daily data", date: "Date",
+    successesTitle: "Who we work with", successesOpen: "View everyone", successesHint: "All successful leads created in the selected period. The period and filters are fixed to the open report. Lead cards open in a new tab.", successesEmpty: "No leads in this selection have this result yet.", successesFailed: "Could not load successful leads. Please try again.", closedAt: "Result recorded", phone: "Phone", openNewTab: "Open in a new tab",
   },
 };

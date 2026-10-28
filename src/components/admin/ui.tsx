@@ -6,11 +6,11 @@ import { useAdminI18n } from "./i18n";
 /* ---------- Status ---------- */
 
 export const STATUS_TONE: Record<LeadStatus, { text: string; bg: string; dot: string; border: string; active: string }> = {
-  new: { text: "text-[#174ea6]", bg: "bg-[#dbeafe]", dot: "bg-[#2563eb]", border: "border-[#93c5fd]", active: "border-[#1d4ed8] bg-[#2563eb] text-white" },
-  in_progress: { text: "text-[#9a430c]", bg: "bg-[#ffedd5]", dot: "bg-[#ea7b13]", border: "border-[#fdba74]", active: "border-[#a84309] bg-[#b9500a] text-white" },
-  awaiting_reply: { text: "text-[#6b21a8]", bg: "bg-[#f3e8ff]", dot: "bg-[#9333ea]", border: "border-[#d8b4fe]", active: "border-[#6b21a8] bg-[#7e22ce] text-white" },
-  completed: { text: "text-[#166534]", bg: "bg-[#dcfce7]", dot: "bg-[#16a34a]", border: "border-[#86efac]", active: "border-[#166534] bg-[#15803d] text-white" },
-  rejected: { text: "text-[#991b1b]", bg: "bg-[#fee2e2]", dot: "bg-[#dc2626]", border: "border-[#fca5a5]", active: "border-[#991b1b] bg-[#b91c1c] text-white" },
+  new: { text: "text-adm-blue", bg: "bg-adm-blue-bg", dot: "bg-adm-blue", border: "border-adm-blue/30", active: "border-adm-blue! bg-adm-blue! text-adm-bg!" },
+  in_progress: { text: "text-adm-amber", bg: "bg-adm-amber-bg", dot: "bg-adm-amber", border: "border-adm-amber/30", active: "border-adm-amber! bg-adm-amber! text-adm-bg!" },
+  awaiting_reply: { text: "text-adm-violet", bg: "bg-adm-violet-bg", dot: "bg-adm-violet", border: "border-adm-violet/30", active: "border-adm-violet! bg-adm-violet! text-adm-bg!" },
+  completed: { text: "text-adm-green", bg: "bg-adm-green-bg", dot: "bg-adm-green", border: "border-adm-green/30", active: "border-adm-green! bg-adm-green! text-adm-bg!" },
+  rejected: { text: "text-adm-red", bg: "bg-adm-red-bg", dot: "bg-adm-red", border: "border-adm-red/30", active: "border-adm-red! bg-adm-red! text-adm-bg!" },
 };
 
 /** Next step of the usual handling flow; completed/rejected have none. */
@@ -137,8 +137,8 @@ export function StageStepper({ stage, answered, total }: { stage: string; answer
                 className={`grid size-4.5 shrink-0 place-items-center rounded-full text-[10px] font-bold ${
                   state === "done"
                     ? finished
-                      ? "bg-adm-green text-white"
-                      : "bg-adm-accent text-white"
+                      ? "bg-adm-green text-adm-bg"
+                      : "bg-adm-accent text-adm-on-accent"
                     : state === "current"
                       ? "border-2 border-adm-accent text-adm-accent"
                       : "border border-adm-line-strong text-adm-ink-3"
@@ -191,7 +191,7 @@ export function EmptyState({ text }: { text: string }) {
 export function ErrorState({ text, onRetry }: { text: string; onRetry?: () => void }) {
   const { t } = useAdminI18n();
   return (
-    <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-[#efc2bd] bg-adm-red-bg px-4 py-3 text-[13.5px] text-adm-red">
+    <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-adm-red/30 bg-adm-red-bg px-4 py-3 text-[13.5px] text-adm-red">
       <CircleAlert aria-hidden className="size-4 shrink-0" />
       <span className="flex-1">{text}</span>
       {onRetry && (
@@ -244,7 +244,7 @@ export function AdmStars({ value }: { value: number }) {
   return (
     <span className="inline-flex gap-0.5" role="img" aria-label={t.ui.testimonials.rating(value)}>
       {[1, 2, 3, 4, 5].map((i) => (
-        <svg key={i} viewBox="0 0 20 20" aria-hidden className={`size-3.5 ${i <= value ? "text-[#d99a0b]" : "text-adm-line-strong"}`} fill="currentColor">
+        <svg key={i} viewBox="0 0 20 20" aria-hidden className={`size-3.5 ${i <= value ? "text-adm-amber" : "text-adm-line-strong"}`} fill="currentColor">
           <path d="M10 1.8l2.47 5.01 5.53.8-4 3.9.94 5.5L10 14.43 5.06 17.01 6 11.51l-4-3.9 5.53-.8z" />
         </svg>
       ))}

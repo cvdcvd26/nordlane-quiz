@@ -76,7 +76,7 @@ export function LangSwitch({ className = "" }: { className?: string }) {
           type="button"
           aria-pressed={lang === l}
           onClick={() => setAdminLang(l)}
-          className={`rounded-[4px] px-2 transition-colors ${lang === l ? "bg-adm-ink text-white" : "text-adm-ink-2 hover:text-adm-ink"}`}
+          className={`rounded-[4px] px-2 transition-colors ${lang === l ? "bg-adm-ink text-adm-bg" : "text-adm-ink-2 hover:text-adm-ink"}`}
         >
           {adminDicts[l].langName}
         </button>

@@ -32,7 +32,7 @@
 
   --ease-lane: cubic-bezier(0.22, 1, 0.36, 1);
 
-  /* ---- Admin panel (light, restrained). Prefixed adm- so the visitor theme is untouched. ---- */
+  /* Admin utility tokens. The authenticated .adm root supplies the dark palette below. */
   --color-adm-bg: #f6f6f3;
   --color-adm-surface: #ffffff;
   --color-adm-subtle: #f1f1ed;
@@ -40,11 +40,14 @@
   --color-adm-line-strong: #d1d0c9;
   --color-adm-ink: #17191c;
   --color-adm-ink-2: #4c525a;
-  --color-adm-ink-3: #7c828a;
+  --color-adm-ink-3: #69717c;
   /* Brand mint (#2ee6a0) darkened to pass WCAG AA on white. */
   --color-adm-accent: #0b7a51;
   --color-adm-accent-hover: #086543;
   --color-adm-accent-soft: #e6f5ee;
+  --color-adm-on-accent: #ffffff;
+  --color-adm-on-danger: #ffffff;
+  --color-adm-red-hover: #96190f;
   /* Semantic: statuses and feedback only. */
   --color-adm-blue: #0b5fb8;
   --color-adm-blue-bg: #e9f2fd;
@@ -306,16 +309,65 @@
 
 /* ---------- Admin panel ---------- */
 
-html:has(.adm) {
-  background: var(--color-adm-bg);
-  color-scheme: light;
-}
 html:has(.adm) body::before {
   display: none;
 }
 
+/* Scoped to the admin workspace, including its loading shell. Login and visitor pages
+   keep their own palettes; a saved preference never changes document/PDF output. */
+.adm:not([data-admin-theme="light"]) {
+  --color-adm-bg: #090d17;
+  --color-adm-surface: #111a27;
+  --color-adm-subtle: #182332;
+  --color-adm-line: #253247;
+  --color-adm-line-strong: #3b4c64;
+  --color-adm-ink: #edf3fc;
+  --color-adm-ink-2: #bbc8da;
+  --color-adm-ink-3: #8fa1b9;
+  --color-adm-accent: #54e4b0;
+  --color-adm-accent-hover: #7aefc3;
+  --color-adm-accent-soft: #13372f;
+  --color-adm-on-accent: #062219;
+  --color-adm-blue: #80b6ff;
+  --color-adm-blue-bg: #172b45;
+  --color-adm-amber: #f4c470;
+  --color-adm-amber-bg: #372b19;
+  --color-adm-violet: #bcabff;
+  --color-adm-violet-bg: #2a2347;
+  --color-adm-green: #70dc9a;
+  --color-adm-green-bg: #173529;
+  --color-adm-red: #ff9c9a;
+  --color-adm-red-bg: #3b222c;
+  --color-adm-on-danger: #2c080d;
+  --color-adm-red-hover: #ffb4b1;
+  --adm-field-hover: #617791;
+  --adm-row-hover: #172334;
+  --adm-skeleton: #192536;
+  --adm-skeleton-bright: #25374d;
+  color-scheme: dark;
+}
+
+/* Bridge the few existing inline feedback/filter styles to semantic admin colors. */
+.adm .bg-adm-ink.text-white {
+  color: var(--color-adm-bg);
+}
+.adm [class~="bg-adm-red-bg"] {
+  border-color: color-mix(in srgb, var(--color-adm-red) 30%, transparent);
+}
+.adm [class~="bg-adm-green-bg"] {
+  border-color: color-mix(in srgb, var(--color-adm-green) 30%, transparent);
+}
+.adm:not([data-admin-theme="light"]) [class~="bg-[#eaf0f8]"] {
+  background: var(--color-adm-blue-bg);
+  color: var(--color-adm-blue);
+}
+
 @layer components {
   .adm {
+    --adm-field-hover: #bdbcb4;
+    --adm-row-hover: #fafaf8;
+    --adm-skeleton: #eeeee9;
+    --adm-skeleton-bright: #e5e5df;
     min-height: 100dvh;
     background: var(--color-adm-bg);
     color: var(--color-adm-ink);
@@ -325,7 +377,7 @@ html:has(.adm) body::before {
     color-scheme: light;
   }
   .adm ::selection {
-    background: #cfe3fb;
+    background: var(--color-adm-blue-bg);
     color: inherit;
   }
   .adm :focus-visible {
@@ -336,7 +388,7 @@ html:has(.adm) body::before {
   .adm input,
   .adm textarea,
   .adm select {
-    color-scheme: light;
+    color-scheme: inherit;
   }
 
   /* Buttons: 32px, 6px radius, one primary per view. */
@@ -369,7 +421,7 @@ html:has(.adm) body::before {
   .adm-btn-primary {
     background: var(--color-adm-accent);
     border-color: var(--color-adm-accent);
-    color: #fff;
+    color: var(--color-adm-on-accent);
   }
   .adm-btn-primary:hover:not(:disabled) {
     background: var(--color-adm-accent-hover);
@@ -380,16 +432,16 @@ html:has(.adm) body::before {
   }
   .adm-btn-danger:hover:not(:disabled) {
     background: var(--color-adm-red-bg);
-    border-color: #efc2bd;
+    border-color: color-mix(in srgb, var(--color-adm-red) 30%, transparent);
   }
   .adm-btn-danger-solid {
     background: var(--color-adm-red);
     border-color: var(--color-adm-red);
-    color: #fff;
+    color: var(--color-adm-on-danger);
   }
   .adm-btn-danger-solid:hover:not(:disabled) {
-    background: #96190f;
-    border-color: #96190f;
+    background: var(--color-adm-red-hover);
+    border-color: var(--color-adm-red-hover);
   }
   .adm-btn-quiet {
     border-color: transparent;
@@ -436,15 +488,20 @@ html:has(.adm) body::before {
     color: var(--color-adm-ink-3);
   }
   .adm-input:hover {
-    border-color: #bdbcb4;
+    border-color: var(--adm-field-hover);
   }
   .adm-input:focus {
     outline: none;
     border-color: var(--color-adm-accent);
-    box-shadow: 0 0 0 3px #0f6fd626;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-adm-accent) 20%, transparent);
   }
   .adm-input[aria-invalid="true"] {
     border-color: var(--color-adm-red);
+  }
+  .adm .adm-input:-webkit-autofill {
+    -webkit-text-fill-color: var(--color-adm-ink);
+    -webkit-box-shadow: 0 0 0 1000px var(--color-adm-surface) inset;
+    caret-color: var(--color-adm-ink);
   }
   /* The colored wrapper owns the status surface; native input styles cannot cover it. */
   .adm-status-control:focus-within {
@@ -532,7 +589,7 @@ html:has(.adm) body::before {
     border-bottom: 0;
   }
   .adm-table tbody tr:hover td {
-    background: #fafaf8;
+    background: var(--adm-row-hover);
   }
 
   .adm-badge {
@@ -547,7 +604,7 @@ html:has(.adm) body::before {
     white-space: nowrap;
   }
   .adm-skeleton {
-    background: linear-gradient(90deg, #eeeee9 25%, #e5e5df 50%, #eeeee9 75%);
+    background: linear-gradient(90deg, var(--adm-skeleton) 25%, var(--adm-skeleton-bright) 50%, var(--adm-skeleton) 75%);
     background-size: 200% 100%;
     animation: shimmer 1.4s linear infinite;
     border-radius: 6px;

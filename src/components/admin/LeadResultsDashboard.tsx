@@ -11,6 +11,7 @@ import { useAdminI18n } from "./i18n";
 import { ErrorState, PageHeader } from "./ui";
 import LeadResultEditor from "./LeadResultEditor";
 import { DailyResultChart, LeadOutcomeDonut } from "./LeadResultsCharts";
+import LeadSuccessDialog, { type LeadSuccessSelection } from "./LeadSuccessDialog";
 import "./lead-results.css";
 
 type Query = { period: AnalyticsPeriod; from?: string; to?: string; source: string; responsible: string; page: number };
@@ -70,6 +71,7 @@ export default function LeadResultsDashboard() {
   const [error, setError] = useState<"range" | "forbidden" | "load" | null>(null);
   const [reload, setReload] = useState(0);
   const [editor, setEditor] = useState<{ id: string; name: string } | null>(null);
+  const [successSelection, setSuccessSelection] = useState<LeadSuccessSelection | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -94,7 +96,7 @@ export default function LeadResultsDashboard() {
       .catch(reason => {
         if (controller.signal.aborted) return;
         const forbidden = reason instanceof ApiError && [401, 403].includes(reason.status);
-        if (forbidden) { setAdmins([]); setSourceOptions([]); setEditor(null); }
+        if (forbidden) { setAdmins([]); setSourceOptions([]); setEditor(null); setSuccessSelection(null); }
         setError(forbidden ? "forbidden" : reason instanceof ApiError && reason.code === "analytics_range" ? "range" : "load");
       })
       .finally(() => { if (!controller.signal.aborted && !redirected) setLoading(false); });
@@ -111,6 +113,15 @@ export default function LeadResultsDashboard() {
   const dateLabel = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString(t.locale, { day: "numeric", month: "short", timeZone: "Europe/Warsaw" });
   const runQuery = (next: Query) => { setLoading(true); setError(null); setReport(null); setQuery(next); setReload(value => value + 1); };
   const refresh = () => runQuery(query);
+  const openSuccesses = () => {
+    if (!report) return;
+    const appliedSource = report.sourceOptions.find(option => option.key === report.filters.source);
+    setSuccessSelection({
+      from: report.range.from, to: report.range.to, source: report.filters.source, responsible: report.filters.responsible,
+      sourceLabel: appliedSource ? sourceOptionName(appliedSource) : null,
+      responsibleLabel: report.filters.responsible === "unassigned" ? copy.unassigned : report.responsibleAdmins.find(admin => admin.id === report.filters.responsible)?.email ?? null,
+    });
+  };
   const total = report?.totals.leads ?? 0;
   const lost = report ? report.closures.not_suitable + report.closures.candidate_declined + report.closures.no_contact : 0;
 
@@ -170,7 +181,7 @@ export default function LeadResultsDashboard() {
           <div className="lres-hero-top"><span className="lres-hero-icon"><PartyPopper aria-hidden className="size-5" /></span><span className="lres-hero-check"><Check aria-hidden className="size-3" />{copy.successLegend}</span></div>
           <h2 id={`${id}-success`}>{copy.success}</h2>
           <div className="lres-hero-values"><p className="lres-hero-number">{number(report.totals.success)}</p><div className="lres-hero-ratio"><strong>{rate(report.rates.successOfAll)}</strong><span>{copy.successRate}</span><small>{number(report.totals.success)} / {number(total)}</small></div></div>
-          <div className="lres-hero-footer"><div className="lres-hero-track" aria-hidden><span style={{ width: `${(report.rates.successOfAll ?? 0) * 100}%` }} /></div><p><ShieldCheck aria-hidden className="size-3.5" />{copy.successHint}</p></div>
+          <div className="lres-hero-footer"><div className="lres-hero-track" aria-hidden><span style={{ width: `${(report.rates.successOfAll ?? 0) * 100}%` }} /></div><p><ShieldCheck aria-hidden className="size-3.5" />{copy.successHint}</p><button className="lres-success-open" type="button" data-lead-success-open onClick={openSuccesses} aria-label={`${copy.successesOpen} — ${copy.success}`}><span>{copy.successesOpen}</span><ArrowUpRight aria-hidden className="size-4" /></button></div>
         </section>
         <dl className="lres-metrics">
           {[
@@ -238,5 +249,6 @@ export default function LeadResultsDashboard() {
       <p className="lres-internal-hint flex items-start gap-2"><LockKeyhole aria-hidden className="mt-0.5 size-3.5 shrink-0" /><span>{copy.internalHint}</span></p>
     </div> : null}
     {editor ? <ResultDialog leadId={editor.id} name={editor.name} onClose={() => setEditor(null)} onSaved={refresh} /> : null}
+    {successSelection ? <LeadSuccessDialog key={JSON.stringify([successSelection.from, successSelection.to, successSelection.source, successSelection.responsible])} selection={successSelection} onClose={() => setSuccessSelection(null)} /> : null}
   </div>;
 }

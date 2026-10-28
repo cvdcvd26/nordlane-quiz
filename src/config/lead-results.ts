@@ -82,3 +82,6 @@ export type LeadResultsReport = {
   responsibleAdmins: LeadResponsibleAdmin[];
   leads: { items: LeadResultListItem[]; total: number; page: number; pageSize: number; pages: number };
 };
+
+/** Current successful results within the applied lead-created cohort, independently paginated. */
+export type LeadResultsSuccessList = Pick<LeadResultsReport, "range" | "generatedAt" | "filters" | "leads">;

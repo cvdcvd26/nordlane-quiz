@@ -17,9 +17,11 @@ import { ActivityNotifier } from "./ActivityNotifier";
 import { LangSwitch, useAdminI18n } from "./i18n";
 import { Toaster } from "./toast";
 import { BrandMark } from "./BrandMark";
+import { AdminThemeToggle, useAdminTheme } from "./AdminThemeToggle";
 
 export function AdminShell({ children, canManageDocuments = false }: { children: React.ReactNode; canManageDocuments?: boolean }) {
   const { t, lang } = useAdminI18n();
+  const theme = useAdminTheme();
   const [email, setEmail] = useState<string | null>(null);
   const [permanentAdmin, setPermanentAdmin] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
@@ -95,13 +97,14 @@ export function AdminShell({ children, canManageDocuments = false }: { children:
   const tools = (
     <>
       <LangSwitch />
+      <AdminThemeToggle />
       <SoundToggle appearance="admin" scope="admin" labelOn={t.ui.notify.soundOn} labelOff={t.ui.notify.soundOff} onChange={setSoundOn} />
     </>
   );
 
   return (
     <OwnerAdminContext.Provider value={canManageDocuments && permanentAdmin}>
-    <div className="adm lg:grid lg:grid-cols-[232px_1fr]">
+    <div className="adm lg:grid lg:grid-cols-[232px_1fr]" data-admin-theme={theme}>
       {/* Sidebar (desktop) */}
       <aside className="sticky top-0 hidden h-dvh flex-col border-r border-adm-line bg-adm-surface px-3 py-4 lg:flex">
         <Link href="/admin" className="flex items-center gap-2.5 px-2.5">

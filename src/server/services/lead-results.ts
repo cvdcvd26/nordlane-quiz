@@ -4,7 +4,7 @@ import { unstable_rethrow } from "next/navigation";
 import { db, schema } from "@/db";
 import {
   leadClosures, leadQualifications, leadResultReasons, leadResultsConfig,
-  type LeadResultDetail, type LeadResultState, type LeadResultsReport, type LeadResultsSource,
+  type LeadResultDetail, type LeadResultState, type LeadResultsReport, type LeadResultsSource, type LeadResultsSuccessList,
 } from "@/config/lead-results";
 import { parseAnalyticsRange } from "./analytics";
 import { AppError, badRequest, conflict, notFound } from "../errors";
@@ -128,7 +128,7 @@ function sourceFilter(value: string): SQL {
 const counts = sql`count(*)::int as leads, count(*) filter(where qualification <> 'unreviewed')::int as reviewed,
   count(*) filter(where qualification = 'suitable')::int as suitable, count(*) filter(where closure = 'signal_working')::int as success`;
 
-async function getLeadResultsImpl(input: Record<string, string | undefined>, now = new Date()): Promise<LeadResultsReport> {
+async function getLeadResultsImpl(input: Record<string, string | undefined>, now = new Date(), onlySuccess = false): Promise<LeadResultsReport> {
   const parsed = reportSchema.parse(input);
   const range = parseAnalyticsRange({ period: parsed.period, from: parsed.from, to: parsed.to }, now);
   const sourceWhere = sourceFilter(parsed.source);
@@ -155,7 +155,8 @@ async function getLeadResultsImpl(input: Record<string, string | undefined>, now
       left join visitor_attribution a on a.session_id = l.session_id
       left join admin_users au on au.id = r.responsible_admin_id
       where l.created_at >= ${range.from} and l.created_at < ${range.end}
-    ), cohort as (select * from base where (${sourceWhere}) and (${responsibleWhere})),
+    ), cohort as (select * from base where (${sourceWhere}) and (${responsibleWhere})
+      and (${onlySuccess ? sql`closure = 'signal_working'` : sql`true`})),
     source_options as (select kind, source, medium, campaign from base where (${responsibleWhere})
       group by kind, source, medium, campaign order by count(*) desc, kind, source nulls first, medium nulls first, campaign nulls first
       limit ${leadResultsConfig.maxGroups}),
@@ -224,6 +225,11 @@ async function getLeadResultsImpl(input: Record<string, string | undefined>, now
   };
 }
 
+async function getLeadResultsSuccessesImpl(input: Record<string, string | undefined>, now = new Date()): Promise<LeadResultsSuccessList> {
+  const { range, generatedAt, filters, leads } = await getLeadResultsImpl(input, now, true);
+  return { range, generatedAt, filters, leads };
+}
+
 /** Drizzle errors contain SQL parameters (private comments/contact data); log only the fixed operation name. */
 function operation<A extends unknown[], R>(name: string, run: (...args: A) => Promise<R>) {
   return async (...args: A): Promise<R> => {
@@ -238,4 +244,5 @@ function operation<A extends unknown[], R>(name: string, run: (...args: A) => Pr
 }
 export const getLeadResult = operation("detail", getLeadResultImpl);
 export const updateLeadResult = operation("update", updateLeadResultImpl);
-export const getLeadResults = operation("report", getLeadResultsImpl);
+export const getLeadResults = operation("report", (input: Record<string, string | undefined>, now: Date = new Date()) => getLeadResultsImpl(input, now));
+export const getLeadResultsSuccesses = operation("successes", getLeadResultsSuccessesImpl);
