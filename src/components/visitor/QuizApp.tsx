@@ -8,6 +8,7 @@ import { api, newId, type PublicFile } from "@/lib/api";
 import { QUIZ_HISTORY_STEP, QUIZ_STEP_PATHS, resolveQuizStep, type QuizProgress } from "@/lib/quiz-steps";
 import { Lane, type Step } from "./Lane";
 import { Backdrop } from "../visual/Backdrop";
+import { HalloweenSeason } from "../visual/HalloweenSeason";
 import { StepContact } from "./StepContact";
 import { StepQuestions } from "./StepQuestions";
 import { StepTask } from "./StepTask";
@@ -270,6 +271,7 @@ export function QuizApp() {
           <Lane step={step} rejected={Boolean(outcome)} />
         </div>
       </header>
+      <HalloweenSeason hidden={!state || Boolean(outcome)} />
 
       <div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6 md:grid md:grid-cols-[10rem_1fr] md:gap-14 lg:gap-20 lg:px-10">
         <aside className="hidden md:block">
