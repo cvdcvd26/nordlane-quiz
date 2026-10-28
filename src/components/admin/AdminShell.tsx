@@ -2,7 +2,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BellRing, ChartNoAxesCombined, FileText, LogOut, MessageSquareText, Settings, Users } from "lucide-react";
+import { BellRing, ChartNoAxesCombined, FileText, LogOut, MessageSquareText, Settings, Target, Users } from "lucide-react";
+import { leadResultsCopy } from "@/config/lead-results-copy";
+import { OwnerAdminContext } from "./owner-access";
 import { documentAdminContent } from "@/config/document-admin";
 import { adminAccountUpdatedEvent } from "@/config/admin-account";
 import { reminderCopy } from "@/config/admin-reminders";
@@ -68,6 +70,7 @@ export function AdminShell({ children, canManageDocuments = false }: { children:
     { href: "/admin", label: t.ui.nav.leads, icon: Users, active: path === "/admin" || path.startsWith("/admin/leads") },
     { href: "/admin/reminders", label: reminderCopy[lang].title, icon: BellRing, active: path.startsWith("/admin/reminders") },
     { href: "/admin/analytics", label: analyticsCopy[lang].title, icon: ChartNoAxesCombined, active: path.startsWith("/admin/analytics") },
+    ...(canManageDocuments && permanentAdmin ? [{ href: "/admin/results", label: leadResultsCopy[lang].title, icon: Target, active: path.startsWith("/admin/results") }] : []),
     { href: "/admin/reviews", label: t.ui.nav.reviews, icon: MessageSquareText, active: path.startsWith("/admin/reviews") },
     { href: "/admin/settings", label: t.ui.nav.settings, icon: Settings, active: path.startsWith("/admin/settings") },
     ...(canManageDocuments && permanentAdmin ? [{ href: "/admin/documents", label: documentAdminContent[lang].nav, icon: FileText, active: path.startsWith("/admin/documents") }] : []),
@@ -97,6 +100,7 @@ export function AdminShell({ children, canManageDocuments = false }: { children:
   );
 
   return (
+    <OwnerAdminContext.Provider value={canManageDocuments && permanentAdmin}>
     <div className="adm lg:grid lg:grid-cols-[232px_1fr]">
       {/* Sidebar (desktop) */}
       <aside className="sticky top-0 hidden h-dvh flex-col border-r border-adm-line bg-adm-surface px-3 py-4 lg:flex">
@@ -153,5 +157,6 @@ export function AdminShell({ children, canManageDocuments = false }: { children:
       {email && <ActivityNotifier soundOn={soundOn} />}
       <Toaster />
     </div>
+    </OwnerAdminContext.Provider>
   );
 }

@@ -15,6 +15,7 @@ import {
   check,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
+import type { LeadResultState } from "@/config/lead-results";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -161,6 +162,44 @@ export const leads = pgTable(
       (${t.status} = 'rejected' and ${t.candidateResultBody} is not null and ${t.candidateResultPublishedAt} is not null and length(btrim(${t.candidateResultBody})) > 0)`),
   ],
 );
+
+/** Private owner reporting. Separate from the public/chat lead status and candidate result. */
+export const leadResults = pgTable("lead_results", {
+  leadId: bigint("lead_id", { mode: "number" }).primaryKey().references(() => leads.id, { onDelete: "cascade" }),
+  qualification: text("qualification").notNull().default("unreviewed"),
+  closure: text("closure").notNull().default("open"),
+  reason: text("reason"),
+  comment: text("comment").notNull().default(""),
+  responsibleAdminId: uuid("responsible_admin_id").references(() => adminUsers.id, { onDelete: "set null" }),
+  updatedBy: uuid("updated_by").references(() => adminUsers.id, { onDelete: "set null" }),
+  version: integer("version").notNull().default(1),
+  updatedAt: updatedAt(),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+}, t => [
+  index("lead_results_responsible_idx").on(t.responsibleAdminId),
+  index("lead_results_closure_idx").on(t.closure),
+  check("lead_results_qualification_ck", sql`${t.qualification} in ('unreviewed', 'suitable', 'unsuitable')`),
+  check("lead_results_closure_ck", sql`${t.closure} in ('open', 'signal_working', 'not_suitable', 'candidate_declined', 'no_contact')`),
+  check("lead_results_consistency_ck", sql`(${t.closure} = 'not_suitable') = (${t.qualification} = 'unsuitable') and (${t.closure} <> 'signal_working' or ${t.qualification} = 'suitable')`),
+  check("lead_results_reason_ck", sql`${t.reason} is null or ${t.reason} in ('task', 'skills', 'conditions', 'schedule', 'communication', 'candidate_choice', 'other')`),
+  check("lead_results_comment_ck", sql`length(${t.comment}) <= 2000`),
+  check("lead_results_version_ck", sql`${t.version} >= 1`),
+  check("lead_results_closed_at_ck", sql`(${t.closure} = 'open') = (${t.closedAt} is null)`),
+]);
+
+/** Append-only service audit; lead deletion cascades its private history. */
+export const leadResultHistory = pgTable("lead_result_history", {
+  id: id(),
+  leadId: bigint("lead_id", { mode: "number" }).notNull().references(() => leads.id, { onDelete: "cascade" }),
+  previous: jsonb("previous").$type<LeadResultState>().notNull(),
+  next: jsonb("next").$type<LeadResultState>().notNull(),
+  actorId: uuid("actor_id").references(() => adminUsers.id, { onDelete: "set null" }),
+  version: integer("version").notNull(),
+  createdAt: createdAt(),
+}, t => [
+  uniqueIndex("lead_result_history_version_uq").on(t.leadId, t.version),
+  index("lead_result_history_lead_idx").on(t.leadId, t.createdAt),
+]);
 
 /** Public reviews managed by admins; legacy visitor reviews retain their session link. */
 export const testimonials = pgTable(

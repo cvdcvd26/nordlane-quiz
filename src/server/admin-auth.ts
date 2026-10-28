@@ -114,7 +114,7 @@ export async function requireAdmin() {
 /** Temporary test accounts may use the admin panel but cannot manage access. */
 export async function requirePermanentAdmin() {
   const admin = await requireAdmin();
-  if (admin.isTemporary) throw new AppError(403, "test_access_forbidden", "Only the main administrator can manage test access.");
+  if (admin.isTemporary !== false) throw new AppError(403, "test_access_forbidden", "Only the main administrator can manage test access.");
   return admin;
 }
 

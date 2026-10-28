@@ -22,6 +22,7 @@ import { toast } from "@/components/admin/toast";
 import { formatPhone, nationalDigits } from "@/lib/contact";
 import { useAdminI18n } from "@/components/admin/i18n";
 import { CandidateOutcomeEditor } from "@/components/admin/CandidateOutcomeEditor";
+import OwnerLeadResultPanel from "@/components/admin/OwnerLeadResultPanel";
 import type { CandidateOutcome } from "@/config/candidate-outcome";
 
 type Details = {
@@ -404,6 +405,7 @@ function Lead({ id }: { id: string }) {
             {sendError && <p className="mt-2 text-[13px] text-adm-red">{sendError}</p>}
           </div>
         </section>
+        <OwnerLeadResultPanel leadId={id} />
         {d.submission && <LeadRevisionManager leadId={Number(id)} onChange={load} />}
         <LeadReminders leadId={Number(id)} />
         </div>
