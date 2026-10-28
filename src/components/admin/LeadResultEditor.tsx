@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { Check, CheckCircle2, Clock3, History, LockKeyhole, Save, ShieldCheck } from "lucide-react";
+import { Check, Clock3, History, LockKeyhole, Save, ShieldCheck } from "lucide-react";
 import { leadQualifications, leadResultReasons, leadResultsConfig, type LeadClosure, type LeadQualification, type LeadResultDetail, type LeadResultState, type LeadResultUpdate } from "@/config/lead-results";
 import { leadResultsCopy } from "@/config/lead-results-copy";
 import { useAdminDraftGuard } from "@/lib/admin-draft-guard";
@@ -145,7 +145,6 @@ export default function LeadResultEditor({ leadId, onSaved, onDirtyChange, stand
                 <input className="sr-only" type="radio" name={`${id}-closure`} value={closure} checked={draft.closure === closure} onChange={() => closureChange(closure)} />
                 <span className="lres-choice-dot" aria-hidden>{draft.closure === closure ? <Check className="size-3" strokeWidth={3} /> : null}</span>
                 <span className="flex-1">{copy.closures[closure]}</span>
-                {closure === "signal_working" ? <CheckCircle2 aria-hidden className="size-4 shrink-0" /> : null}
               </label>)}
             </div>
             <p className="mt-2 text-[11.5px] leading-relaxed text-adm-ink-3">{copy.signalRule} {copy.unsuitableRule}</p>
