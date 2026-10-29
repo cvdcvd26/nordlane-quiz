@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { bindAudioUnlock, isSoundEnabled, playChime, setSoundEnabled } from "@/lib/sound";
+import { bindAudioUnlock, isSoundEnabled, playChime, setSoundEnabled, SOUND_PREFERENCE_EVENT, type SoundPreferenceChange } from "@/lib/sound";
 import { COOKIE_CONSENT_EVENT } from "@/lib/cookie-consent";
 
 /** Speaker button that mutes/unmutes notification chimes; the choice is remembered in this browser. */
@@ -30,8 +30,19 @@ export function SoundToggle({
     onRef.current = v;
     onChange?.(v);
     const rememberChoice = () => { if (scope === "visitor") setSoundEnabled(scope, onRef.current); };
+    const syncChoice = (event: Event) => {
+      const detail = (event as CustomEvent<SoundPreferenceChange>).detail;
+      if (detail?.scope !== scope) return;
+      onRef.current = detail.on;
+      setOn(detail.on);
+      onChange?.(detail.on);
+    };
     window.addEventListener(COOKIE_CONSENT_EVENT, rememberChoice);
-    return () => window.removeEventListener(COOKIE_CONSENT_EVENT, rememberChoice);
+    window.addEventListener(SOUND_PREFERENCE_EVENT, syncChoice);
+    return () => {
+      window.removeEventListener(COOKIE_CONSENT_EVENT, rememberChoice);
+      window.removeEventListener(SOUND_PREFERENCE_EVENT, syncChoice);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope]);
 

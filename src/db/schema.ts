@@ -16,6 +16,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import type { LeadResultState } from "@/config/lead-results";
+import type { RichTextDocument } from "@/lib/rich-text";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -246,6 +247,8 @@ export const messages = pgTable(
     conversationId: uuid("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
     sender: messageSender("sender").notNull(),
     body: text("body").notNull().default(""),
+    // Plain body remains the searchable/fallback text; only validated inline marks are stored here.
+    bodyRich: jsonb("body_rich").$type<RichTextDocument>(),
     // Client-generated id: retries of the same send never create a second message.
     clientMessageId: text("client_message_id").notNull(),
     createdAt: createdAt(),

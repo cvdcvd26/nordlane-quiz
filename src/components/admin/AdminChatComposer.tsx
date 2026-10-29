@@ -5,9 +5,10 @@ import { inboxCopy } from "@/config/admin-inbox";
 import { uploadConfig } from "@/config/settings";
 import { api, type PublicFile } from "@/lib/api";
 import type { QuickReplies } from "@/lib/quick-replies";
+import type { RichTextDocument } from "@/lib/rich-text";
 import { useAdminI18n } from "./i18n";
 
-export function AdminChatComposer({ leadId, onSend, onDirtyChange }: { leadId: string; onSend: (body: string, files: PublicFile[]) => Promise<void>; onDirtyChange?: (dirty: boolean) => void }) {
+export function AdminChatComposer({ leadId, onSend, onDirtyChange }: { leadId: string; onSend: (body: string, files: PublicFile[], bodyRich?: RichTextDocument | null) => Promise<void>; onDirtyChange?: (dirty: boolean) => void }) {
   const { lang, t, err: tErr } = useAdminI18n();
   const T = inboxCopy[lang].quick;
   const [templates, setTemplates] = useState<QuickReplies | null>(null);
@@ -27,7 +28,7 @@ export function AdminChatComposer({ leadId, onSend, onDirtyChange }: { leadId: s
       </div> : !templates && <p role="status" className="adm-help mb-2">{T.loading}</p>}
       <Composer
         onSend={onSend} uploadUrl={`/api/admin/leads/${leadId}/uploads`}
-        onDirtyChange={onDirtyChange}
+        onDirtyChange={onDirtyChange} uiLang={lang}
         accept={[...uploadConfig.adminAttachmentTypes]} attachmentsEnabled maxFiles={uploadConfig.maxFilesPerMessage}
         placeholder={t.ui.lead.replyPlaceholder} text={t.chat} translateError={tErr} appearance="admin"
         quickReplies={templates ? { items: templates.replies, label: T.title, select: T.select, hint: T.hint, manage: T.manage, empty: T.empty, tooLong: T.tooLong } : undefined}

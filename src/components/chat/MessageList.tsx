@@ -4,6 +4,7 @@ import { Clock3 } from "lucide-react";
 import { content } from "@/config/content";
 import { defaultManager, type ManagerProfile } from "@/config/managers";
 import { ManagerAvatar } from "./ManagerAvatar";
+import { MessageText } from "./MessageText";
 import { formatBytes, formatTime, type ChatMessage } from "@/lib/api";
 
 export type ChatText = { [K in "systemLabel" | "youLabel" | "visitorLabel" | "adminLabel" | "sending" | "failed" | "retry"]: string };
@@ -72,7 +73,7 @@ export function MessageList({
                       </p>
                     </div>
                   </div>
-                  <p className="whitespace-pre-wrap break-words text-sm leading-[1.75] text-ink/90 sm:text-[15px]">{m.body}</p>
+                  <p className="whitespace-pre-wrap break-words text-[14px] leading-[1.6] text-ink/90 [overflow-wrap:anywhere]"><MessageText body={m.body} bodyRich={m.bodyRich} /></p>
                 </div>
               </li>
             );
@@ -88,7 +89,7 @@ export function MessageList({
                   {formatTime(m.createdAt, locale)}
                 </time>
               </p>
-              <p className="whitespace-pre-wrap leading-relaxed">{m.body}</p>
+              <p className="whitespace-pre-wrap break-words leading-[1.6] [overflow-wrap:anywhere]"><MessageText body={m.body} bodyRich={m.bodyRich} /></p>
             </li>
           );
         }
@@ -102,14 +103,14 @@ export function MessageList({
                 className={`${
                   adm
                     ? mine
-                      ? "rounded-lg rounded-br-sm bg-adm-accent px-3.5 py-2 text-[13.5px] text-white"
+                      ? "rounded-lg rounded-br-sm bg-adm-accent px-3.5 py-2 text-[13.5px] text-adm-on-accent"
                       : "rounded-lg rounded-bl-sm border border-adm-line bg-adm-subtle px-3.5 py-2 text-[13.5px]"
                     : mine
-                      ? "rounded-2xl rounded-br-md bg-paint px-4 py-2.5 font-medium text-on-paint"
-                      : "rounded-2xl rounded-bl-md border border-line-strong bg-white/[0.04] px-4 py-2.5"
+                      ? "rounded-2xl rounded-br-md bg-paint px-4 py-2.5 text-[14px] font-medium text-on-paint"
+                      : "rounded-2xl rounded-bl-md border border-line-strong bg-white/[0.04] px-4 py-2.5 text-[14px]"
                 } ${m.local === "failed" ? "ring-2 ring-danger" : ""}`}
               >
-                {m.body && <p className="whitespace-pre-wrap break-words leading-relaxed">{m.body}</p>}
+                {m.body && <p className="whitespace-pre-wrap break-words leading-[1.6] [overflow-wrap:anywhere]"><MessageText body={m.body} bodyRich={m.bodyRich} /></p>}
                 {m.files.length > 0 && (
                   <ul className={`flex flex-wrap gap-2 ${m.body ? "mt-2" : ""}`}>
                     {m.files.map((f) =>

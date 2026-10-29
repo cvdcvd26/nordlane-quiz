@@ -1,16 +1,20 @@
 "use client";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import dynamic from "next/dynamic";
 import { Pencil, Trash2, X } from "lucide-react";
 import { messageActionCopy } from "@/config/message-actions";
 import { ApiError, type ChatMessage } from "@/lib/api";
 import { useAdminI18n } from "./i18n";
+import { normalizeRichTextContent, type RichTextDocument } from "@/lib/rich-text";
+const RichTextEditor = dynamic(() => import("./RichTextEditor"), { ssr: false });
 
-export function AdminMessageActions({ message, onChange }: { message: ChatMessage; onChange: (message: ChatMessage, action: "edit" | "delete", body: string) => Promise<void> }) {
+export function AdminMessageActions({ message, onChange }: { message: ChatMessage; onChange: (message: ChatMessage, action: "edit" | "delete", body: string, bodyRich?: RichTextDocument | null) => Promise<void> }) {
   const { lang, err: tErr } = useAdminI18n();
   const T = messageActionCopy[lang];
   const [mode, setMode] = useState<"edit" | "delete" | null>(null);
   const [original, setOriginal] = useState(message);
   const [body, setBody] = useState("");
+  const [bodyRich, setBodyRich] = useState<RichTextDocument | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -21,12 +25,15 @@ export function AdminMessageActions({ message, onChange }: { message: ChatMessag
     node.showModal();
     return () => node.close();
   }, [mode]);
-  const open = (mode: "edit" | "delete") => { setOriginal(message); setBody(message.body); setError(null); setMode(mode); };
+  const open = (mode: "edit" | "delete") => { setOriginal(message); setBody(message.body); setBodyRich(message.bodyRich ?? null); setError(null); setMode(mode); };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!mode || busy) return;
     setBusy(true); setError(null);
-    try { await onChange(original, mode, body); setMode(null); }
+    try {
+      const value = mode === "edit" ? normalizeRichTextContent(body, bodyRich, 4000) : { body, bodyRich: null };
+      await onChange(original, mode, value.body, value.bodyRich); setMode(null);
+    }
     catch (error) { setError(error instanceof ApiError && error.code === "message_changed" ? T.conflict : tErr(error)); }
     finally { setBusy(false); }
   };
@@ -45,7 +52,7 @@ export function AdminMessageActions({ message, onChange }: { message: ChatMessag
         <form onSubmit={submit} className="space-y-4 p-5" aria-busy={busy}>
           {mode === "edit" ? <>
             <label htmlFor={`${id}-body`} className="adm-label">{T.body}</label>
-            <textarea id={`${id}-body`} autoFocus lang="pl" className="adm-input min-h-40" value={body} onChange={event => setBody(event.target.value)} disabled={busy} maxLength={4000} />
+            <RichTextEditor id={`${id}-body`} autoFocus label={T.body} value={{ body, bodyRich }} onChange={value => { setBody(value.body); setBodyRich(value.bodyRich); }} disabled={busy} maxLength={4000} uiLang={lang} />
             {original.files.length > 0 && <p className="adm-help">{T.filesHint}</p>}
           </> : <p className="text-[13.5px] leading-relaxed">{T.deleteHint}</p>}
           {error && <p role="alert" className="text-[13px] text-adm-red">{error}</p>}

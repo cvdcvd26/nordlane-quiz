@@ -58,8 +58,8 @@ export function clientIp(req: Request) {
   return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
 }
 
-export async function readJson(req: Request): Promise<unknown> {
-  const body = await readBody(req, 32 * 1024);
+export async function readJson(req: Request, maxBytes = 32 * 1024): Promise<unknown> {
+  const body = await readBody(req, maxBytes);
   try {
     return JSON.parse(body.toString("utf8"));
   } catch {

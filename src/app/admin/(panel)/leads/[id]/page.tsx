@@ -23,6 +23,7 @@ import { formatPhone, nationalDigits } from "@/lib/contact";
 import { useAdminI18n } from "@/components/admin/i18n";
 import { CandidateOutcomeEditor } from "@/components/admin/CandidateOutcomeEditor";
 import OwnerLeadResultPanel from "@/components/admin/OwnerLeadResultPanel";
+import type { RichTextDocument } from "@/lib/rich-text";
 import type { CandidateOutcome } from "@/config/candidate-outcome";
 
 type Details = {
@@ -224,14 +225,14 @@ function Lead({ id }: { id: string }) {
     }
   };
 
-  const reply = async (body: string, files: PublicFile[]) => {
+  const reply = async (body: string, files: PublicFile[], bodyRich?: RichTextDocument | null) => {
     setSendError(null);
-    const signature = JSON.stringify({ body, files: files.map((f) => f.id) });
+    const signature = JSON.stringify({ body, bodyRich: bodyRich ?? null, files: files.map((f) => f.id) });
     if (replyKey.current?.signature !== signature) replyKey.current = { signature, id: newId() };
     try {
       const { messages } = await api<{ messages: ChatMessage[] }>(`/api/admin/leads/${id}/messages`, {
         method: "POST",
-        json: { clientMessageId: replyKey.current.id, body, fileIds: files.map((f) => f.id) },
+        json: { clientMessageId: replyKey.current.id, body, bodyRich: bodyRich ?? null, fileIds: files.map((f) => f.id) },
       });
       replyKey.current = null;
       setD((prev) => prev && { ...prev, messages: reconcileMessageChanges(messages, changes.current) });
@@ -242,12 +243,12 @@ function Lead({ id }: { id: string }) {
     }
   };
 
-  const changeMessage = async (message: ChatMessage, action: "edit" | "delete", body: string) => {
+  const changeMessage = async (message: ChatMessage, action: "edit" | "delete", body: string, bodyRich?: RichTextDocument | null) => {
     const result = await api<MessageChange>(`/api/admin/leads/${id}/messages/${encodeURIComponent(message.id)}`, {
       method: action === "edit" ? "PATCH" : "DELETE",
-      json: action === "edit" ? { body, expectedBody: message.body } : { expectedBody: message.body },
+      json: action === "edit" ? { body, bodyRich: bodyRich ?? null, expectedBody: message.body, expectedChangeRevision: message.changeRevision } : { expectedBody: message.body, expectedChangeRevision: message.changeRevision },
     });
-    rememberMessageChanges(changes.current, result.deleted ? [] : [{ ...message, body: result.body, changeRevision: result.changeRevision }], result.deleted ? [result.id] : []);
+    rememberMessageChanges(changes.current, result.deleted ? [] : [{ ...message, body: result.body, bodyRich: result.bodyRich ?? null, changeRevision: result.changeRevision }], result.deleted ? [result.id] : []);
     setD(previous => previous && ({ ...previous, messages: reconcileMessageChanges(previous.messages, changes.current) }));
     setHistory(previous => previous && ({ ...previous, messages: reconcileMessageChanges(previous.messages, changes.current) }));
     window.dispatchEvent(new Event(ACTIVITY_EVENT));

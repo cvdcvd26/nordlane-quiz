@@ -12,7 +12,7 @@ async function change(req: Request, ctx: Context, action: "edit" | "delete") {
   const admin = await requireAdmin();
   await rateLimit(`admin-message-edit:${admin.id}`, 60, 60);
   const { id, messageId } = await ctx.params;
-  const input = await readJson(req);
+  const input = await readJson(req, 64 * 1024);
   try { return json(await changeAdminMessage(leadIdFrom(id), messageId, action, input)); }
   catch (error) {
     if (error instanceof AppError || error instanceof ZodError) throw error;

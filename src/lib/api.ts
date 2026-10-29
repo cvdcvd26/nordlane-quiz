@@ -1,6 +1,7 @@
 "use client";
 import { content } from "@/config/content";
 import { maintenanceEvent } from "@/config/maintenance";
+import type { RichTextDocument } from "@/lib/rich-text";
 
 function notifyMaintenance(status: number, code?: string) {
   if (status === 503 && code === "maintenance" && typeof window !== "undefined") window.dispatchEvent(new Event(maintenanceEvent));
@@ -102,6 +103,7 @@ export type ChatMessage = {
   sequence?: string;
   sender: "visitor" | "admin" | "system";
   body: string;
+  bodyRich?: RichTextDocument | null;
   createdAt: string;
   clientMessageId: string;
   changeRevision?: number;
@@ -109,7 +111,7 @@ export type ChatMessage = {
 };
 
 export type MessageChanges = { updates: ChatMessage[]; deletedIds: string[]; cursor: string; hasMore: boolean };
-export type MessageChange = { id: string; body: string; changeRevision: number; deleted: boolean };
+export type MessageChange = { id: string; body: string; bodyRich?: RichTextDocument | null; changeRevision: number; deleted: boolean };
 
 export type MessagePage = {
   messages: ChatMessage[];

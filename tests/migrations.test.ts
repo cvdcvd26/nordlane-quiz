@@ -73,3 +73,23 @@ it("keeps existing rejected leads private when adding candidate result publicati
     await db.query("update leads set status='new', candidate_result_body=null, candidate_result_published_at=null where id=$1", [lead.id]);
   } finally { await db.close(); }
 });
+
+it("adds optional rich formatting without rewriting legacy messages or quick reply templates", async () => {
+  const db = new PGlite();
+  try {
+    const folder = path.join(__dirname, "../drizzle");
+    const journal = JSON.parse(await readFile(path.join(folder, "meta/_journal.json"), "utf8")) as { entries: { idx: number; tag: string }[] };
+    for (const migration of journal.entries.filter(entry => entry.idx < 13))
+      await db.exec(await readFile(path.join(folder, `${migration.tag}.sql`), "utf8"));
+    const { rows: [session] } = await db.query<{ id: string }>("insert into visitor_sessions(token_hash) values ('legacy-rich-chat') returning id");
+    const { rows: [conversation] } = await db.query<{ id: string }>("insert into conversations(session_id) values ($1) returning id", [session.id]);
+    const { rows: [message] } = await db.query<{ id: string }>("insert into messages(conversation_id,sender,body,client_message_id) values ($1,'admin','Old https://example.test/#anchor','legacy-rich-message') returning id", [conversation.id]);
+    const templates = { revision: null, replies: [{ id: "legacy", title: "Old template", body: "Old plain reply" }] };
+    await db.query("insert into app_settings(key,value) values ('admin.quick_replies.v1',$1::jsonb)", [JSON.stringify(templates)]);
+    await db.exec(await readFile(path.join(folder, "0013_rich_message_content.sql"), "utf8"));
+    const { rows: [stored] } = await db.query<{ body: string; body_rich: unknown }>("select body,body_rich from messages where id=$1", [message.id]);
+    expect(stored).toEqual({ body: "Old https://example.test/#anchor", body_rich: null });
+    const { rows: [saved] } = await db.query<{ value: unknown }>("select value from app_settings where key='admin.quick_replies.v1'");
+    expect(saved.value).toEqual(templates);
+  } finally { await db.close(); }
+});

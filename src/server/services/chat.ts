@@ -14,6 +14,7 @@ import { deliverOverdue } from "./delivery";
 import { lockVisitor } from "../session-lock";
 import { getSessionManager } from "./managers";
 import { assertVisitorChatOpen, getSessionOutcome } from "./candidate-outcome";
+import { richTextSchema, type RichTextDocument } from "@/lib/rich-text";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -22,6 +23,7 @@ export type ChatMessage = {
   sequence: string;
   sender: "visitor" | "admin" | "system";
   body: string;
+  bodyRich: RichTextDocument | null;
   createdAt: string;
   clientMessageId: string;
   changeRevision: number;
@@ -33,6 +35,9 @@ export const messageSchema = z.object({
   body: z.string().max(chatConfig.maxMessageLength, content.errors.messageTooLong).default(""),
   fileIds: z.array(z.string().uuid()).max(uploadConfig.maxFilesPerMessage).default([]),
 });
+
+/** Visitors keep a plain-text composer; rich formatting is accepted only on admin routes. */
+export const adminMessageSchema = messageSchema.extend({ bodyRich: richTextSchema.nullable().optional() });
 
 export async function getConversationBySession(sessionId: string) {
   const [c] = await db()
@@ -88,6 +93,7 @@ async function hydrateMessages(rows: (typeof schema.messages.$inferSelect)[]): P
     sequence: m.sequence.toString(),
     sender: m.sender,
     body: m.body,
+    bodyRich: m.bodyRich,
     createdAt: m.createdAt.toISOString(),
     clientMessageId: m.clientMessageId,
     changeRevision: m.changeRevision,

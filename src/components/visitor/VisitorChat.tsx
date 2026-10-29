@@ -50,7 +50,8 @@ export function VisitorChat({ onOutcome, closed = false }: { onOutcome?: (outcom
     }
     const fresh = incoming.filter((m) => !known.current!.has(m.id));
     fresh.forEach((m) => known.current!.add(m.id));
-    if (!silent && soundOn.current && fresh.some((m) => m.sender !== "visitor")) playChime("message");
+    // The revision panel sounds its own notice; its optional chat copy must not chime again.
+    if (!silent && soundOn.current && fresh.some((m) => m.sender !== "visitor" && !m.clientMessageId.startsWith("revision-request:"))) playChime("message");
   }, []);
 
   const merge = useCallback((incoming: ChatMessage[]) => {

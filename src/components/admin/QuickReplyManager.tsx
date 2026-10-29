@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, type FormEvent } from "react";
+import dynamic from "next/dynamic";
 import { Plus, Trash2 } from "lucide-react";
 import { inboxCopy } from "@/config/admin-inbox";
 import { QUICK_REPLY_LIMITS, quickRepliesSchema, type QuickReplies } from "@/lib/quick-replies";
@@ -7,6 +8,9 @@ import { api, ApiError, newId } from "@/lib/api";
 import { ErrorState } from "./ui";
 import { useAdminI18n } from "./i18n";
 import { toast } from "./toast";
+import { normalizeRichTextContent } from "@/lib/rich-text";
+import type { RichTextValue } from "@/lib/rich-text-editor";
+const RichTextEditor = dynamic(() => import("./RichTextEditor"), { ssr: false });
 
 export default function QuickReplyManager() {
   const { lang, err: tErr } = useAdminI18n();
@@ -26,16 +30,21 @@ export default function QuickReplyManager() {
     return () => controller.abort();
   }, [reload, tErr]);
 
-  const change = (id: string, field: "title" | "body", value: string) => {
+  const change = (id: string, field: "title", value: string) => {
     setData(current => current && ({ ...current, replies: current.replies.map(reply => reply.id === id ? { ...reply, [field]: value } : reply) }));
   };
+  const changeBody = (id: string, value: RichTextValue) => setData(current => current && ({ ...current, replies: current.replies.map(reply => reply.id === id ? { ...reply, ...value } : reply) }));
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (!data || busy) return;
-    if (!quickRepliesSchema.safeParse(data.replies).success) { setError(T.invalid); return; }
+    let next: QuickReplies;
+    try {
+      next = { ...data, replies: data.replies.map(reply => ({ ...reply, ...normalizeRichTextContent(reply.body, reply.bodyRich, QUICK_REPLY_LIMITS.body) })) };
+      if (!quickRepliesSchema.safeParse(next.replies).success) { setError(T.invalid); return; }
+    } catch { setError(T.invalid); return; }
     setBusy(true); setError(null);
     try {
-      const value = await api<QuickReplies>("/api/admin/quick-replies", { method: "PUT", json: data });
+      const value = await api<QuickReplies>("/api/admin/quick-replies", { method: "PUT", json: next });
       setData(value); setSaved(JSON.stringify(value.replies));
       toast({ kind: "success", title: T.saved });
     } catch (error) {
@@ -68,7 +77,7 @@ export default function QuickReplyManager() {
                 <label htmlFor={`quick-title-${reply.id}`} className="adm-label">{T.name}</label>
                 <input id={`quick-title-${reply.id}`} className="adm-input mt-1.5 max-w-lg" value={reply.title} onChange={event => change(reply.id, "title", event.target.value)} maxLength={QUICK_REPLY_LIMITS.title} required />
                 <label htmlFor={`quick-body-${reply.id}`} className="adm-label mt-3">{T.body}</label>
-                <textarea id={`quick-body-${reply.id}`} lang="pl" className="adm-input mt-1.5 min-h-24" value={reply.body} onChange={event => change(reply.id, "body", event.target.value)} maxLength={QUICK_REPLY_LIMITS.body} required />
+                <div className="mt-1.5"><RichTextEditor id={`quick-body-${reply.id}`} label={T.body} value={{ body: reply.body, bodyRich: reply.bodyRich ?? null }} onChange={value => changeBody(reply.id, value)} uiLang={lang} disabled={busy} maxLength={QUICK_REPLY_LIMITS.body} /></div>
               </div>
             ))}
             <button type="button" className="adm-btn" onClick={add} disabled={data.replies.length >= QUICK_REPLY_LIMITS.count}>

@@ -18,7 +18,8 @@ import { displayPhone, validateContact, type ContactDraft, type ContactErrors } 
 import { SubmissionConfirmation, SubmissionFilesSummary } from "./SubmissionConfirmation";
 import { CandidateOutcomeCard } from "./CandidateOutcomeCard";
 import { VisitorTelemetry } from "./VisitorTelemetry";
-import { TaskRevisionPanel } from "./TaskRevisionPanel";
+import { TaskRevisionNotice, TaskRevisionPanel } from "./TaskRevisionPanel";
+import type { TaskRevision } from "@/config/task-revisions";
 
 type SessionState = {
   answers: Record<string, string>;
@@ -56,6 +57,7 @@ const readIdem = () => {
 export function QuizApp() {
   const [state, setState] = useState<SessionState | null>(null);
   const [outcome, setOutcome] = useState<CandidateOutcome | null>(null);
+  const [activeRevision, setActiveRevision] = useState<TaskRevision | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [step, setStep] = useState<Step>(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -341,6 +343,7 @@ export function QuizApp() {
 
           {state && step === 3 && (
             <section className="step-enter space-y-6" aria-labelledby="done-title">
+              {!outcome && <TaskRevisionNotice revision={activeRevision} />}
               <div aria-live="polite" aria-atomic="true">
                 {outcome ? (
                   <CandidateOutcomeCard title={outcome.title} body={outcome.body} as="h1" id="done-title" live={false}>
@@ -350,7 +353,7 @@ export function QuizApp() {
                   <SubmissionConfirmation fileCount={items.filter((item) => item.status === "done" && item.serverId).length} />
                 )}
               </div>
-              <TaskRevisionPanel closed={Boolean(outcome)} />
+              <TaskRevisionPanel closed={Boolean(outcome)} onRevisionChange={setActiveRevision} />
               <div hidden={Boolean(outcome)} className="reveal" style={{ "--i": 2 } as React.CSSProperties}>
                 <VisitorChat onOutcome={setOutcome} closed={Boolean(outcome)} />
               </div>

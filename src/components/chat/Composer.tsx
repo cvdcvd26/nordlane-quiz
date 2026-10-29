@@ -1,9 +1,14 @@
 "use client";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { content } from "@/config/content";
 import { api, formatBytes, uploadWithProgress, type PublicFile } from "@/lib/api";
 import type { QuickReply } from "@/lib/quick-replies";
+import { normalizeRichTextContent, richTextSchema, type RichTextDocument } from "@/lib/rich-text";
+import { appendRichTextTemplate } from "@/lib/rich-text-editor";
+import type { RichTextEditorHandle } from "@/components/admin/RichTextEditor";
+const RichTextEditor = dynamic(() => import("@/components/admin/RichTextEditor"), { ssr: false });
 
 type Attachment = { key: string; name: string; size: number; status: "uploading" | "done" | "error"; file?: PublicFile; error?: string };
 
@@ -24,8 +29,9 @@ export function Composer({
   appearance = "visitor",
   quickReplies,
   onDirtyChange,
+  uiLang = "pl",
 }: {
-  onSend: (body: string, files: PublicFile[]) => void | Promise<void>;
+  onSend: (body: string, files: PublicFile[], bodyRich?: RichTextDocument | null) => void | Promise<void>;
   uploadUrl: string;
   uploadPurpose?: "chat";
   accept: string[];
@@ -38,9 +44,12 @@ export function Composer({
   appearance?: "visitor" | "admin";
   quickReplies?: { items: QuickReply[]; label: string; select: string; hint: string; manage: string; empty: string; tooLong: string };
   onDirtyChange?: (dirty: boolean) => void;
+  uiLang?: "pl" | "ru" | "en";
 }) {
   const adm = appearance === "admin";
   const [text, setText] = useState("");
+  const [bodyRich, setBodyRich] = useState<RichTextDocument | null>(null);
+  const richEditor = useRef<RichTextEditorHandle>(null);
   const [files, setFiles] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
   const [templateError, setTemplateError] = useState(false);
@@ -58,16 +67,17 @@ export function Composer({
   const insertReply = (id: string) => {
     const reply = quickReplies?.items.find(item => item.id === id);
     if (!reply || busyRef.current) return;
-    const next = text.trim() ? `${text.trimEnd()}\n\n${reply.body}` : reply.body;
-    if (next.length > 4000) { setTemplateError(true); return; }
-    setText(next); setTemplateError(false);
+    const next = appendRichTextTemplate({ body: text, bodyRich }, { body: reply.body, bodyRich: reply.bodyRich ?? null });
+    if (next.body.length > 4000 || (next.bodyRich && !richTextSchema.safeParse(next.bodyRich).success)) { setTemplateError(true); return; }
+    setText(next.body); setBodyRich(next.bodyRich); setTemplateError(false);
     requestAnimationFrame(() => {
+      if (adm) { richEditor.current?.focusEnd(); return; }
       const element = area.current;
       if (!element) return;
       element.style.height = "auto";
       element.style.height = `${Math.min(element.scrollHeight, 180)}px`;
       element.focus();
-      element.setSelectionRange(next.length, next.length);
+      element.setSelectionRange(next.body.length, next.body.length);
     });
   };
 
@@ -76,10 +86,13 @@ export function Composer({
     busyRef.current = true;
     setBusy(true);
     try {
-      await onSend(text.trim(), ready);
+      const value = adm ? normalizeRichTextContent(text, bodyRich, 4000) : { body: text.trim(), bodyRich: null };
+      await onSend(value.body, ready, adm ? value.bodyRich : undefined);
       setText("");
+      setBodyRich(null);
       setFiles([]);
-      area.current?.focus();
+      if (adm) richEditor.current?.focus();
+      else area.current?.focus();
     } catch {
       // Text stays in the field; the parent shows the error.
     } finally {
@@ -199,7 +212,7 @@ export function Composer({
         <label className="sr-only" htmlFor="composer">
           {placeholder}
         </label>
-        <textarea
+        {adm ? <RichTextEditor id="composer" label={placeholder} value={{ body: text, bodyRich }} onChange={value => { setText(value.body); setBodyRich(value.bodyRich); setTemplateError(false); }} uiLang={uiLang} maxLength={4000} disabled={busy} placeholder={placeholder} compact editorRef={richEditor} onSubmit={() => { void send(); }} /> : <textarea
           id="composer"
           ref={area}
           disabled={busy}
@@ -222,7 +235,7 @@ export function Composer({
           className={`max-h-44 flex-1 resize-none bg-transparent px-2 outline-none ${
             adm ? "min-h-9 py-2 text-[13.5px] placeholder:text-adm-ink-3" : "min-h-11 py-2.5 placeholder:text-slate"
           }`}
-        />
+        />}
         <button type="button" className={adm ? "adm-btn adm-btn-primary h-9 shrink-0 px-4" : "btn btn-primary h-11 min-h-0 shrink-0 px-5"} onClick={send} disabled={!canSend}>
           {labels.send}
         </button>

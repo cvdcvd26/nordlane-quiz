@@ -92,6 +92,13 @@
       "when": 1793196198422,
       "tag": "0012_lead_results",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793293736839,
+      "tag": "0013_rich_message_content",
+      "breakpoints": true
     }
   ]
 }

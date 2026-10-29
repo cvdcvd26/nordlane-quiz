@@ -1,10 +1,12 @@
 import { lockVisitor } from "../session-lock";
+import { isDeepStrictEqual } from "node:util";
 import { and, asc, desc, eq, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { badRequest, conflict, notFound } from "../errors";
 import { LEAD_STATUSES, QUESTION_KEYS, content } from "@/config/content";
-import { loadMessages, loadMessagePage, loadMessageChanges, attachFiles, messageSchema } from "./chat";
+import { loadMessages, loadMessagePage, loadMessageChanges, attachFiles, adminMessageSchema } from "./chat";
+import { normalizeRichTextContent } from "@/lib/rich-text";
 import { toPublicFile } from "./uploads";
 import { touchConversation } from "./conversation";
 import { ensureConversation } from "./leads";
@@ -279,8 +281,8 @@ export async function addLeadNote(leadId: number, input: unknown) {
 
 /** Admin reply: goes into the same conversation the visitor sees. Idempotent by clientMessageId. */
 export async function postAdminMessage(leadId: number, input: unknown) {
-  const { clientMessageId, body, fileIds } = messageSchema.parse(input);
-  const text = body.trim();
+  const { clientMessageId, body, bodyRich, fileIds } = adminMessageSchema.parse(input);
+  const { body: text, bodyRich: formatted } = normalizeRichTextContent(body, bodyRich);
   if (!text && fileIds.length === 0) throw badRequest(content.errors.messageEmpty);
   const lead = await findLead(leadId);
   // A lead may exist before the task is sent; the conversation is created on the first reply.
@@ -291,10 +293,17 @@ export async function postAdminMessage(leadId: number, input: unknown) {
     await lockVisitor(tx, lead.sessionId);
     const [inserted] = await tx
       .insert(schema.messages)
-      .values({ conversationId: conv.id, sender: "admin", body: text, clientMessageId, createdAt: now })
+      .values({ conversationId: conv.id, sender: "admin", body: text, bodyRich: formatted, clientMessageId, createdAt: now })
       .onConflictDoNothing()
       .returning();
-    if (!inserted) return;
+    if (!inserted) {
+      const [existing] = await tx.select().from(schema.messages).where(and(eq(schema.messages.conversationId, conv.id), eq(schema.messages.clientMessageId, clientMessageId)));
+      // A later edit/tombstone wins over a delayed retry of the original send.
+      if (existing?.deletedAt || (existing?.changeRevision ?? 0) > 0) return;
+      if (!existing || existing.sender !== "admin" || existing.body !== text || !isDeepStrictEqual(existing.bodyRich, formatted))
+        throw conflict("This message ID was already used for different content.", "message_changed");
+      return;
+    }
     await attachFiles(tx, { fileIds, sessionId: lead.sessionId, messageId: inserted.id, uploadedBy: "admin" });
     await touchConversation(tx, conv.id, now);
   });

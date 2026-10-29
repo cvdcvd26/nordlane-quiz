@@ -520,7 +520,7 @@ export const content = {
       new: "Nowy",
       in_progress: "W trakcie",
       awaiting_reply: "Czeka na odpowiedź",
-      completed: "Zakończony",
+      completed: "Obsługa zakończona",
       rejected: "Nie zakwalifikowano",
     },
     answers: { yes: "Tak", no: "Nie" } as Record<string, string>,

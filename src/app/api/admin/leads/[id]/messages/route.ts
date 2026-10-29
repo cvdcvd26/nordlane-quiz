@@ -4,6 +4,8 @@ import { postAdminMessage, getLeadSessionId } from "@/server/services/admin";
 import { getConversationBySession, loadMessagePage, loadMessageChanges, messageQuerySchema } from "@/server/services/chat";
 import { rateLimit } from "@/server/rate-limit";
 import { leadIdFrom } from "../../lead-id";
+import { AppError } from "@/server/errors";
+import { ZodError } from "zod";
 
 export const GET = route("admin.messages", async (req: Request, ctx: RouteContext<"/api/admin/leads/[id]/messages">) => {
   await requireAdmin();
@@ -20,6 +22,13 @@ export const POST = route("admin.message", async (req: Request, ctx: RouteContex
   assertSameOrigin(req);
   const admin = await requireAdmin();
   await rateLimit(`admin-msg:${admin.id}`, 60, 60);
-  const messages = await postAdminMessage(leadIdFrom((await ctx.params).id), await readJson(req));
-  return json({ messages }, 201);
+  const input = await readJson(req, 64 * 1024);
+  try {
+    const messages = await postAdminMessage(leadIdFrom((await ctx.params).id), input);
+    return json({ messages }, 201);
+  } catch (error) {
+    if (error instanceof AppError || error instanceof ZodError) throw error;
+    console.warn("messages.send_failed");
+    throw new AppError(500, "message_send_failed", "The message could not be sent. Please try again.");
+  }
 });

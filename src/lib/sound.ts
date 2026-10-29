@@ -40,6 +40,8 @@ export function bindAudioUnlock() {
 }
 
 const KEY_PREFIX = "nl-sound-";
+export const SOUND_PREFERENCE_EVENT = "alleybiz:sound-preference";
+export type SoundPreferenceChange = { scope: "visitor" | "admin"; on: boolean };
 
 export function isSoundEnabled(scope: "visitor" | "admin") {
   if (scope === "visitor" && !readCookieConsent()?.preferences) {
@@ -54,6 +56,8 @@ export function isSoundEnabled(scope: "visitor" | "admin") {
 }
 
 export function setSoundEnabled(scope: "visitor" | "admin", on: boolean) {
+  // Keep listeners on this page in sync even when optional preference storage is off.
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent<SoundPreferenceChange>(SOUND_PREFERENCE_EVENT, { detail: { scope, on } }));
   // Sound itself still works with necessary-only cookies; only remembering the choice is optional.
   if (scope === "visitor" && !readCookieConsent()?.preferences) {
     clearVisitorSoundPreference();
@@ -69,14 +73,14 @@ export function setSoundEnabled(scope: "visitor" | "admin", on: boolean) {
 let lastPlayed = 0;
 
 /** Two soft rising tones. Throttled so a burst of messages plays one chime. */
-export function playChime(kind: "message" | "lead" = "message") {
+export function playChime(kind: "message" | "lead" | "revision" = "message") {
   const now = Date.now();
   if (now - lastPlayed < 800) return;
   const c = context();
   if (!c || c.state !== "running") return;
   lastPlayed = now;
 
-  const notes = kind === "lead" ? [659.25, 880, 1174.66] : [880, 1318.51];
+  const notes = kind === "lead" ? [659.25, 880, 1174.66] : kind === "revision" ? [698.46, 880] : [880, 1318.51];
   const t0 = c.currentTime + 0.01;
   notes.forEach((freq, i) => {
     const start = t0 + i * 0.11;
@@ -85,7 +89,7 @@ export function playChime(kind: "message" | "lead" = "message") {
     osc.type = "sine";
     osc.frequency.value = freq;
     gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(0.18, start + 0.015);
+    gain.gain.exponentialRampToValueAtTime(kind === "revision" ? 0.12 : 0.18, start + 0.015);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.42);
     osc.connect(gain).connect(c.destination);
     osc.start(start);

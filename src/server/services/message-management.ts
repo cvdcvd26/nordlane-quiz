@@ -1,4 +1,5 @@
 import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { chatConfig } from "@/config/settings";
@@ -6,10 +7,16 @@ import { badRequest, conflict, forbidden, notFound } from "../errors";
 import { lockVisitor } from "../session-lock";
 import { storage } from "../storage";
 import { refreshLeadStats } from "./conversation";
+import { normalizeRichTextContent, richTextSchema, type RichTextDocument } from "@/lib/rich-text";
 
 const text = z.string().max(chatConfig.maxMessageLength);
-export const editMessageSchema = z.object({ body: text, expectedBody: text }).strict();
-export const deleteMessageSchema = z.object({ expectedBody: text }).strict();
+const expectedChangeRevision = z.number().int().min(0).max(2147483647).optional();
+export const editMessageSchema = z.object({ body: text, bodyRich: richTextSchema.nullable().optional(), expectedBody: text, expectedChangeRevision }).strict();
+export const deleteMessageSchema = z.object({ expectedBody: text, expectedChangeRevision }).strict();
+
+function sameFormatting(a: RichTextDocument | null, b: RichTextDocument | null) {
+  return isDeepStrictEqual(a, b);
+}
 
 async function purgeFile(file: { id: string; storageKey: string }) {
   try {
@@ -49,22 +56,29 @@ export async function changeAdminMessage(leadId: number, messageId: string, acti
     const files = await tx.select({ id: schema.files.id, storageKey: schema.files.storageKey }).from(schema.files).where(eq(schema.files.messageId, messageId));
     if (message.deletedAt) {
       if (action === "edit") throw conflict("The message changed. Reload the conversation.", "message_changed");
-      return { id: message.id, body: "", changeRevision: message.changeRevision, deleted: true, files };
+      return { id: message.id, body: "", bodyRich: null, changeRevision: message.changeRevision, deleted: true, files };
     }
-    const body = action === "edit" ? editMessageSchema.parse(parsed).body.trim() : "";
+    const edit = action === "edit" ? editMessageSchema.parse(parsed) : null;
+    const next = edit ? normalizeRichTextContent(edit.body, edit.bodyRich) : { body: "", bodyRich: null };
+    const { body, bodyRich } = next;
     if (action === "edit" && !body && !files.length) throw badRequest("A message must contain text or an attachment.", "message_empty");
     // A retry of an already successful edit must not create a second change.
-    if (action === "edit" && body === message.body) return { id: message.id, body, changeRevision: message.changeRevision, deleted: false, files: [] };
-    if (parsed.expectedBody !== message.body) throw conflict("The message changed. Reload the conversation.", "message_changed");
+    if (action === "edit" && body === message.body && sameFormatting(bodyRich, message.bodyRich))
+      return { id: message.id, body, bodyRich, changeRevision: message.changeRevision, deleted: false, files: [] };
+    // Cached plain-text clients cannot see mark-only changes. Require the revision before
+    // they can overwrite or delete a formatted message, while legacy plain messages stay editable.
+    if (parsed.expectedBody !== message.body || (message.bodyRich !== null && parsed.expectedChangeRevision === undefined)
+      || (parsed.expectedChangeRevision !== undefined && parsed.expectedChangeRevision !== message.changeRevision))
+      throw conflict("The message changed. Reload the conversation.", "message_changed");
     const [updated] = await tx.update(schema.conversations).set({ messageRevision: sql`${schema.conversations.messageRevision} + 1` })
       .where(eq(schema.conversations.id, conversation.id)).returning({ revision: schema.conversations.messageRevision });
-    await tx.update(schema.messages).set({ body, changeRevision: updated.revision, deletedAt: action === "delete" ? new Date() : null })
+    await tx.update(schema.messages).set({ body, bodyRich, changeRevision: updated.revision, deletedAt: action === "delete" ? new Date() : null })
       .where(eq(schema.messages.id, messageId));
     if (action === "delete") await tx.update(schema.conversations).set({ lastMessageAt: sql`(select max(m.created_at) from messages m where m.conversation_id = ${conversation.id} and m.deleted_at is null)` })
       .where(eq(schema.conversations.id, conversation.id));
     await refreshLeadStats(tx, leadId, conversation.id);
-    return { id: message.id, body, changeRevision: updated.revision, deleted: action === "delete", files: action === "delete" ? files : [] };
+    return { id: message.id, body, bodyRich, changeRevision: updated.revision, deleted: action === "delete", files: action === "delete" ? files : [] };
   });
   for (const file of result.files) await purgeFile(file);
-  return { id: result.id, body: result.body, changeRevision: result.changeRevision, deleted: result.deleted };
+  return { id: result.id, body: result.body, bodyRich: result.bodyRich, changeRevision: result.changeRevision, deleted: result.deleted };
 }

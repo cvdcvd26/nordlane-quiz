@@ -347,6 +347,75 @@ html:has(.adm) body::before {
   color-scheme: dark;
 }
 
+/* Admin-only inline message editing. Visitor chat loads no editor runtime. */
+.adm .adm-rich-text {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-adm-line-strong);
+  border-radius: 8px;
+  background: var(--color-adm-surface);
+}
+.adm .adm-rich-text:focus-within { border-color: var(--color-adm-accent); }
+.adm .adm-rich-text[data-disabled="true"] { opacity: .65; }
+.adm .adm-rich-text-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 6px;
+  border-bottom: 1px solid var(--color-adm-line);
+  background: color-mix(in srgb, var(--color-adm-subtle) 55%, transparent);
+}
+.adm .adm-rich-text-toolbar button {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: var(--color-adm-ink-2);
+}
+.adm .adm-rich-text-toolbar button:hover:not(:disabled) { background: var(--color-adm-subtle); color: var(--color-adm-ink); }
+.adm .adm-rich-text-toolbar button[aria-pressed="true"] { background: var(--color-adm-accent-soft); color: var(--color-adm-accent); }
+.adm .adm-rich-text-toolbar button:disabled { opacity: .35; cursor: default; }
+.adm .adm-rich-text-input {
+  position: relative;
+  min-height: 96px;
+  max-height: 280px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  padding: 11px 12px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  outline: none;
+  white-space: pre-wrap;
+}
+.adm .adm-rich-text-input:focus-visible { outline: none; }
+.adm .adm-rich-text-input:has(> p:only-child > br.ProseMirror-trailingBreak:only-child)::before { content: attr(data-placeholder); position: absolute; inset: 11px 12px auto; color: var(--color-adm-ink-3); pointer-events: none; }
+.adm .adm-rich-text-input p { margin: 0; min-height: 1.6em; }
+.adm .adm-rich-text-input strong { font-weight: 700; }
+.adm .adm-rich-text-input em { font-style: italic; }
+.adm .adm-rich-text-input u { text-decoration: underline; text-underline-offset: 3px; }
+.adm .adm-rich-text-input a { color: var(--color-adm-accent); text-decoration: underline; text-underline-offset: 3px; }
+.adm .adm-rich-text-compact { flex: 1; border: 0; border-radius: 5px; }
+.adm .adm-rich-text-compact .adm-rich-text-input { min-height: 42px; max-height: 176px; padding: 8px; }
+.adm .adm-rich-text-compact .adm-rich-text-input::before { top: 8px; right: 8px; left: 8px; }
+.adm .adm-rich-text-help { display: flex; justify-content: space-between; gap: 12px; padding: 5px 9px 7px; color: var(--color-adm-ink-3); font-size: 11px; line-height: 1.45; }
+.adm .adm-rich-text-help > :last-child { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.adm .adm-rich-text-loading { min-height: 96px; padding: 12px; color: var(--color-adm-ink-3); font-size: 13px; }
+.adm .adm-rich-link-dialog {
+  margin: auto;
+  width: min(92vw, 440px);
+  max-height: 88dvh;
+  overflow: auto;
+  border: 1px solid var(--color-adm-line-strong);
+  border-radius: 12px;
+  padding: 0;
+  background: var(--color-adm-surface);
+  color: var(--color-adm-ink);
+  box-shadow: 0 20px 70px #0005;
+}
+.adm .adm-rich-link-dialog::backdrop { background: #0007; }
+
 /* Bridge the few existing inline feedback/filter styles to semantic admin colors. */
 .adm .bg-adm-ink.text-white {
   color: var(--color-adm-bg);
