@@ -10,6 +10,7 @@ import { uploadConfig } from "@/config/settings";
 import { content } from "@/config/content";
 import { assertVisitorChatOpen } from "./candidate-outcome";
 import { revisionFilePrefix, revisionIdForFileKey } from "@/config/task-revisions";
+import { requireVisitorChatAccess } from "./visitor-chat-access";
 
 export type PublicFile = { id: string; name: string; mime: string; size: number; url: string };
 
@@ -41,6 +42,7 @@ export async function uploadFile({ sessionId, purpose, uploadedBy, file }: Uploa
     // database lock across the external upload; the final transaction checks again.
     await db().transaction(async (tx) => {
       await lockVisitor(tx, sessionId);
+      await requireVisitorChatAccess(tx, sessionId);
       await assertVisitorChatOpen(tx, sessionId);
     });
   }
@@ -52,7 +54,10 @@ export async function uploadFile({ sessionId, purpose, uploadedBy, file }: Uploa
   try {
     return await db().transaction(async (tx) => {
       await lockVisitor(tx, sessionId);
-      if (visitorChatUpload) await assertVisitorChatOpen(tx, sessionId);
+      if (visitorChatUpload) {
+        await requireVisitorChatAccess(tx, sessionId);
+        await assertVisitorChatOpen(tx, sessionId);
+      }
       if (purpose === "submission") {
         const [sub] = await tx
           .select({ id: schema.taskSubmissions.id })

@@ -11,7 +11,7 @@ import { Backdrop } from "../visual/Backdrop";
 import { HalloweenSeason } from "../visual/HalloweenSeason";
 import { StepContact } from "./StepContact";
 import { StepQuestions } from "./StepQuestions";
-import { StepTask } from "./StepTask";
+import { StepTaskOverview, StepTaskSubmission } from "./StepTask";
 import { VisitorChat } from "./VisitorChat";
 import { fromServer, type UploadItem } from "./Uploader";
 import { displayPhone, validateContact, type ContactDraft, type ContactErrors } from "./ContactFields";
@@ -58,6 +58,7 @@ export function QuizApp() {
   const [state, setState] = useState<SessionState | null>(null);
   const [outcome, setOutcome] = useState<CandidateOutcome | null>(null);
   const [activeRevision, setActiveRevision] = useState<TaskRevision | null>(null);
+  const [chatUnlocked, setChatUnlocked] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [step, setStep] = useState<Step>(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -125,6 +126,7 @@ export function QuizApp() {
       api<SessionState>("/api/session")
         .then((s) => {
           setState(s);
+          setChatUnlocked(Boolean(s.submission || (s.contact && allAnswered(s.answers))));
           setOutcome(s.outcome);
           setAnswers(s.answers);
           answersRef.current = s.answers;
@@ -172,6 +174,7 @@ export function QuizApp() {
       await api("/api/quiz/answer", { method: "PUT", json: { questionKey, answer: value } });
       // The last missing answer just arrived: move on to the task automatically.
       answersRef.current = next;
+      if (allAnswered(next)) setChatUnlocked(true);
       if (progress.current) progress.current.questionsComplete = allAnswered(next);
       if (startedAtNavigation === navigationRevision.current && !allAnswered(previous) && allAnswered(next)) {
         clearTimeout(autoTimer.current);
@@ -326,20 +329,7 @@ export function QuizApp() {
             />
           )}
 
-          {state && step === 2 && (
-            <StepTask
-              items={items}
-              setItems={setItems}
-              limits={state.limits}
-              submitting={submitting}
-              error={submitError}
-              review={review}
-              onReviewChange={setReview}
-              reviewError={reviewError}
-              onBack={() => goTo(1)}
-              onSubmit={submit}
-            />
-          )}
+          {state && step === 2 && <StepTaskOverview />}
 
           {state && step === 3 && (
             <section className="step-enter space-y-6" aria-labelledby="done-title">
@@ -354,11 +344,23 @@ export function QuizApp() {
                 )}
               </div>
               <TaskRevisionPanel closed={Boolean(outcome)} onRevisionChange={setActiveRevision} />
-              <div hidden={Boolean(outcome)} className="reveal" style={{ "--i": 2 } as React.CSSProperties}>
-                <VisitorChat onOutcome={setOutcome} closed={Boolean(outcome)} />
-              </div>
             </section>
           )}
+          {state && chatUnlocked && <div hidden={step < 2 || Boolean(outcome)} className="mt-6">
+            <VisitorChat onOutcome={setOutcome} closed={Boolean(outcome)} collapsible={step !== 3} active={step >= 2} />
+          </div>}
+          {state && step === 2 && <StepTaskSubmission
+            items={items}
+            setItems={setItems}
+            limits={state.limits}
+            submitting={submitting}
+            error={submitError}
+            review={review}
+            onReviewChange={setReview}
+            reviewError={reviewError}
+            onBack={() => goTo(1)}
+            onSubmit={submit}
+          />}
         </main>
       </div>
     </div>

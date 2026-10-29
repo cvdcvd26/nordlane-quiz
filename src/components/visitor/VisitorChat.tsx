@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronDown, MessageCircle, X } from "lucide-react";
 import { content } from "@/config/content";
 import type { ManagerProfile } from "@/config/managers";
 import type { CandidateOutcome } from "@/config/candidate-outcome";
@@ -9,6 +10,7 @@ import { mergeMessages, reconcileMessageChanges, rememberMessageChanges } from "
 import { MessageList, type LocalMessage } from "../chat/MessageList";
 import { Composer } from "../chat/Composer";
 import { SoundToggle } from "../ui/SoundToggle";
+import { ManagerAvatar } from "../chat/ManagerAvatar";
 import { playChime } from "@/lib/sound";
 
 type ChatResponse = MessagePage & { attachmentsEnabled: boolean; manager: ManagerProfile; outcome: CandidateOutcome | null; changes: MessageChanges };
@@ -17,7 +19,26 @@ type ChatResponse = MessagePage & { attachmentsEnabled: boolean; manager: Manage
  * Built-in chat. New messages arrive by polling every few seconds (paused while the tab is hidden).
  * Sending is idempotent: a retry after a network error reuses the same clientMessageId.
  */
-export function VisitorChat({ onOutcome, closed = false }: { onOutcome?: (outcome: CandidateOutcome | null) => void; closed?: boolean }) {
+export function VisitorChat({ onOutcome, closed = false, collapsible = false, active = true }: {
+  onOutcome?: (outcome: CandidateOutcome | null) => void;
+  closed?: boolean;
+  collapsible?: boolean;
+  active?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [unread, setUnread] = useState(0);
+  const open = !collapsible || expanded;
+  const activeRef = useRef(active);
+  const openRef = useRef(active && open);
+  const launcher = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  useEffect(() => { activeRef.current = active; }, [active]);
+  useEffect(() => {
+    openRef.current = active && open;
+    // A step transition can reveal the same conversation without clicking the launcher.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (active && open) setUnread(0);
+  }, [active, open]);
   const closedRef = useRef(closed);
   useEffect(() => {
     closedRef.current = closed;
@@ -51,7 +72,11 @@ export function VisitorChat({ onOutcome, closed = false }: { onOutcome?: (outcom
     const fresh = incoming.filter((m) => !known.current!.has(m.id));
     fresh.forEach((m) => known.current!.add(m.id));
     // The revision panel sounds its own notice; its optional chat copy must not chime again.
-    if (!silent && soundOn.current && fresh.some((m) => m.sender !== "visitor" && !m.clientMessageId.startsWith("revision-request:"))) playChime("message");
+    const replies = fresh.filter((m) => m.sender !== "visitor" && !m.clientMessageId.startsWith("revision-request:"));
+    if (!silent && replies.length) {
+      if (!openRef.current) setUnread(count => Math.min(99, count + replies.length));
+      if (soundOn.current) playChime("message");
+    }
   }, []);
 
   const merge = useCallback((incoming: ChatMessage[]) => {
@@ -62,7 +87,7 @@ export function VisitorChat({ onOutcome, closed = false }: { onOutcome?: (outcom
   }, []);
 
   const poll = useCallback(async () => {
-    if (polling.current) return;
+    if (polling.current || !activeRef.current) return;
     polling.current = true;
     try {
       let more = true;
@@ -76,12 +101,12 @@ export function VisitorChat({ onOutcome, closed = false }: { onOutcome?: (outcom
         setMessages(previous => reconcileMessageChanges(previous, changes.current));
         changesAfter.current = res.changes.cursor;
         closedRef.current = Boolean(res.outcome);
-        notify(reconcileMessageChanges(res.messages, changes.current), closedRef.current);
+        notify(reconcileMessageChanges(res.messages, changes.current), closedRef.current || !activeRef.current);
         merge(res.messages);
         if (initial) setBefore(res.hasMore ? res.previousCursor : null);
         // A send response must never advance this receive cursor.
         last.current = res.nextCursor ?? last.current;
-        more = res.changes.hasMore || (!initial && res.hasMore && res.messages.length > 0);
+        more = activeRef.current && (res.changes.hasMore || (!initial && res.hasMore && res.messages.length > 0));
         setAttachments(res.attachmentsEnabled);
         setManager(res.manager);
         outcomeCallback.current?.(res.outcome);
@@ -110,6 +135,7 @@ export function VisitorChat({ onOutcome, closed = false }: { onOutcome?: (outcom
   };
 
   useEffect(() => {
+    if (!active) return;
     void poll();
     let timer: ReturnType<typeof setInterval> | undefined;
     const startTimer = () => {
@@ -123,7 +149,7 @@ export function VisitorChat({ onOutcome, closed = false }: { onOutcome?: (outcom
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [poll]);
+  }, [poll, active]);
 
   const deliver = useCallback(
     async (m: LocalMessage) => {
@@ -177,32 +203,56 @@ export function VisitorChat({ onOutcome, closed = false }: { onOutcome?: (outcom
 
   const confirmed = new Set(messages.map((m) => m.clientMessageId));
   const all: LocalMessage[] = [...messages, ...pending.filter((m) => !confirmed.has(m.clientMessageId))];
+  const close = () => {
+    setExpanded(false);
+    requestAnimationFrame(() => launcher.current?.focus({ preventScroll: true }));
+  };
+  const toggle = () => {
+    if (open) { close(); return; }
+    setExpanded(true);
+    setUnread(0);
+    requestAnimationFrame(() => panel.current?.focus({ preventScroll: true }));
+  };
 
   // Keep polling while the chat is closed so a retracted result restores it without a reload.
   if (closed) return null;
 
   return (
-    <section aria-labelledby="chat-title" className="glass overflow-hidden rounded-(--radius-tile)">
+    <section aria-labelledby={collapsible ? "task-chat-title" : "chat-title"} className={`glass min-w-0 overflow-hidden rounded-(--radius-tile) ${collapsible ? "border-paint/30" : ""}`}>
+      {collapsible && <button ref={launcher} type="button" aria-expanded={open} aria-controls="visitor-chat-panel" onClick={toggle} className="flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-paint/5 sm:gap-4 sm:p-5">
+        <span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-xl border border-paint/25 bg-paint/10 text-cyan"><MessageCircle className="size-5" /></span>
+        <span className="min-w-0 flex-1">
+          <span id="task-chat-title" className="block text-sm font-semibold sm:text-base">{content.taskChat.title}</span>
+          <span className="mt-1 block text-xs leading-relaxed text-ink-soft">{all.length ? content.taskChat.hasMessages : content.taskChat.hint}</span>
+        </span>
+        {unread > 0 && !open && <span aria-label={content.taskChat.newMessages(unread)} className="grid min-w-6 shrink-0 place-items-center rounded-full bg-paint px-1.5 py-1 text-[11px] font-bold text-on-paint">{unread}</span>}
+        <span className="hidden shrink-0 text-xs font-semibold text-cyan sm:block">{open ? content.taskChat.close : content.taskChat.action}</span>
+        <ChevronDown aria-hidden="true" className={`size-4 shrink-0 text-cyan transition-transform motion-reduce:transition-none ${open ? "rotate-180" : ""}`} />
+      </button>}
+      <div id="visitor-chat-panel" ref={panel} hidden={!open} tabIndex={-1} onKeyDown={event => {
+        if (collapsible && event.key === "Escape" && !event.nativeEvent.isComposing) { event.stopPropagation(); close(); }
+      }}>
       <header className="flex items-center gap-3 border-b border-line px-5 py-4">
-        <span aria-hidden className={`size-2.5 rounded-full ${offline ? "bg-danger" : "bg-ok"}`} />
-        <div className="min-w-0">
-          <h2 id="chat-title" className="font-semibold">{content.chat.title}</h2>
+        {manager ? <ManagerAvatar manager={manager} size={38} /> : <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-paint/10 text-cyan"><MessageCircle className="size-4" /></span>}
+        <div className="min-w-0 flex-1">
+          <h2 id="chat-title" className="text-sm font-semibold">{manager?.name ?? content.chat.title}</h2>
           <p className="mt-1 text-[11px] leading-relaxed text-ink-soft">{content.chat.workingHours}</p>
         </div>
-        {offline && <span className="ml-auto text-xs text-danger">{content.chat.offline}</span>}
         <SoundToggle
           scope="visitor"
           labelOn={content.chat.soundOn}
           labelOff={content.chat.soundOff}
           onChange={(v) => (soundOn.current = v)}
-          className={offline ? "" : "ml-auto"}
+          className="shrink-0"
         />
+        {collapsible && <button type="button" onClick={close} className="grid size-9 shrink-0 place-items-center rounded-full border border-line text-ink-soft transition-colors hover:border-paint/40 hover:text-cyan" aria-label={content.taskChat.close}><X aria-hidden="true" className="size-4" /></button>}
       </header>
+      {offline && <p role="status" className="border-b border-line px-5 py-3 text-xs leading-relaxed text-danger">{content.chat.offline}</p>}
       <div className="max-h-[55vh] min-h-48 overflow-y-auto px-4 py-5 sm:px-5">
         {before && <button type="button" className="btn btn-ghost mb-4" disabled={loadingEarlier} onClick={() => void loadEarlier()}>{content.chat.loadEarlier}</button>}
         {historyError && <p role="alert" className="mb-3 text-sm text-danger">{historyError}</p>}
         {loaded ? (
-          <MessageList messages={all} viewer="visitor" manager={manager} onRetry={(m) => void deliver(m)} emptyText={content.chat.waiting} />
+          <MessageList messages={all} viewer="visitor" manager={manager} onRetry={(m) => void deliver(m)} emptyText={collapsible ? content.taskChat.waiting : content.chat.waiting} />
         ) : (
           <div className="space-y-3" aria-hidden>
             <div className="skeleton h-12 w-2/3 rounded-2xl" />
@@ -219,6 +269,7 @@ export function VisitorChat({ onOutcome, closed = false }: { onOutcome?: (outcom
           attachmentsEnabled={attachments}
           maxFiles={uploadConfig.maxFilesPerMessage}
         />
+      </div>
       </div>
     </section>
   );

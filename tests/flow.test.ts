@@ -289,7 +289,7 @@ describe("chat and leads", () => {
     await saveContact(sid, contact);
     const [lead] = await env.db.select().from(schema.leads).where(eq(schema.leads.sessionId, sid));
     await postAdminMessage(lead.id, { clientMessageId: randomUUID(), body: "Dzień dobry, jest Pan/Pani?" });
-    await expect(getVisitorChat(sid)).rejects.toThrow(); // chat opens after submission
+    await expect(getVisitorChat(sid)).rejects.toThrow(); // saved contact alone does not open the chat
     await answerAll(sid);
     const f = await uploadFile({ sessionId: sid, purpose: "submission", uploadedBy: "visitor", file: png() });
     await submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id], review: REVIEW });

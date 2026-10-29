@@ -222,6 +222,16 @@ export const content = {
     offline: "Brak połączenia. Spróbujemy ponownie automatycznie.",
   },
 
+  taskChat: {
+    title: "Masz pytanie? Napisz do nas",
+    hint: "Potrzebujesz pomocy z zadaniem? Twój opiekun HR odpowie tutaj.",
+    action: "Zapytaj HR",
+    waiting: "Opisz, co jest niejasne w zadaniu. Twój opiekun HR odpowie w tej rozmowie.",
+    hasMessages: "Twoja rozmowa z opiekunem HR jest dostępna tutaj.",
+    close: "Zwiń czat",
+    newMessages: (count: number) => `Nowe wiadomości: ${count}`,
+  },
+
   errors: {
     generic: "Coś poszło nie tak. Spróbuj ponownie.",
     network: "Brak połączenia z serwerem. Sprawdź internet i spróbuj ponownie.",

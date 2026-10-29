@@ -21,7 +21,7 @@ type Props = {
 
 const delay = (i: number) => ({ "--i": i }) as React.CSSProperties;
 
-export function StepTask({ items, setItems, limits, submitting, error, review, onReviewChange, reviewError, onBack, onSubmit }: Props) {
+export function StepTaskOverview() {
   const t = content.task;
   return (
     <section aria-labelledby="about-title">
@@ -188,9 +188,18 @@ export function StepTask({ items, setItems, limits, submitting, error, review, o
         </div>
       </Reveal>
 
+    </section>
+  );
+}
+
+export function StepTaskSubmission({ items, setItems, limits, submitting, error, review, onReviewChange, reviewError, onBack, onSubmit }: Props) {
+  const t = content.task;
+  return (
+    <section aria-labelledby="task-submission-title">
+
       {/* 3. Screenshots */}
       <Reveal className="glass mt-6 rounded-(--radius-tile) p-5 sm:p-8">
-        <h2 className="mb-5 text-lg font-bold">{t.upload.title}</h2>
+        <h2 id="task-submission-title" className="mb-5 text-lg font-bold">{t.upload.title}</h2>
         <Uploader items={items} setItems={setItems} limits={limits} disabled={submitting} />
       </Reveal>
 

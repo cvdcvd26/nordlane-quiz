@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gt, lt, lte, inArray, isNull, notLike } from "drizz
 import { z } from "zod";
 import { db, schema } from "@/db";
 import type { Db } from "@/db";
-import { badRequest, conflict, forbidden } from "../errors";
+import { badRequest, conflict } from "../errors";
 import { getSettings } from "../settings";
 import { chatConfig, uploadConfig } from "@/config/settings";
 import { content } from "@/config/content";
@@ -15,6 +15,7 @@ import { lockVisitor } from "../session-lock";
 import { getSessionManager } from "./managers";
 import { assertVisitorChatOpen, getSessionOutcome } from "./candidate-outcome";
 import { richTextSchema, type RichTextDocument } from "@/lib/rich-text";
+import { requireVisitorChatAccess } from "./visitor-chat-access";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -118,18 +119,8 @@ export async function loadMessageChanges(conversationId: string, revision: numbe
   };
 }
 
-/** The chat opens once the task is submitted. */
-async function requireSubmitted(sessionId: string) {
-  const [sub] = await db()
-    .select({ id: schema.taskSubmissions.id })
-    .from(schema.taskSubmissions)
-    .where(eq(schema.taskSubmissions.sessionId, sessionId))
-    .limit(1);
-  if (!sub) throw forbidden(content.errors.notSubmitted);
-}
-
 export async function getVisitorChat(sessionId: string, query: MessageQuery = {}) {
-  await requireSubmitted(sessionId);
+  await requireVisitorChatAccess(db(), sessionId);
   // Also repairs historical submissions that predate creation of leads at step one.
   await ensureLead(db(), sessionId);
   const conv = await ensureConversation(db(), sessionId);
@@ -154,7 +145,7 @@ export async function postVisitorMessage(sessionId: string, input: unknown): Pro
   const text = body.trim();
   if (!text && fileIds.length === 0) throw badRequest(content.errors.messageEmpty);
 
-  await requireSubmitted(sessionId);
+  await requireVisitorChatAccess(db(), sessionId);
   const conv = await ensureConversation(db(), sessionId);
   const settings = await getSettings();
   if (fileIds.length && !settings.chatAttachmentsEnabled) throw badRequest(content.errors.attachmentsDisabled);
@@ -162,6 +153,7 @@ export async function postVisitorMessage(sessionId: string, input: unknown): Pro
   const now = new Date();
   const leadId = await db().transaction(async (tx) => {
     await lockVisitor(tx, sessionId);
+    await requireVisitorChatAccess(tx, sessionId);
     await assertVisitorChatOpen(tx, sessionId);
     const [inserted] = await tx
       .insert(schema.messages)
