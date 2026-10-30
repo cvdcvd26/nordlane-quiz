@@ -11,6 +11,8 @@ function positiveInteger(name: string, value: string | undefined, fallback: numb
 export const uploadConfig = {
   /** Allowed screenshot types (checked against both the declared type and the file bytes). */
   screenshotTypes: ["image/png", "image/jpeg", "image/webp"],
+  /** Both chat participants may send images and PDF documents. Task uploads remain screenshots only. */
+  chatAttachmentTypes: ["image/png", "image/jpeg", "image/webp", "application/pdf"],
   /** Types the administrator may attach to messages. */
   adminAttachmentTypes: ["image/png", "image/jpeg", "image/webp", "application/pdf"],
   /** At most 4 MB: a Vercel serverless function accepts request bodies up to 4.5 MB. */

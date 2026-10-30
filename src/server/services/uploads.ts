@@ -30,7 +30,8 @@ type UploadInput = {
 };
 
 export async function uploadFile({ sessionId, purpose, uploadedBy, file }: UploadInput): Promise<PublicFile> {
-  const allowed = uploadedBy === "admin" ? uploadConfig.adminAttachmentTypes : uploadConfig.screenshotTypes;
+  const allowed = uploadedBy === "admin" ? uploadConfig.adminAttachmentTypes
+    : purpose === "chat" ? uploadConfig.chatAttachmentTypes : uploadConfig.screenshotTypes;
   const v = await validateFile(
     { name: file.name, declaredType: file.type, buffer: file.buffer },
     { allowed, maxBytes: uploadConfig.maxFileSizeBytes },

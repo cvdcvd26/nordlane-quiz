@@ -48,6 +48,8 @@ Kontakt ──► Pytania (3× "Tak / Nie") ──► Step 3: task + PDF + scree
 
 **Conversation workspace.** Lead pages include a searchable, paginated conversation list next to the chat and candidate details. On narrow screens the list opens in a drawer. Queue, stage, inactivity, status and sorting context are retained in candidate links. Registered unsaved lead/reminder/revision forms warn before internal link navigation, logout or a page unload; browser history navigation is not intercepted.
 
+**Chat attachments.** Candidates and administrators can send PNG, JPG, WEBP and PDF files in the same conversation, including before the task is submitted. Existing size, count, session and closed-chat checks apply. PDF files download through the private file endpoint with their original names. The initial task and correction forms still accept screenshots only.
+
 **Unfinished applications.** The leads page has a separate queue for candidates who saved contact details but have not submitted the initial task, excluding completed/rejected leads. Its default inactivity threshold is 30 minutes; stage and inactivity filters are adjustable. The badge always counts all stages at that default threshold. Recent activity means a visible session heartbeat within two minutes; it is not a guarantee of continuous online presence.
 
 **Reminders.** Shared lead follow-up tasks support creation, editing, completion, reopening, deletion and optimistic conflict checks. `/admin/reminders` lists due, upcoming and completed tasks. Dates use Poland's calendar and handle daylight saving transitions. In-panel alerts work while an administrator has the panel open; no email, SMS or browser push service is connected.

@@ -1,4 +1,5 @@
 import type { AnalyticsPeriod } from "./analytics";
+import type { LeadStatus } from "./content";
 
 export const leadQualifications = ["unreviewed", "suitable", "unsuitable"] as const;
 export const leadClosures = ["open", "data_received", "signal_working", "not_suitable", "candidate_declined", "no_contact"] as const;
@@ -46,7 +47,7 @@ export type LeadResultListItem = {
   id: number;
   name: string | null;
   phone: string | null;
-  status: "new" | "in_progress" | "awaiting_reply" | "completed" | "rejected";
+  status: LeadStatus;
   createdAt: string;
   result: LeadResultState;
   hasSavedResult: boolean;

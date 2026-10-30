@@ -265,7 +265,7 @@ export function VisitorChat({ onOutcome, closed = false, collapsible = false, ac
           onSend={send}
           uploadUrl="/api/uploads"
           uploadPurpose="chat"
-          accept={[...uploadConfig.screenshotTypes]}
+          accept={[...uploadConfig.chatAttachmentTypes]}
           attachmentsEnabled={attachments}
           maxFiles={uploadConfig.maxFilesPerMessage}
         />

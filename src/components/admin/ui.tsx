@@ -9,6 +9,7 @@ export const STATUS_TONE: Record<LeadStatus, { text: string; bg: string; dot: st
   new: { text: "text-adm-blue", bg: "bg-adm-blue-bg", dot: "bg-adm-blue", border: "border-adm-blue/30", active: "border-adm-blue! bg-adm-blue! text-adm-bg!" },
   in_progress: { text: "text-adm-amber", bg: "bg-adm-amber-bg", dot: "bg-adm-amber", border: "border-adm-amber/30", active: "border-adm-amber! bg-adm-amber! text-adm-bg!" },
   awaiting_reply: { text: "text-adm-violet", bg: "bg-adm-violet-bg", dot: "bg-adm-violet", border: "border-adm-violet/30", active: "border-adm-violet! bg-adm-violet! text-adm-bg!" },
+  data_received: { text: "text-adm-teal", bg: "bg-adm-teal-bg", dot: "bg-adm-teal", border: "border-adm-teal/30", active: "border-adm-teal! bg-adm-teal! text-adm-bg!" },
   completed: { text: "text-adm-green", bg: "bg-adm-green-bg", dot: "bg-adm-green", border: "border-adm-green/30", active: "border-adm-green! bg-adm-green! text-adm-bg!" },
   rejected: { text: "text-adm-red", bg: "bg-adm-red-bg", dot: "bg-adm-red", border: "border-adm-red/30", active: "border-adm-red! bg-adm-red! text-adm-bg!" },
 };
@@ -17,7 +18,8 @@ export const STATUS_TONE: Record<LeadStatus, { text: string; bg: string; dot: st
 export const NEXT_STATUS: Partial<Record<LeadStatus, LeadStatus>> = {
   new: "in_progress",
   in_progress: "awaiting_reply",
-  awaiting_reply: "completed",
+  awaiting_reply: "data_received",
+  data_received: "completed",
 };
 
 export function StatusBadge({ status }: { status: LeadStatus }) {

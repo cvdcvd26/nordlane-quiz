@@ -22,7 +22,7 @@ const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
 
-export const leadStatus = pgEnum("lead_status", ["new", "in_progress", "awaiting_reply", "completed", "rejected"]);
+export const leadStatus = pgEnum("lead_status", ["new", "in_progress", "awaiting_reply", "data_received", "completed", "rejected"]);
 export const messageSender = pgEnum("message_sender", ["visitor", "admin", "system"]);
 export const scheduledStatus = pgEnum("scheduled_status", ["pending", "sending", "sent", "failed", "cancelled"]);
 export const fileOwner = pgEnum("file_owner", ["visitor", "admin"]);

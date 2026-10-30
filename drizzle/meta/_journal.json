@@ -106,6 +106,13 @@
       "when": 1793355858701,
       "tag": "0014_lead_data_received",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1793359279814,
+      "tag": "0015_operational_data_received",
+      "breakpoints": true
     }
   ]
 }

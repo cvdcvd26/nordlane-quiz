@@ -530,6 +530,7 @@ export const content = {
       new: "Nowy",
       in_progress: "W trakcie",
       awaiting_reply: "Czeka na odpowiedź",
+      data_received: "Otrzymano dane",
       completed: "Obsługa zakończona",
       rejected: "Nie zakwalifikowano",
     },
