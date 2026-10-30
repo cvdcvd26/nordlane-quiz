@@ -21,6 +21,7 @@ type Item = {
   id: number;
   status: LeadStatus;
   createdAt: string;
+  submittedAt: string | null;
   lastMessageAt: string | null;
   messageCount: number;
   answer: string | null;
@@ -35,15 +36,15 @@ type Item = {
   lastSeenAt: string;
   isActive: boolean;
 };
-type ListResponse = { items: Item[]; total: number; needsReplyCount: number; unfinishedCount: number; page: number; pageSize: number };
-type Filters = { q: string; status: string; sort: "desc" | "asc"; page: number; queue: "all" | "needs_reply" | "unfinished"; stage: string; inactiveMinutes: number };
+type ListResponse = { items: Item[]; total: number; needsReplyCount: number; unfinishedCount: number; submittedCount: number; page: number; pageSize: number };
+type Filters = { q: string; status: string; sort: "desc" | "asc"; page: number; queue: "all" | "submitted" | "needs_reply" | "unfinished"; stage: string; inactiveMinutes: number };
 
 const fromParams = (p: URLSearchParams): Filters => ({
   q: p.get("q") ?? "",
   status: p.get("status") ?? "",
   sort: p.get("sort") === "asc" ? "asc" : "desc",
   page: Number(p.get("page")) || 1,
-  queue: p.get("queue") === "needs_reply" ? "needs_reply" : p.get("queue") === "unfinished" ? "unfinished" : "all",
+  queue: ["submitted", "needs_reply", "unfinished"].includes(p.get("queue") ?? "") ? p.get("queue") as Filters["queue"] : "all",
   stage: ["questions", "task"].includes(p.get("stage") ?? "") ? p.get("stage")! : "",
   inactiveMinutes: p.has("inactiveMinutes") ? Math.max(0, Math.min(10080, Number(p.get("inactiveMinutes")) || 0)) : p.get("queue") === "unfinished" ? 30 : 0,
 });
@@ -181,16 +182,18 @@ function Leads() {
       <PageHeader title={L.title} meta={data ? L.total(data.total) : undefined} description={L.description} />
 
       <div role="group" aria-label={I.filter} className="mb-3 flex flex-wrap gap-2">
-        {(["all", "needs_reply", "unfinished"] as const).map(queue => (
+        {(["all", "submitted", "needs_reply", "unfinished"] as const).map(queue => (
           <button key={queue} type="button" aria-pressed={filters.queue === queue}
             onClick={() => { setSelected(new Set()); setFilters(current => ({ ...current, queue, stage: "", inactiveMinutes: queue === "unfinished" ? 30 : 0, page: 1 })); }}
             className={`adm-btn ${filters.queue === queue ? "border-adm-accent! bg-adm-accent-soft! text-adm-accent!" : ""}`}>
-            {queue === "all" ? I.all : queue === "needs_reply" ? I.needsReply : W.unfinished}
+            {queue === "all" ? I.all : queue === "submitted" ? W.submitted : queue === "needs_reply" ? I.needsReply : W.unfinished}
+            {queue === "submitted" && data && <span className="rounded-full bg-adm-green-bg px-2 py-0.5 text-[11px] text-adm-green tabular-nums">{data.submittedCount}</span>}
             {queue === "needs_reply" && data && <span className="rounded-full bg-adm-amber-bg px-2 py-0.5 text-[11px] text-adm-amber tabular-nums">{data.needsReplyCount}</span>}
             {queue === "unfinished" && data && <span className="rounded-full bg-adm-subtle px-2 py-0.5 text-[11px] text-adm-ink-2 tabular-nums">{data.unfinishedCount}</span>}
           </button>
         ))}
       </div>
+      {filters.queue === "submitted" && <p className="adm-help mb-3 max-w-3xl leading-relaxed">{W.submittedHint}</p>}
       {filters.queue === "needs_reply" && <p className="adm-help mb-3 max-w-3xl leading-relaxed">{I.hint}</p>}
       {filters.queue === "unfinished" && <div className="mb-3 space-y-2">
         <p className="adm-help max-w-3xl leading-relaxed">{W.unfinishedHint}</p>
@@ -260,11 +263,11 @@ function Leads() {
                 id="sort"
                 className="adm-input w-auto"
                 value={filters.sort}
-                disabled={filters.queue !== "all"}
+                disabled={filters.queue === "needs_reply" || filters.queue === "unfinished"}
                 onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value as Filters["sort"], page: 1 }))}
               >
-                <option value="desc">{filters.queue === "needs_reply" ? I.oldestFirst : filters.queue === "unfinished" ? W.oldestActivity : L.newestFirst}</option>
-                <option value="asc">{filters.queue === "needs_reply" ? I.oldestFirst : L.oldestFirst}</option>
+                <option value="desc">{filters.queue === "needs_reply" ? I.oldestFirst : filters.queue === "unfinished" ? W.oldestActivity : filters.queue === "submitted" ? W.newestSubmitted : L.newestFirst}</option>
+                <option value="asc">{filters.queue === "needs_reply" ? I.oldestFirst : filters.queue === "submitted" ? W.oldestSubmitted : L.oldestFirst}</option>
               </select>
             </>
           )}
@@ -289,7 +292,7 @@ function Leads() {
                 <th>{L.columns.answer}</th>
                 <th>{filters.queue === "needs_reply" ? I.latest : L.columns.lastMessage}</th>
                 <th className="text-right">{L.columns.messages}</th>
-                <th>{L.columns.created}</th>
+                <th>{filters.queue === "submitted" ? W.submittedAt : L.columns.created}</th>
               </tr>
             </thead>
             <tbody>
@@ -331,12 +334,12 @@ function Leads() {
                     </> : <span className="whitespace-nowrap tabular-nums">{l.lastMessageAt ? time(l.lastMessageAt) : "—"}</span>}
                   </td>
                   <td className="text-right text-adm-ink-2 tabular-nums">{l.messageCount}</td>
-                  <td className="whitespace-nowrap text-adm-ink-2 tabular-nums">{time(l.createdAt)}</td>
+                  <td className="whitespace-nowrap text-adm-ink-2 tabular-nums">{filters.queue === "submitted" ? l.submittedAt ? time(l.submittedAt) : "—" : time(l.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {data && data.items.length === 0 && <EmptyState text={filters.q || filters.status ? L.noResults : filters.queue === "needs_reply" ? I.empty : L.empty} />}
+          {data && data.items.length === 0 && <EmptyState text={filters.q || filters.status ? L.noResults : filters.queue === "needs_reply" ? I.empty : filters.queue === "submitted" ? W.submittedEmpty : L.empty} />}
         </div>
 
         {data && data.total > 0 && (

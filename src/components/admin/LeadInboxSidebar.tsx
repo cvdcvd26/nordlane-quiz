@@ -12,7 +12,7 @@ import { confirmAdminDraftNavigation } from "@/lib/admin-draft-guard";
 import { ACTIVITY_EVENT } from "./ActivityNotifier";
 import { useAdminI18n } from "./i18n";
 
-type Queue = "all" | "needs_reply" | "unfinished";
+type Queue = "all" | "submitted" | "needs_reply" | "unfinished";
 type Result = { items: { id: number; contactName: string | null; lastVisitorMessage: string | null; needsReply: boolean; isActive: boolean; stage: string }[]; total: number; page: number; pageSize: number };
 
 export default function LeadInboxSidebar({ selectedId }: { selectedId: string }) {
@@ -21,7 +21,7 @@ export default function LeadInboxSidebar({ selectedId }: { selectedId: string })
   const I = inboxCopy[lang];
   const params = useSearchParams();
   const initialQueue = params.get("queue");
-  const [queue, setQueue] = useState<Queue>(initialQueue === "needs_reply" || initialQueue === "unfinished" ? initialQueue : "all");
+  const [queue, setQueue] = useState<Queue>(initialQueue === "submitted" || initialQueue === "needs_reply" || initialQueue === "unfinished" ? initialQueue : "all");
   const [query, setQuery] = useState(params.get("q") ?? "");
   const [search, setSearch] = useState(query);
   const [extra, setExtra] = useState(() => ({
@@ -91,7 +91,7 @@ export default function LeadInboxSidebar({ selectedId }: { selectedId: string })
       <input id={mobile ? "mobile-dialog-search" : "dialog-search"} className="adm-input w-full" type="search" maxLength={200} placeholder={C.search} value={query} onChange={event => setQuery(event.target.value)} />
       <label className="sr-only" htmlFor={mobile ? "mobile-dialog-queue" : "dialog-queue"}>{I.filter}</label>
       <select id={mobile ? "mobile-dialog-queue" : "dialog-queue"} className="adm-input mt-2 w-full" value={queue} onChange={event => { setQueue(event.target.value as Queue); setExtra(value => ({ ...value, stage: "", inactiveMinutes: 30 })); setPage(1); }}>
-        <option value="all">{C.all}</option><option value="needs_reply">{I.needsReply}</option><option value="unfinished">{C.unfinished}</option>
+        <option value="all">{C.all}</option><option value="submitted">{C.submitted}</option><option value="needs_reply">{I.needsReply}</option><option value="unfinished">{C.unfinished}</option>
       </select>
     </div>
     {error && <div className="p-3"><p role="alert" className="text-[12px] text-adm-red">{error}</p><button type="button" className="adm-btn mt-2" onClick={() => setReload(value => value + 1)}>{C.retry}</button></div>}

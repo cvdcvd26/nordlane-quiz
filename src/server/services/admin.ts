@@ -20,7 +20,7 @@ const listSchema = z.object({
   q: z.string().trim().max(200).optional().default(""),
   status: z.enum(LEAD_STATUSES as [string, ...string[]]).optional(),
   sort: z.enum(["desc", "asc"]).optional().default("desc"),
-  queue: z.enum(["all", "needs_reply", "unfinished"]).optional().default("all"),
+  queue: z.enum(["all", "needs_reply", "submitted", "unfinished"]).optional().default("all"),
   stage: z.enum(["questions", "task", "submitted"]).optional(),
   inactiveMinutes: z.coerce.number().int().min(0).max(10080).optional().default(0),
   page: z.coerce.number().int().min(1).optional().default(1),
@@ -42,6 +42,8 @@ export async function listLeads(input: Record<string, string | undefined>) {
   const contactName = sql<string | null>`(select vc.name from visitor_contacts vc where vc.session_id = ${leadSession})`;
   const contactPhone = sql<string | null>`(select vc.phone from visitor_contacts vc where vc.session_id = ${leadSession})`;
   const submitted = sql<boolean>`exists (select 1 from task_submissions ts where ts.session_id = ${leadSession})`;
+  const submittedAt = sql<Date | null>`(select ts.submitted_at from task_submissions ts where ts.session_id = ${leadSession})`
+    .mapWith(value => value == null ? null : new Date(value));
   const answerCount = sql<number>`(select count(*)::int from quiz_answers qa where qa.session_id = ${leadSession} and qa.question_key in ${QUESTION_KEYS})`;
   const lastSeenAt = sql<Date>`(select vs.last_seen_at from visitor_sessions vs where vs.id = ${leadSession})`.mapWith(value => new Date(value));
   const now = new Date();
@@ -56,6 +58,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
 
   const filters: SQL[] = [];
   if (p.queue === "needs_reply") filters.push(needsReply);
+  if (p.queue === "submitted") filters.push(submitted);
   if (p.queue === "unfinished") filters.push(unfinished);
   if (p.inactiveMinutes > 0) filters.push(sql`${lastSeenAt} <= ${new Date(now.getTime() - p.inactiveMinutes * 60_000)}`);
   if (p.stage === "submitted") filters.push(submitted);
@@ -79,7 +82,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
   }
   const where = filters.length ? and(...filters) : undefined;
 
-  const [rows, [{ total }], [{ needsReplyCount }], [{ unfinishedCount }]] = await Promise.all([
+  const [rows, [{ total }], [{ needsReplyCount }], [{ unfinishedCount }], [{ submittedCount }]] = await Promise.all([
     db()
       .select({
         id: L.id,
@@ -93,6 +96,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
         contactName,
         contactPhone,
         submitted,
+        submittedAt,
         lastSeenAt,
         needsReply,
         isUnfinished,
@@ -103,12 +107,14 @@ export async function listLeads(input: Record<string, string | undefined>) {
       .innerJoin(schema.managers, eq(schema.managers.id, L.managerId))
       .where(where)
       .orderBy(...(p.queue === "needs_reply" ? [asc(waitingAt), asc(L.id)] : p.queue === "unfinished" ? [asc(lastSeenAt), asc(L.id)] :
+        p.queue === "submitted" ? [p.sort === "asc" ? asc(submittedAt) : desc(submittedAt), desc(L.id)] :
         [p.sort === "asc" ? asc(L.createdAt) : desc(L.createdAt), desc(L.id)]))
       .limit(p.pageSize)
       .offset((p.page - 1) * p.pageSize),
     db().select({ total: sql<number>`count(*)::int` }).from(L).where(where),
     db().select({ needsReplyCount: sql<number>`count(*)::int` }).from(L).where(needsReply),
     db().select({ unfinishedCount: sql<number>`count(*)::int` }).from(L).where(isUnfinished),
+    db().select({ submittedCount: sql<number>`count(*)::int` }).from(L).where(submitted),
   ]);
 
   return {
@@ -117,6 +123,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
       stage: leadStage(r.answer ? r.answer.split(",").length : 0, Boolean(r.submitted)),
       answered: r.answer ? r.answer.split(",").length : 0,
       createdAt: r.createdAt.toISOString(),
+      submittedAt: r.submittedAt?.toISOString() ?? null,
       lastMessageAt: r.lastMessageAt?.toISOString() ?? null,
       lastSeenAt: r.lastSeenAt.toISOString(),
       isActive: r.lastSeenAt.getTime() >= now.getTime() - 2 * 60_000,
@@ -124,6 +131,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
     total,
     needsReplyCount,
     unfinishedCount,
+    submittedCount,
     page: p.page,
     pageSize: p.pageSize,
   };

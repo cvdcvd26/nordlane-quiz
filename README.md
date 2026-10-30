@@ -52,6 +52,8 @@ Kontakt ──► Pytania (3× "Tak / Nie") ──► Step 3: task + PDF + scree
 
 **Unfinished applications.** The leads page has a separate queue for candidates who saved contact details but have not submitted the initial task, excluding completed/rejected leads. Its default inactivity threshold is 30 minutes; stage and inactivity filters are adjustable. The badge always counts all stages at that default threshold. Recent activity means a visible session heartbeat within two minutes; it is not a guarantee of continuous online presence.
 
+**Submitted tasks.** The “Submitted task” queue automatically includes every lead with a recorded initial task submission, regardless of its manual handling status. The badge counts all submitted leads independently of search and status filters. This queue sorts by the actual submission time and shows that time in the table; opening a lead preserves the selected queue in the conversation sidebar. Leads remain available in the full list.
+
 **Reminders.** Shared lead follow-up tasks support creation, editing, completion, reopening, deletion and optimistic conflict checks. `/admin/reminders` lists due, upcoming and completed tasks. Dates use Poland's calendar and handle daylight saving transitions. In-panel alerts work while an administrator has the panel open; no email, SMS or browser push service is connected.
 
 **Task corrections.** After the initial submission, an administrator may request one pending correction round with instructions. Candidates respond with corrected text/screenshots above their existing chat. The original submission and previous rounds remain available. Publishing a refusal cancels any pending correction; terminal draft files become inaccessible and storage cleanup retries through the existing sweep.

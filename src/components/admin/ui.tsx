@@ -2,6 +2,7 @@
 import { Check, ChevronDown, Inbox, CircleAlert } from "lucide-react";
 import { LEAD_STATUSES, type LeadStatus } from "@/config/content";
 import { useAdminI18n } from "./i18n";
+import { workflowCopy } from "@/config/admin-workflow";
 
 /* ---------- Status ---------- */
 
@@ -98,21 +99,27 @@ export type Stage = "questions" | "task" | "submitted";
 const STAGE_INDEX: Record<Stage, number> = { questions: 1, task: 2, submitted: 3 };
 export const stageIndex = (s: string) => STAGE_INDEX[s as Stage] ?? 1;
 
-/** Four-segment indicator with the current screen's name (list rows). */
+/** In-progress screens use a track; a submitted task has a distinct completion badge. */
 export function StageTrack({ stage, answered, total }: { stage: string; answered: number; total: number }) {
-  const { t } = useAdminI18n();
+  const { lang, t } = useAdminI18n();
+  const copy = workflowCopy[lang];
+  if (stage === "submitted") return (
+    <span title={copy.stageSubmittedHint} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-adm-green/30 bg-adm-green-bg px-2 py-1 text-[12px] font-semibold text-adm-green">
+      <Check aria-hidden className="size-3.5 shrink-0" strokeWidth={2.5} />
+      {copy.stageSubmitted}
+    </span>
+  );
   const current = stageIndex(stage);
-  const done = stage === "submitted";
   const steps = t.ui.workflow.steps;
   return (
     <span className="inline-flex items-center gap-2 whitespace-nowrap" title={steps.map((s, i) => `${i + 1}. ${s}`).join(" → ")}>
       <span aria-hidden className="flex gap-0.5">
         {steps.map((s, i) => (
-          <span key={s} className={`h-1.5 w-3.5 rounded-sm ${i <= current ? (done ? "bg-adm-green" : "bg-adm-accent") : "bg-adm-line-strong"}`} />
+          <span key={s} className={`h-1.5 w-3.5 rounded-sm ${i <= current ? "bg-adm-blue" : "bg-adm-line-strong"}`} />
         ))}
       </span>
-      <span className={`text-[13px] ${done ? "font-semibold text-adm-green" : "text-adm-ink-2"}`}>
-        {steps[current]}
+      <span className="text-[13px] text-adm-ink-2">
+        {stage === "task" ? copy.stageTask : steps[current]}
         {current === 1 && <span className="ml-1 text-adm-ink-3 tabular-nums">{t.ui.workflow.answered(answered, total)}</span>}
       </span>
     </span>
