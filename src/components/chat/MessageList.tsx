@@ -124,9 +124,8 @@ export function MessageList({
                       ) : (
                         <li key={f.id}>
                           <a
-                            href={f.url}
-                            target="_blank"
-                            rel="noopener"
+                            href={`${f.url}?download`}
+                            download={f.name}
                             className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm underline-offset-2 hover:underline ${
                               mine ? "bg-black/15" : adm ? "bg-adm-surface" : "bg-white/5"
                             }`}
