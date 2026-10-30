@@ -2,6 +2,7 @@
   --lres-success: #13885f;
   --lres-success-start: #3abf96;
   --lres-open: #6b9ae0;
+  --lres-data-received: #4aaeb4;
   --lres-unsuitable: #de8291;
   --lres-declined: #cfa14a;
   --lres-no-contact: #a58bd4;
@@ -122,11 +123,13 @@
 .lres .lres-outcome-track span { display: block; height: 100%; border-radius: 2px; }
 .lres .lres-dot { display: inline-block; width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; }
 .lres .lres-fill-open { fill: var(--lres-open); background: var(--lres-open); }
+.lres .lres-fill-data_received { fill: var(--lres-data-received); background: var(--lres-data-received); }
 .lres .lres-fill-signal_working { fill: var(--lres-success); background: var(--lres-success); }
 .lres .lres-fill-not_suitable { fill: var(--lres-unsuitable); background: var(--lres-unsuitable); }
 .lres .lres-fill-candidate_declined { fill: var(--lres-declined); background: var(--lres-declined); }
 .lres .lres-fill-no_contact { fill: var(--lres-no-contact); background: var(--lres-no-contact); }
 .lres .lres-stroke-open { stroke: var(--lres-open); }
+.lres .lres-stroke-data_received { stroke: var(--lres-data-received); }
 .lres .lres-stroke-signal_working { stroke: var(--lres-success); }
 .lres .lres-stroke-not_suitable { stroke: var(--lres-unsuitable); }
 .lres .lres-stroke-candidate_declined { stroke: var(--lres-declined); }
@@ -188,6 +191,7 @@
 .lres .lres-q-suitable, .lres .lres-c-signal_working { --lres-choice-color: var(--color-adm-green); --lres-choice-bg: var(--color-adm-green-bg); }
 .lres .lres-q-unsuitable, .lres .lres-c-not_suitable { --lres-choice-color: var(--color-adm-red); --lres-choice-bg: var(--color-adm-red-bg); }
 .lres .lres-c-open { --lres-choice-color: var(--color-adm-blue); --lres-choice-bg: var(--color-adm-blue-bg); }
+.lres .lres-c-data_received { --lres-choice-color: color-mix(in srgb, var(--color-adm-blue) 50%, var(--color-adm-green)); --lres-choice-bg: color-mix(in srgb, var(--color-adm-blue-bg) 50%, var(--color-adm-green-bg)); }
 .lres .lres-c-candidate_declined { --lres-choice-color: var(--color-adm-amber); --lres-choice-bg: var(--color-adm-amber-bg); }
 .lres .lres-c-no_contact { --lres-choice-color: var(--color-adm-violet); --lres-choice-bg: var(--color-adm-violet-bg); }
 .lres .lres-badge[class*="lres-q-"], .lres .lres-badge[class*="lres-c-"] { background: var(--lres-choice-bg); color: var(--lres-choice-color); }

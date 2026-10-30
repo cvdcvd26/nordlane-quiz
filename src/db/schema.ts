@@ -180,12 +180,12 @@ export const leadResults = pgTable("lead_results", {
   index("lead_results_responsible_idx").on(t.responsibleAdminId),
   index("lead_results_closure_idx").on(t.closure),
   check("lead_results_qualification_ck", sql`${t.qualification} in ('unreviewed', 'suitable', 'unsuitable')`),
-  check("lead_results_closure_ck", sql`${t.closure} in ('open', 'signal_working', 'not_suitable', 'candidate_declined', 'no_contact')`),
+  check("lead_results_closure_ck", sql`${t.closure} in ('open', 'data_received', 'signal_working', 'not_suitable', 'candidate_declined', 'no_contact')`),
   check("lead_results_consistency_ck", sql`(${t.closure} = 'not_suitable') = (${t.qualification} = 'unsuitable') and (${t.closure} <> 'signal_working' or ${t.qualification} = 'suitable')`),
   check("lead_results_reason_ck", sql`${t.reason} is null or ${t.reason} in ('task', 'skills', 'conditions', 'schedule', 'communication', 'candidate_choice', 'other')`),
   check("lead_results_comment_ck", sql`length(${t.comment}) <= 2000`),
   check("lead_results_version_ck", sql`${t.version} >= 1`),
-  check("lead_results_closed_at_ck", sql`(${t.closure} = 'open') = (${t.closedAt} is null)`),
+  check("lead_results_closed_at_ck", sql`(${t.closure} in ('open', 'data_received')) = (${t.closedAt} is null)`),
 ]);
 
 /** Append-only service audit; lead deletion cascades its private history. */

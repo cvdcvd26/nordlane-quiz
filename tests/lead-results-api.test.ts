@@ -107,18 +107,18 @@ describe("owner-only lead results APIs", () => {
     expect(await env.db.select().from(schema.leadResultHistory)).toEqual([]);
   });
 
-  it("saves private decisions and their audit while keeping them out of ordinary admin and candidate responses", async () => {
+  it.each(["signal_working", "data_received"] as const)("saves %s and its audit only for the owner, without exposing it to other admins or candidates", async closure => {
     await authenticate();
-    const response = await PATCH(patchRequest({ ...valid, responsibleAdminId: staff.id }), context());
+    const response = await PATCH(patchRequest({ ...valid, closure, responsibleAdminId: staff.id }), context());
     privateResponse(response, 200);
     const detail = await response.json();
-    expect(detail).toMatchObject({ leadId: lead.id, hasSavedResult: true, result: { qualification: "suitable", closure: "signal_working", version: 1,
+    expect(detail).toMatchObject({ leadId: lead.id, hasSavedResult: true, result: { qualification: "suitable", closure, version: 1,
       comment: valid.comment, responsibleAdminId: staff.id, updatedById: owner.id } });
     expect(detail.history).toHaveLength(1);
     privateResponse(await resultGET(resultRequest(), context()), 200);
     const report = await reportGET(reportRequest());
     privateResponse(report, 200);
-    expect(await report.json()).toMatchObject({ totals: { leads: 1, success: 1 } });
+    expect(await report.json()).toMatchObject({ totals: { leads: 1, success: closure === "signal_working" ? 1 : 0 } });
     const stored = (await env.db.select().from(schema.leads))[0];
     expect(stored).toEqual(lead);
     expect(await getSessionOutcome(lead.sessionId)).toBeNull();
@@ -129,7 +129,9 @@ describe("owner-only lead results APIs", () => {
     const body = await normalLead.text();
     expect(body).not.toContain(valid.comment);
     expect(body).not.toContain("responsibleAdminId");
+    expect(body).not.toContain("data_received");
     privateResponse(await resultGET(resultRequest(), context()), 403);
+    privateResponse(await PATCH(patchRequest({ ...valid, closure: "data_received", expectedVersion: 1 }), context()), 403);
     expect(await env.db.select().from(schema.messages)).toEqual([]);
     expect(await env.db.select().from(schema.scheduledMessages)).toEqual([]);
   });

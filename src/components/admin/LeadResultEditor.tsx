@@ -13,7 +13,7 @@ import "./lead-results.css";
 type Draft = Omit<LeadResultUpdate, "expectedVersion">;
 const draftFrom = (result: LeadResultState): Draft => ({ qualification: result.qualification, closure: result.closure, reason: result.reason, comment: result.comment, responsibleAdminId: result.responsibleAdminId });
 const equalDraft = (a: Draft, b: Draft) => a.qualification === b.qualification && a.closure === b.closure && a.reason === b.reason && a.comment.trim() === b.comment.trim() && a.responsibleAdminId === b.responsibleAdminId;
-const CLOSURE_CHOICES: LeadClosure[] = ["signal_working", "open", "not_suitable", "candidate_declined", "no_contact"];
+const CLOSURE_CHOICES: LeadClosure[] = ["open", "data_received", "signal_working", "not_suitable", "candidate_declined", "no_contact"];
 
 export default function LeadResultEditor({ leadId, onSaved, onDirtyChange, standalone = true }: { leadId: string; onSaved?: () => void; onDirtyChange?: (dirty: boolean) => void; standalone?: boolean }) {
   const { lang, t } = useAdminI18n();

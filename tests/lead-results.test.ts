@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { schema } from "@/db";
 import type { LeadResultUpdate } from "@/config/lead-results";
-import { getLeadResult, getLeadResults, updateLeadResult } from "@/server/services/lead-results";
+import { getLeadResult, getLeadResults, getLeadResultsSuccesses, updateLeadResult } from "@/server/services/lead-results";
 import { setupTestEnv } from "./helpers";
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>;
@@ -39,6 +39,19 @@ async function source(sessionId: string, values: Partial<typeof schema.visitorAt
 }
 
 describe("private lead result state and audit", () => {
+  it("keeps received data in progress, records transitions and clears a former closing date when reopened", async () => {
+    const row = await lead();
+    const received = await save(row.id, { closure: "data_received", comment: "Received candidate details" });
+    expect(received.result).toMatchObject({ closure: "data_received", qualification: "unreviewed", version: 1, closedAt: null });
+    expect(received.history[0]).toMatchObject({ previous: { closure: "open" }, next: received.result });
+    const successful = await save(row.id, { closure: "signal_working", expectedVersion: 1 });
+    expect(successful.result).toMatchObject({ qualification: "suitable", closure: "signal_working", closedAt: now.toISOString(), version: 2 });
+    const reopened = await save(row.id, { qualification: "suitable", closure: "data_received", expectedVersion: 2 });
+    expect(reopened.result).toMatchObject({ qualification: "suitable", closure: "data_received", closedAt: null, version: 3 });
+    expect(reopened.history).toHaveLength(3);
+    await expect(save(row.id, { closure: "data_received", expectedVersion: 1 })).rejects.toMatchObject({ status: 409 });
+  });
+
   it("gives existing leads explicit unreviewed/open defaults without inventing a saved result or audit entry", async () => {
     const row = await lead();
     const detail = await getLeadResult(row.id);
@@ -117,7 +130,7 @@ describe("private lead result state and audit", () => {
       messages: await env.db.select().from(schema.messages), scheduled: await env.db.select().from(schema.scheduledMessages),
     });
     const before = await load();
-    await save(row.id, { qualification: "suitable", closure: "signal_working", comment: "PRIVATE_RESULT_CONTEXT", responsibleAdminId: staff.id });
+    await save(row.id, { qualification: "suitable", closure: "data_received", comment: "PRIVATE_RESULT_CONTEXT", responsibleAdminId: staff.id });
     expect(await load()).toEqual(before);
     expect(env.queued).toEqual([]);
     expect(env.blobs.size).toBe(0);
@@ -153,6 +166,24 @@ describe("private lead result state and audit", () => {
 });
 
 describe("lead-created Warsaw result cohorts", () => {
+  it("counts received data separately without closing the lead, inflating success or adding a loss reason", async () => {
+    await lead();
+    const received = await lead();
+    const success = await lead();
+    const declined = await lead();
+    await save(received.id, { closure: "data_received", reason: "other" });
+    await save(success.id, { closure: "signal_working" });
+    await save(declined.id, { closure: "candidate_declined", reason: "candidate_choice" });
+    const report = await getLeadResults(cohort, now);
+    expect(report.closures).toEqual({ open: 1, data_received: 1, signal_working: 1, not_suitable: 0, candidate_declined: 1, no_contact: 0 });
+    expect(report.totals).toMatchObject({ leads: 4, closed: 2, success: 1 });
+    expect(report.totals.leads - report.totals.closed).toBe(2);
+    expect(report.lossReasons).toEqual([{ reason: "candidate_choice", leads: 1 }]);
+    expect(report.rates.successOfAll).toBe(0.25);
+    expect(report.daily.reduce((sum, day) => sum + day.success, 0)).toBe(1);
+    expect((await getLeadResultsSuccesses(cohort, now)).leads.items.map(item => item.id)).toEqual([success.id]);
+  });
+
   it("uses lead creation and current private results for totals, denominators, sources and responsible filters without join multiplication", async () => {
     const a = await lead("2026-09-30T22:00:00Z", "2026-09-01T12:00:00Z");
     const b = await lead("2026-10-02T12:00:00Z", "2026-10-20T12:00:00Z");
@@ -186,7 +217,7 @@ describe("lead-created Warsaw result cohorts", () => {
     expect(report.rates.suitableOfReviewed).toBeCloseTo(3 / 4);
     expect(report.rates.successOfAll).toBeCloseTo(1 / 6);
     expect(report.qualifications).toEqual({ unreviewed: 2, suitable: 3, unsuitable: 1 });
-    expect(report.closures).toEqual({ open: 2, signal_working: 1, not_suitable: 1, candidate_declined: 1, no_contact: 1 });
+    expect(report.closures).toEqual({ open: 2, data_received: 0, signal_working: 1, not_suitable: 1, candidate_declined: 1, no_contact: 1 });
     expect(report.sources).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "utm", source: "google", medium: "cpc", campaign: "hire", leads: 2, reviewed: 2, suitable: 1, success: 1 }),
       expect.objectContaining({ kind: "unknown", source: null, medium: null, campaign: null, leads: 2, reviewed: 1, suitable: 1, success: 0 }),

@@ -33,7 +33,10 @@ export async function submitTask(sessionId: string, input: unknown): Promise<Sub
   const { idempotencyKey, fileIds, review } = submitSchema.parse(input);
 
   const existing = await findSubmission(sessionId);
-  if (existing) return { ...existing, duplicate: true };
+  if (existing) {
+    await recoverPendingEnqueue(existing.submissionId);
+    return { ...existing, duplicate: true };
+  }
 
   if (!(await getContact(sessionId))) throw badRequest(content.errors.contactRequired, "contact_required");
   if (!allAnswered(await getAnswers(sessionId))) throw badRequest(content.errors.answerRequired, "answer_required");
@@ -86,7 +89,10 @@ export async function submitTask(sessionId: string, input: unknown): Promise<Sub
 
   if (!result) {
     const again = await findSubmission(sessionId);
-    if (again) return { ...again, duplicate: true };
+    if (again) {
+      await recoverPendingEnqueue(again.submissionId);
+      return { ...again, duplicate: true };
+    }
     throw badRequest(content.errors.generic);
   }
 
@@ -104,18 +110,42 @@ export async function submitTask(sessionId: string, input: unknown): Promise<Sub
  * it stays `pending` and the backup sweep delivers it when due.
  */
 export async function enqueue(scheduledId: string, at: Date) {
+  const t = schema.scheduledMessages;
+  const eligible = and(eq(t.id, scheduledId), inArray(t.status, ["pending", "failed"]), isNull(t.queueMessageId));
   try {
+    // A retry may race a completed delivery, cancellation, or another enqueue.
+    const [pending] = await db().select({ id: t.id }).from(t).where(eligible).limit(1);
+    if (!pending || !(await getSettings()).autoMessageEnabled) return;
     const queueMessageId = await queue().scheduleDelivery(scheduledId, at);
+    // Local fallback-only queues return null. That is not an accepted job and
+    // must not erase a previous enqueue failure from the stored diagnostics.
+    if (!queueMessageId) return;
     await db()
-      .update(schema.scheduledMessages)
+      .update(t)
       .set({ queueMessageId, lastError: null })
-      .where(eq(schema.scheduledMessages.id, scheduledId));
+      .where(eligible);
+    log.info("scheduler", "scheduled message accepted by queue", { scheduledId, queueMessageId, scheduledFor: at.toISOString() });
   } catch (err) {
     log.error("scheduler", "failed to enqueue scheduled message", err, { scheduledId });
     await db()
-      .update(schema.scheduledMessages)
+      .update(t)
       .set({ lastError: `enqueue failed: ${err instanceof Error ? err.message : String(err)}`.slice(0, 500) })
-      .where(eq(schema.scheduledMessages.id, scheduledId));
+      .where(eligible);
+  }
+}
+
+/** Repair the commit → external queue gap without changing the original job or delay. */
+async function recoverPendingEnqueue(submissionId: string) {
+  try {
+    const t = schema.scheduledMessages;
+    const [pending] = await db().select({ id: t.id, scheduledFor: t.scheduledFor }).from(t)
+      .where(and(eq(t.submissionId, submissionId), inArray(t.status, ["pending", "failed"]), isNull(t.queueMessageId)))
+      .limit(1);
+    if (pending) await enqueue(pending.id, pending.scheduledFor);
+  } catch {
+    // A saved submission stays successful even if the optional repair cannot
+    // reach the database/queue. The regular delivery safety net still applies.
+    log.warn("scheduler", "could not recover submission enqueue", { submissionId });
   }
 }
 

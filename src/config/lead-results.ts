@@ -1,7 +1,7 @@
 import type { AnalyticsPeriod } from "./analytics";
 
 export const leadQualifications = ["unreviewed", "suitable", "unsuitable"] as const;
-export const leadClosures = ["open", "signal_working", "not_suitable", "candidate_declined", "no_contact"] as const;
+export const leadClosures = ["open", "data_received", "signal_working", "not_suitable", "candidate_declined", "no_contact"] as const;
 export const leadResultReasons = ["task", "skills", "conditions", "schedule", "communication", "candidate_choice", "other"] as const;
 export const leadResultsConfig = { commentLimit: 2000, pageSize: 25, maxPageSize: 100, maxGroups: 30, historyLimit: 10 } as const;
 

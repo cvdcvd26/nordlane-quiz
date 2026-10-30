@@ -7,7 +7,7 @@ import { leadResultsCopy } from "@/config/lead-results-copy";
 
 type Labels = typeof leadResultsCopy.en;
 type Point = { x: number; y: number };
-const OUTCOME_ORDER: LeadClosure[] = ["signal_working", "open", "not_suitable", "candidate_declined", "no_contact"];
+const OUTCOME_ORDER: LeadClosure[] = ["signal_working", "data_received", "open", "not_suitable", "candidate_declined", "no_contact"];
 const round = (value: number) => Math.round(value * 100) / 100;
 
 /** Every Bézier control stays inside its data interval, so curves cannot invent peaks or negative values. */

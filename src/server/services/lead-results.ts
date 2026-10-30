@@ -102,7 +102,8 @@ async function updateLeadResultImpl(leadId: number, adminId: string, input: unkn
     }
     if (previous.qualification === qualification && previous.closure === closure && previous.reason === parsed.reason &&
       previous.comment === parsed.comment && previous.responsibleAdminId === parsed.responsibleAdminId) return;
-    const closedAt = closure === "open" ? null : previous.closure === closure && previous.closedAt ? new Date(previous.closedAt) : now;
+    const closedAt = closure === "open" || closure === "data_received" ? null
+      : previous.closure === closure && previous.closedAt ? new Date(previous.closedAt) : now;
     const values = { qualification, closure, reason: parsed.reason, comment: parsed.comment,
       responsibleAdminId: parsed.responsibleAdminId, updatedBy: adminId, version: previous.version + 1, updatedAt: now, closedAt };
     const [saved] = current
@@ -187,10 +188,11 @@ async function getLeadResultsImpl(input: Record<string, string | undefined>, now
     select (select jsonb_build_object('leads', count(*)::int, 'reviewed', count(*) filter(where qualification <> 'unreviewed')::int,
       'unreviewed', count(*) filter(where qualification = 'unreviewed')::int, 'suitable', count(*) filter(where qualification = 'suitable')::int,
       'unsuitable', count(*) filter(where qualification = 'unsuitable')::int, 'success', count(*) filter(where closure = 'signal_working')::int,
-      'closed', count(*) filter(where closure <> 'open')::int, 'attributed', count(*) filter(where attributed)::int) from cohort) as totals,
+      'closed', count(*) filter(where closure not in ('open', 'data_received'))::int, 'attributed', count(*) filter(where attributed)::int) from cohort) as totals,
       (select jsonb_build_object('unreviewed', count(*) filter(where qualification = 'unreviewed')::int,
         'suitable', count(*) filter(where qualification = 'suitable')::int, 'unsuitable', count(*) filter(where qualification = 'unsuitable')::int) from cohort) as qualifications,
       (select jsonb_build_object('open', count(*) filter(where closure = 'open')::int,
+        'data_received', count(*) filter(where closure = 'data_received')::int,
         'signal_working', count(*) filter(where closure = 'signal_working')::int, 'not_suitable', count(*) filter(where closure = 'not_suitable')::int,
         'candidate_declined', count(*) filter(where closure = 'candidate_declined')::int, 'no_contact', count(*) filter(where closure = 'no_contact')::int) from cohort) as closures,
       (select coalesce(jsonb_agg(to_jsonb(daily) order by date), '[]'::jsonb) from daily) as daily,
@@ -198,7 +200,7 @@ async function getLeadResultsImpl(input: Record<string, string | undefined>, now
       (select coalesce(jsonb_agg(to_jsonb(source_options) order by kind, source, medium, campaign), '[]'::jsonb) from source_options) as "sourceOptions",
       (select coalesce(jsonb_agg(to_jsonb(responsibles) order by (kind = 'other'), leads desc, kind, admin::text), '[]'::jsonb) from responsibles) as responsibles,
       (select coalesce(jsonb_agg(to_jsonb(losses) order by leads desc, reason nulls first), '[]'::jsonb)
-        from (select reason, count(*)::int as leads from cohort where closure not in ('open', 'signal_working') group by reason) losses) as "lossReasons",
+        from (select reason, count(*)::int as leads from cohort where closure in ('not_suitable', 'candidate_declined', 'no_contact') group by reason) losses) as "lossReasons",
       ${adminsJson} as "responsibleAdmins",
       (select coalesce(jsonb_agg(to_jsonb(page_rows) order by "createdAt" desc, id desc), '[]'::jsonb) from page_rows) as items
   `);

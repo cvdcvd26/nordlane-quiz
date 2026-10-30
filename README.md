@@ -6,21 +6,21 @@ A four-step flow: contact details (name, Polish phone number with a +48 mask, op
 
 **Runtime:** Node.js 22.12 or newer (24 LTS recommended).
 
-**Stack:** Next.js 16 (App Router, TypeScript) · Tailwind CSS 4 · PostgreSQL (Neon) + Drizzle ORM · Vercel Blob (private store) · Upstash QStash (delayed jobs) · Vercel.
+**Stack:** Next.js 16 (App Router, TypeScript) · Tailwind CSS 4 · PostgreSQL (Neon) + Drizzle ORM · Vercel Blob (private store) · Vercel Queues (delayed jobs on Vercel; QStash on other hosts).
 
 ---
 
 ## How it works
 
 ```
-Kontakt ──► Pytania (3× "Tak / Nie") ──► Step 2: task + PDF + screenshots ──► "Zadanie wysłane" + chat
+Kontakt ──► Pytania (3× "Tak / Nie") ──► Step 3: task + PDF + screenshots + help chat ──► "Zadanie wysłane" + chat
                                      │
               POST /api/submit (one transaction):
               submission, files, conversation, scheduled_messages row
                                      │
-              QStash: deliver after a random 30–60 sec
+              Managed queue: deliver after a random 30–60 sec
                                      ▼
-              POST /api/jobs/deliver ──► system message in the chat
+              Private queue consumer ──► system message in the chat
                                      │
               Contact saved (step 1) ──► exactly one lead ──► /admin
 ```
@@ -28,9 +28,10 @@ Kontakt ──► Pytania (3× "Tak / Nie") ──► Step 2: task + PDF + scree
 **Reliable delayed message**
 
 - The send time is chosen by the server at submission and stored in the database. No client-side `setTimeout`.
-- QStash calls `/api/jobs/deliver` (signature verified). Errors return 5xx and QStash retries up to 5 times with backoff.
+- On Vercel, `@vercel/queue` publishes the job ID to `alleybiz-auto-replies`. `vercel.json` registers `/api/jobs/queue-deliver` as a private consumer; Vercel provides authentication, persistence and retries. No Upstash account or `APP_URL` callback is needed for this path.
+- On other hosts, QStash calls `/api/jobs/deliver` (signature verified). Its settings remain supported, including callbacks for jobs accepted by older deployments.
 - Duplicates are prevented twice: the row is atomically claimed (`pending → sending`), and the system message has a deterministic `client_message_id` under a unique index.
-- If QStash is unavailable at submission, the job stays `pending` in the database and a backup path delivers it: the daily Vercel Cron `/api/jobs/sweep`, or the visitor's next chat request.
+- If publishing fails, the job stays `pending` in the database. Retrying the saved submission retries its existing unqueued job without changing the due time. The daily Vercel Cron `/api/jobs/sweep` and the visitor's next chat request remain backup paths, not minute-precision schedulers.
 - Status, attempts, last error and actual send time are stored and shown on the lead page.
 
 **Contacts.** Name and phone are required, Telegram is optional. The phone field formats as you type or paste (`+48 600 123 456`) and is stored as E.164 (`+48600123456`); Telegram is stored as `@username` or `null`. The same rules run in the browser and on the server.
@@ -101,7 +102,7 @@ Tables: `admin_users`, `visitor_sessions`, `visitor_contacts`, `quiz_answers`, `
 2. **Vercel → Add New → Project → Import** the repository. Default settings (Framework: Next.js). The first deploy builds even without a database.
 3. **Database:** Project → Storage → Create Database → **Neon** → Connect. This adds `DATABASE_URL`. Migrations run automatically on every deploy (`vercel-build`).
 4. **Files:** Project → Storage → Create → **Blob**, choose **Private** → Connect. This adds `BLOB_READ_WRITE_TOKEN`.
-5. **Delayed jobs:** Integrations → **Upstash QStash** → connect to the project (or copy the keys from console.upstash.com/qstash): `QSTASH_TOKEN`, `QSTASH_URL`, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY`.
+5. **Delayed jobs:** Vercel Queues uses the existing project's runtime authentication. Keep the private queue trigger in `vercel.json` and access to System Environment Variables enabled. The topic is created on first publish; an Upstash account is not required. Verify a test submission with the candidate tab closed, then inspect the queue and runtime logs in Vercel.
 6. **Settings → Environment Variables**, add:
    - `ADMIN_SESSION_SECRET` — random string, 32+ characters;
    - `ADMIN_EMAIL` and `ADMIN_PASSWORD` — the first administrator;
@@ -191,8 +192,8 @@ See `HOSTING-RU.txt` for deployment instructions in Russian and `FIXES-RU.txt` f
 - Review invitations unlock the form and insert the chat message in the same transaction.
 - Upload limits, submission attachment and draft deletion share the visitor lock; concurrent requests cannot attach a file after it was deleted or exceed the upload count. Removed chat attachments are deleted from storage.
 - On Vercel, use private Blob storage. On a standalone Node server, set `UPLOAD_DIR` to an absolute directory on a persistent volume, or use Blob. A production server without either configuration refuses local uploads rather than silently using ephemeral storage.
-- On non-Vercel hosts, configure `APP_URL` and an external authenticated schedule for `/api/jobs/sweep`. `vercel.json` is only executed by Vercel. The bundled daily cron is a fallback; QStash handles the configured 30–60 second delivery.
-- Preview callbacks use their own deployment URL unless `APP_URL` explicitly overrides it. Use a separate preview database and reachable callback URL; do not connect previews to the production database.
+- On non-Vercel hosts, configure QStash, `APP_URL` and an external authenticated schedule for `/api/jobs/sweep`. `vercel.json` is only executed by Vercel. The bundled daily cron is a fallback; the configured durable queue handles 30–60 second delivery.
+- Vercel Queues separates production and preview. Use a separate preview database; do not connect previews to the production database. For legacy QStash, callbacks use the preview deployment URL unless `APP_URL` explicitly overrides it, and the callback must be reachable.
 
 `npm run typecheck` generates route types before invoking TypeScript. `npm test` includes regression tests for pagination, duplicate timestamps, parallel uploads, stale delivery locks, transactional review invitations, authorization, password session invalidation, request limits and upgrade migrations.
 

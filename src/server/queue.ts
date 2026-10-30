@@ -1,6 +1,7 @@
 import { Client, Receiver } from "@upstash/qstash";
+import { send } from "@vercel/queue";
 
-/** External delayed-job queue. Production: Upstash QStash (works with Vercel serverless). */
+/** Durable delayed jobs. Vercel uses its managed queue; other hosts retain QStash. */
 export interface JobQueue {
   /** Enqueue delivery of a scheduled message. Must be idempotent for the same id. */
   scheduleDelivery(scheduledMessageId: string, notBefore: Date): Promise<string | null>;
@@ -24,6 +25,23 @@ export function appUrl() {
 }
 
 export const DELIVERY_PATH = "/api/jobs/deliver";
+export const AUTO_REPLY_TOPIC = "alleybiz-auto-replies";
+export const AUTO_REPLY_RETENTION_SECONDS = 7 * 24 * 60 * 60;
+
+const vercelQueue: JobQueue = {
+  async scheduleDelivery(id, notBefore) {
+    const delaySeconds = Math.max(0, Math.ceil((notBefore.getTime() - Date.now()) / 1000));
+    if (!Number.isFinite(delaySeconds) || delaySeconds >= AUTO_REPLY_RETENTION_SECONDS) {
+      throw new RangeError("Scheduled delivery is outside the queue retention period");
+    }
+    const result = await send(AUTO_REPLY_TOPIC, { scheduledMessageId: id }, {
+      delaySeconds,
+      retentionSeconds: AUTO_REPLY_RETENTION_SECONDS,
+      idempotencyKey: `scheduled-${id}`,
+    });
+    return result.messageId ? `vercel:${result.messageId}` : null;
+  },
+};
 
 const qstashQueue: JobQueue = {
   async scheduleDelivery(id, notBefore) {
@@ -45,11 +63,11 @@ const qstashQueue: JobQueue = {
   },
 };
 
-let current: JobQueue = qstashQueue;
-export const queue = () => current;
+let current: JobQueue | null = null;
+export const queue = () => current ?? (process.env.VERCEL ? vercelQueue : qstashQueue);
 /** Test hook. */
 export const setQueue = (q: JobQueue | null) => {
-  current = q ?? qstashQueue;
+  current = q;
 };
 
 /** Verifies that a job request really comes from QStash. */

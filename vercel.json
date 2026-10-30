@@ -1,4 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "crons": [{ "path": "/api/jobs/sweep", "schedule": "0 6 * * *" }]
+  "crons": [{ "path": "/api/jobs/sweep", "schedule": "0 6 * * *" }],
+  "functions": {
+    "src/app/api/jobs/queue-deliver/route.ts": {
+      "maxDuration": 60,
+      "experimentalTriggers": [{ "type": "queue/v2beta", "topic": "alleybiz-auto-replies" }]
+    }
+  }
 }

@@ -113,6 +113,7 @@ describe("owner-only successful lead drilldown", () => {
     await candidate({ attribution: googleAttribution, responsibleAdminId: owner.id });
     await candidate({ attribution: { ...googleAttribution, utmSource: "other" }, responsibleAdminId: staff.id });
     await candidate({ attribution: googleAttribution, responsibleAdminId: staff.id, closure: "open", status: "completed" });
+    await candidate({ attribution: googleAttribution, responsibleAdminId: staff.id, closure: "data_received", status: "completed" });
     await candidate({ attribution: googleAttribution, responsibleAdminId: staff.id, closure: "candidate_declined" });
     await candidate({ createdAt: "2020-09-30T21:59:59.999Z", attribution: googleAttribution, responsibleAdminId: staff.id });
     await candidate({ createdAt: "2020-10-07T22:00:00Z", attribution: googleAttribution, responsibleAdminId: staff.id });
