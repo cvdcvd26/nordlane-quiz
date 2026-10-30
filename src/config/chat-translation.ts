@@ -1,0 +1,107 @@
+import type { RichTextDocument } from "@/lib/rich-text";
+
+export type TranslationStatus = {
+  enabled: boolean;
+  reason: "not_configured" | "limit_reached" | null;
+  usedUsd: number;
+  limitUsd: number;
+};
+export type TranslationStatusDTO = TranslationStatus;
+export type DraftTranslation = { body: string; bodyRich: RichTextDocument | null };
+export type IncomingTranslationResponse = {
+  translations: { messageId: string; sourceHash: string; body: string }[];
+  failures: { messageId: string; code: string }[];
+};
+
+export const translationCopy = {
+  ru: {
+    title: "Переводчик чата",
+    russianMode: "Русский → польский",
+    polishMode: "Пишу сразу по-польски",
+    russianHint: "Напишите по-русски. Сначала появится польский перевод для проверки.",
+    polishHint: "Сообщение будет отправлено как написано, без перевода.",
+    russianPlaceholder: "Напишите ответ по-русски…",
+    polishPlaceholder: "Напишите ответ по-польски…",
+    prepare: "Перевести на польский",
+    preparing: "Переводим…",
+    previewTitle: "Кандидат получит этот текст на польском",
+    previewHint: "Можно исправить перевод. Русский черновик остаётся выше и не отправляется.",
+    previewLabel: "Польский перевод для отправки",
+    sendPolish: "Отправить на польском",
+    sending: "Отправляем…",
+    cancelPreview: "Вернуться к черновику",
+    draftFailed: "Не удалось подготовить перевод. Черновик сохранён — попробуйте ещё раз.",
+    sendFailed: "Не удалось отправить сообщение. Перевод и черновик сохранены.",
+    unavailable: "Переводчик пока не подключён. Можно отправить готовый текст на польском.",
+    loading: "Проверяем подключение переводчика…",
+    statusFailed: "Не удалось проверить переводчик. Для отправки без перевода выберите польский режим.",
+    limit: "Лимит перевода достигнут. Можно отправить готовый текст в польском режиме.",
+    retryStatus: "Проверить снова",
+    incomingTitle: "Перевод на русский",
+    incomingLoading: "Переводим на русский…",
+    incomingFailed: "Перевод временно недоступен. Оригинал сообщения сохранён.",
+    incomingRetry: "Повторить перевод",
+    incomingUnavailable: "Автоперевод пока не подключён",
+    incomingLimit: "Лимит перевода достигнут",
+  },
+  pl: {
+    title: "Tłumacz czatu",
+    russianMode: "Rosyjski → polski",
+    polishMode: "Piszę bezpośrednio po polsku",
+    russianHint: "Napisz po rosyjsku. Najpierw zobaczysz polskie tłumaczenie do sprawdzenia.",
+    polishHint: "Wiadomość zostanie wysłana w podanej treści, bez tłumaczenia.",
+    russianPlaceholder: "Napisz odpowiedź po rosyjsku…",
+    polishPlaceholder: "Napisz odpowiedź po polsku…",
+    prepare: "Przetłumacz na polski",
+    preparing: "Tłumaczenie…",
+    previewTitle: "Kandydat otrzyma ten tekst po polsku",
+    previewHint: "Możesz poprawić tłumaczenie. Rosyjski szkic pozostaje powyżej i nie jest wysyłany.",
+    previewLabel: "Polskie tłumaczenie do wysłania",
+    sendPolish: "Wyślij po polsku",
+    sending: "Wysyłanie…",
+    cancelPreview: "Wróć do szkicu",
+    draftFailed: "Nie udało się przygotować tłumaczenia. Szkic został zachowany — spróbuj ponownie.",
+    sendFailed: "Nie udało się wysłać wiadomości. Tłumaczenie i szkic zostały zachowane.",
+    unavailable: "Tłumacz nie jest jeszcze podłączony. Możesz wysłać gotowy tekst po polsku.",
+    loading: "Sprawdzanie połączenia z tłumaczem…",
+    statusFailed: "Nie udało się sprawdzić tłumacza. Aby wysłać bez tłumaczenia, wybierz tryb polski.",
+    limit: "Osiągnięto limit tłumaczeń. Możesz wysłać gotowy tekst w trybie polskim.",
+    retryStatus: "Sprawdź ponownie",
+    incomingTitle: "Tłumaczenie na rosyjski",
+    incomingLoading: "Tłumaczenie na rosyjski…",
+    incomingFailed: "Tłumaczenie jest chwilowo niedostępne. Oryginał wiadomości został zachowany.",
+    incomingRetry: "Ponów tłumaczenie",
+    incomingUnavailable: "Automatyczne tłumaczenie nie jest jeszcze podłączone",
+    incomingLimit: "Osiągnięto limit tłumaczeń",
+  },
+  en: {
+    title: "Chat translator",
+    russianMode: "Russian → Polish",
+    polishMode: "Write directly in Polish",
+    russianHint: "Write in Russian. A Polish preview will appear for review before sending.",
+    polishHint: "The message will be sent as written, without translation.",
+    russianPlaceholder: "Write your reply in Russian…",
+    polishPlaceholder: "Write your reply in Polish…",
+    prepare: "Translate into Polish",
+    preparing: "Translating…",
+    previewTitle: "The candidate will receive this Polish text",
+    previewHint: "You can edit the translation. Your Russian draft stays above and is not sent.",
+    previewLabel: "Polish translation to send",
+    sendPolish: "Send in Polish",
+    sending: "Sending…",
+    cancelPreview: "Back to draft",
+    draftFailed: "Could not prepare the translation. Your draft is saved — try again.",
+    sendFailed: "Could not send the message. Your translation and draft are saved.",
+    unavailable: "The translator is not connected yet. You can send prepared Polish text.",
+    loading: "Checking the translator connection…",
+    statusFailed: "Could not check the translator. Select Polish mode to send without translation.",
+    limit: "The translation limit has been reached. You can send prepared text in Polish mode.",
+    retryStatus: "Check again",
+    incomingTitle: "Russian translation",
+    incomingLoading: "Translating into Russian…",
+    incomingFailed: "Translation is temporarily unavailable. The original message is preserved.",
+    incomingRetry: "Retry translation",
+    incomingUnavailable: "Automatic translation is not connected yet",
+    incomingLimit: "The translation limit has been reached",
+  },
+};

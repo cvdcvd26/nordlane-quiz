@@ -47,7 +47,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
   const answerCount = sql<number>`(select count(*)::int from quiz_answers qa where qa.session_id = ${leadSession} and qa.question_key in ${QUESTION_KEYS})`;
   const lastSeenAt = sql<Date>`(select vs.last_seen_at from visitor_sessions vs where vs.id = ${leadSession})`.mapWith(value => new Date(value));
   const now = new Date();
-  const unfinished = sql`not (${submitted}) and ${L.status} not in ('completed', 'rejected')`;
+  const unfinished = sql`not (${submitted}) and ${L.status} not in ('signal_working', 'completed', 'rejected')`;
   const defaultInactive = sql`${lastSeenAt} <= ${new Date(now.getTime() - 30 * 60_000)}`;
   const isUnfinished = sql<boolean>`(${unfinished}) and (${defaultInactive})`;
 

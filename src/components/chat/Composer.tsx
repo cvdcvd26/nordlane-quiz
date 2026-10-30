@@ -11,6 +11,7 @@ import type { RichTextEditorHandle } from "@/components/admin/RichTextEditor";
 const RichTextEditor = dynamic(() => import("@/components/admin/RichTextEditor"), { ssr: false });
 
 type Attachment = { key: string; name: string; size: number; status: "uploading" | "done" | "error"; file?: PublicFile; error?: string };
+export type ComposerDraft = { body: string; bodyRich: RichTextDocument | null; files: PublicFile[]; revision: string };
 
 /**
  * Message input: Enter sends, Shift+Enter adds a new line.
@@ -30,8 +31,11 @@ export function Composer({
   quickReplies,
   onDirtyChange,
   uiLang = "pl",
+  onDraftChange,
+  disabled = false,
 }: {
-  onSend: (body: string, files: PublicFile[], bodyRich?: RichTextDocument | null) => void | Promise<void>;
+  /** Returning false keeps the draft intact, for example while reviewing a translation. */
+  onSend: (body: string, files: PublicFile[], bodyRich?: RichTextDocument | null) => void | boolean | Promise<void | boolean>;
   uploadUrl: string;
   uploadPurpose?: "chat";
   accept: string[];
@@ -45,6 +49,8 @@ export function Composer({
   quickReplies?: { items: QuickReply[]; label: string; select: string; hint: string; manage: string; empty: string; tooLong: string };
   onDirtyChange?: (dirty: boolean) => void;
   uiLang?: "pl" | "ru" | "en";
+  onDraftChange?: (draft: ComposerDraft) => void;
+  disabled?: boolean;
 }) {
   const adm = appearance === "admin";
   const [text, setText] = useState("");
@@ -60,13 +66,18 @@ export function Composer({
 
   const uploading = files.some((f) => f.status === "uploading");
   const ready = files.filter((f) => f.status === "done" && f.file).map((f) => f.file!);
-  const canSend = !busy && !uploading && (text.trim().length > 0 || ready.length > 0);
+  const locked = busy || disabled;
+  const canSend = !locked && !uploading && (text.trim().length > 0 || ready.length > 0);
   const dirty = Boolean(text.trim()) || files.length > 0 || busy;
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => {
+    onDraftChange?.({ body: text, bodyRich, files: files.filter(file => file.status === "done" && file.file).map(file => file.file!),
+      revision: JSON.stringify([text, bodyRich, files.map(file => [file.key, file.status, file.file?.id])]) });
+  }, [text, bodyRich, files, onDraftChange]);
 
   const insertReply = (id: string) => {
     const reply = quickReplies?.items.find(item => item.id === id);
-    if (!reply || busyRef.current) return;
+    if (!reply || busyRef.current || disabled) return;
     const next = appendRichTextTemplate({ body: text, bodyRich }, { body: reply.body, bodyRich: reply.bodyRich ?? null });
     if (next.body.length > 4000 || (next.bodyRich && !richTextSchema.safeParse(next.bodyRich).success)) { setTemplateError(true); return; }
     setText(next.body); setBodyRich(next.bodyRich); setTemplateError(false);
@@ -87,7 +98,8 @@ export function Composer({
     setBusy(true);
     try {
       const value = adm ? normalizeRichTextContent(text, bodyRich, 4000) : { body: text.trim(), bodyRich: null };
-      await onSend(value.body, ready, adm ? value.bodyRich : undefined);
+      const sent = await onSend(value.body, ready, adm ? value.bodyRich : undefined);
+      if (sent === false) return;
       setText("");
       setBodyRich(null);
       setFiles([]);
@@ -105,7 +117,7 @@ export function Composer({
     { method: "DELETE", ...(uploadPurpose ? {} : { json: { fileId: file.id } }) });
 
   const remove = async (attachment: Attachment) => {
-    if (busyRef.current) return;
+    if (busyRef.current || disabled) return;
     removed.current.add(attachment.key);
     setFiles((p) => p.filter((x) => x.key !== attachment.key));
     if (attachment.file) {
@@ -118,7 +130,7 @@ export function Composer({
   };
 
   const attach = (list: FileList) => {
-    if (busyRef.current) return;
+    if (busyRef.current || disabled) return;
     Array.from(list)
       .slice(0, Math.max(0, maxFiles - files.length))
       .forEach((file) => {
@@ -147,7 +159,7 @@ export function Composer({
       {adm && quickReplies && <div className="border-b border-adm-line px-2 pt-1.5 pb-2">
         <div className="flex flex-wrap items-center gap-2">
           <label htmlFor="composer-quick-reply" className="sr-only">{quickReplies.label}</label>
-          <select id="composer-quick-reply" className="adm-input min-w-0 flex-1 text-[12.5px]" value="" disabled={busy || !quickReplies.items.length} onChange={event => insertReply(event.target.value)}>
+          <select id="composer-quick-reply" className="adm-input min-w-0 flex-1 text-[12.5px]" value="" disabled={locked || !quickReplies.items.length} onChange={event => insertReply(event.target.value)}>
             <option value="">{quickReplies.items.length ? quickReplies.select : quickReplies.empty}</option>
             {quickReplies.items.map(reply => <option key={reply.id} value={reply.id}>{reply.title}</option>)}
           </select>
@@ -168,7 +180,7 @@ export function Composer({
             >
               <span className="max-w-40 truncate">{f.name}</span>
               <span className={adm ? "text-adm-ink-3" : "text-slate"}>{f.status === "uploading" ? "…" : f.status === "error" ? "!" : formatBytes(f.size)}</span>
-              <button type="button" aria-label={labels.removeAttachment(f.name)} disabled={busy} onClick={() => void remove(f)}>
+              <button type="button" aria-label={labels.removeAttachment(f.name)} disabled={locked} onClick={() => void remove(f)}>
                 ×
               </button>
             </li>
@@ -187,7 +199,7 @@ export function Composer({
               }
               aria-label={labels.attach}
               title={labels.attach}
-              disabled={busy}
+              disabled={locked}
               onClick={() => input.current?.click()}
             >
               <svg aria-hidden viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -212,10 +224,10 @@ export function Composer({
         <label className="sr-only" htmlFor="composer">
           {placeholder}
         </label>
-        {adm ? <RichTextEditor id="composer" label={placeholder} value={{ body: text, bodyRich }} onChange={value => { setText(value.body); setBodyRich(value.bodyRich); setTemplateError(false); }} uiLang={uiLang} maxLength={4000} disabled={busy} placeholder={placeholder} compact editorRef={richEditor} onSubmit={() => { void send(); }} /> : <textarea
+        {adm ? <RichTextEditor id="composer" label={placeholder} value={{ body: text, bodyRich }} onChange={value => { setText(value.body); setBodyRich(value.bodyRich); setTemplateError(false); }} uiLang={uiLang} maxLength={4000} disabled={locked} placeholder={placeholder} compact editorRef={richEditor} onSubmit={() => { void send(); }} /> : <textarea
           id="composer"
           ref={area}
-          disabled={busy}
+          disabled={locked}
           rows={1}
           value={text}
           onChange={(e) => {

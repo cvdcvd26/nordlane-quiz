@@ -22,7 +22,7 @@ const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
 
-export const leadStatus = pgEnum("lead_status", ["new", "in_progress", "awaiting_reply", "data_received", "completed", "rejected"]);
+export const leadStatus = pgEnum("lead_status", ["new", "in_progress", "awaiting_reply", "data_received", "signal_working", "completed", "rejected"]);
 export const messageSender = pgEnum("message_sender", ["visitor", "admin", "system"]);
 export const scheduledStatus = pgEnum("scheduled_status", ["pending", "sending", "sent", "failed", "cancelled"]);
 export const fileOwner = pgEnum("file_owner", ["visitor", "admin"]);
@@ -263,6 +263,37 @@ export const messages = pgTable(
     index("messages_conversation_changes_idx").on(t.conversationId, t.changeRevision),
   ],
 );
+
+/* ---------- Private administrator translations ---------- */
+/** No message text or credentials are recorded in the budget ledger. */
+export const translationUsage = pgTable("translation_usage", {
+  id: id(),
+  month: text("month").notNull(),
+  reservedMicros: integer("reserved_micros").notNull(),
+  actualMicros: integer("actual_micros"),
+  createdAt: createdAt(),
+}, (t) => [
+  index("translation_usage_month_idx").on(t.month),
+  check("translation_usage_cost_check", sql`${t.reservedMicros} >= 0 and (${t.actualMicros} is null or ${t.actualMicros} >= 0)`),
+]);
+
+/** Separate from messages: visitor chat responses never hydrate this table. */
+export const messageTranslations = pgTable("message_translations", {
+  key: text("key").primaryKey(),
+  leadId: bigint("lead_id", { mode: "number" }).notNull().references(() => leads.id, { onDelete: "cascade" }),
+  messageId: uuid("message_id").references(() => messages.id, { onDelete: "cascade" }),
+  sourceHash: text("source_hash").notNull(),
+  target: text("target").notNull(),
+  policy: text("policy").notNull(),
+  status: text("status").notNull(),
+  body: text("body"),
+  bodyRich: jsonb("body_rich").$type<RichTextDocument>(),
+  usageId: uuid("usage_id").references(() => translationUsage.id, { onDelete: "set null" }),
+  updatedAt: updatedAt(),
+}, (t) => [
+  index("message_translations_lead_idx").on(t.leadId),
+  check("message_translations_status_check", sql`${t.status} in ('pending', 'ready', 'failed')`),
+]);
 
 /* ---------- Files ---------- */
 /** Structured correction rounds retain the initial submission and chat attachment history. */

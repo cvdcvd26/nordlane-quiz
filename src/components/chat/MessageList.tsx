@@ -21,6 +21,7 @@ export function MessageList({
   appearance = "visitor",
   manager,
   actions,
+  messageExtension,
 }: {
   messages: LocalMessage[];
   viewer: "visitor" | "admin";
@@ -32,6 +33,8 @@ export function MessageList({
   appearance?: "visitor" | "admin";
   manager?: ManagerProfile | null;
   actions?: (message: ChatMessage) => ReactNode;
+  /** Private administrator-only additions, never rendered in the visitor feed. */
+  messageExtension?: (message: ChatMessage) => ReactNode;
 }) {
   const adm = appearance === "admin";
   const operator = manager ?? defaultManager;
@@ -140,6 +143,7 @@ export function MessageList({
                   </ul>
                 )}
               </div>
+              {adm && viewer === "admin" && m.sender === "visitor" && m.body && !m.local && messageExtension?.(m)}
               <div className={`mt-1 flex flex-wrap items-center gap-2 text-xs ${adm ? "text-adm-ink-3" : "text-slate"} ${mine ? "justify-end" : ""}`}>
                 <span>{who}</span>
                 {m.local === "sending" ? (

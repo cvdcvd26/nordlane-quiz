@@ -531,6 +531,7 @@ export const content = {
       in_progress: "W trakcie",
       awaiting_reply: "Czeka na odpowiedź",
       data_received: "Otrzymano dane",
+      signal_working: "🎉 Przeniesiono do Signal / Współpracujemy",
       completed: "Obsługa zakończona",
       rejected: "Nie zakwalifikowano",
     },

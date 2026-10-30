@@ -23,6 +23,10 @@ Kontakt ──► Pytania (3× "Tak / Nie") ──► Step 3: task + PDF + scree
               Contact saved (step 1) ──► exactly one lead ──► /admin
 ```
 
+**Private admin chat translations (optional).** Incoming Polish text stays visible with a separate Russian translation in the admin feed. A Russian draft is translated to an editable Polish preview and is sent only after the administrator confirms it. Files, the lead profile and the rest of the conversation are not sent to the model. Inline formatting is preserved; URL, email and numeric spans are masked server-side, including spans split across formatting runs. Names or written-out addresses in message text are not guaranteed to be anonymised. Provider requests use fixed GPT-6 Luna Standard, `store:false`, no reasoning, bounded input/output and a 20-second deadline without automatic retries. OpenAI's standard abuse-monitoring retention still applies; this is not a claim of zero retention.
+
+The feature is disabled unless `OPENAI_API_KEY` is configured server-side and `OPENAI_TRANSLATION_ENABLED=true`. `OPENAI_TRANSLATION_BUDGET_USD` defaults to $5/month and must be greater than 0 and no more than 45. The local budget reserves $0.02 before each new request, settles known successful usage and retains the full reservation on uncertain failures. The reservation ledger is a conservative application ceiling, not an OpenAI invoice or a promise about the account's balance. No payment method or auto-recharge is configured by the app. Private cached translations are reused; cached incoming translations remain readable at the cap without starting new model requests. A new request for a changed message uses a new content hash; deleted or cross-lead messages are not returned.
+
 **Immediate task acknowledgement**
 
 - When enabled, the informational message is written in the same database transaction as the task and its files. A successful submission response includes the persisted message, so the final-step chat shows it immediately without waiting for polling.

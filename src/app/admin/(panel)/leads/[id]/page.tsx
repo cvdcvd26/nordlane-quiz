@@ -6,7 +6,7 @@ import { ArrowRight, Check, ChevronRight, Trash2 } from "lucide-react";
 import { LEAD_STATUSES, QUESTION_KEYS, type LeadStatus } from "@/config/content";
 import { api, formatBytes, newId, type ChatMessage, type PublicFile, type MessagePage, type MessageChanges, type MessageChange } from "@/lib/api";
 import { mergeMessages, reconcileMessageChanges, rememberMessageChanges } from "@/lib/chat";
-import { MessageList } from "@/components/chat/MessageList";
+import { AdminTranslatedMessageList } from "@/components/admin/AdminTranslatedMessageList";
 import { ManagerAvatar } from "@/components/chat/ManagerAvatar";
 import type { ManagerProfile } from "@/config/managers";
 import { AdminChatComposer } from "@/components/admin/AdminChatComposer";
@@ -390,12 +390,11 @@ function Lead({ id }: { id: string }) {
           </h2>
           <div className="max-h-[60vh] min-h-72 overflow-y-auto px-4 py-4">
             {before && <button type="button" className="adm-btn mb-4" disabled={loadingEarlier} onClick={() => void loadEarlier()}>{t.chat.loadEarlier}</button>}
-            <MessageList
+            <AdminTranslatedMessageList
+              leadId={id}
               messages={mergeMessages(currentHistory?.messages ?? [], d.messages)}
-              viewer="admin"
               text={t.chat}
               locale={t.locale}
-              appearance="admin"
               manager={d.lead.manager}
               emptyText={d.submission ? T.noMessages : T.noSubmissionYet}
               actions={message => <AdminMessageActions message={message} onChange={changeMessage} />}
