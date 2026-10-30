@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { setupTestEnv, newSession, PNG, JPG, PDF, EXE } from "./helpers";
+import { setupTestEnv, newSession, createLegacyScheduledSubmission, PNG, JPG, PDF, EXE } from "./helpers";
 import { schema } from "@/db";
 import { saveAnswer, getVisitorState } from "@/server/services/quiz";
 import { saveContact } from "@/server/services/contact";
 import { uploadFile, deletePendingFile, getReadableFile } from "@/server/services/uploads";
-import { submitTask } from "@/server/services/submission";
+import { enqueue, submitTask } from "@/server/services/submission";
 import { deliverScheduledMessage, deliverOverdue } from "@/server/services/delivery";
 import { getVisitorChat, postVisitorMessage } from "@/server/services/chat";
 import { listLeads, listReviews, getLeadDetails, postAdminMessage, addLeadNote, updateLeadStatus } from "@/server/services/admin";
@@ -19,7 +19,7 @@ import {
   setTestimonialStatus,
   getVisitorTestimonial,
 } from "@/server/services/testimonials";
-import { updateSettings, getSettings, pickDelayMs, settingsSchema } from "@/server/settings";
+import { updateSettings, getSettings, settingsSchema } from "@/server/settings";
 import { defaultSettings } from "@/config/settings";
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>;
@@ -35,12 +35,15 @@ const answerAll = async (sid: string, v = "yes") => {
 const REVIEW = "Zadanie było jasne, wszystko działa.";
 const contact = { name: "Anna", phone: "600 123 456", telegram: "" };
 
-async function submittedVisitor() {
+async function submittedVisitor(legacy = false) {
   const sid = await newSession(env.db);
   await saveContact(sid, contact);
   await answerAll(sid);
   const f = await uploadFile({ sessionId: sid, purpose: "submission", uploadedBy: "visitor", file: png() });
-  const res = await submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id], review: REVIEW });
+  const input = { idempotencyKey: randomUUID(), fileIds: [f.id], review: REVIEW };
+  const res = legacy
+    ? (await createLegacyScheduledSubmission(sid, input)).submission
+    : await submitTask(sid, input);
   const [sched] = await env.db
     .select()
     .from(schema.scheduledMessages)
@@ -99,18 +102,21 @@ describe("file uploads", () => {
 });
 
 describe("task submission", () => {
-  it("saves the task and schedules a job 30–60 seconds later", async () => {
+  it("saves the task and its automatic acknowledgement together without queueing a delayed delivery", async () => {
     const { sid, res, sched } = await submittedVisitor();
     expect(res.duplicate).toBe(false);
     const state = await getVisitorState(sid);
     expect(state.submission?.id).toBe(res.submissionId);
     expect(state.files).toHaveLength(1);
 
-    const delay = sched.scheduledFor.getTime() - new Date(res.submittedAt).getTime();
-    expect(delay).toBeGreaterThanOrEqual(30_000);
-    expect(delay).toBeLessThanOrEqual(60_000);
-    expect(env.queued.some((q) => q.id === sched.id && q.at.getTime() === sched.scheduledFor.getTime())).toBe(true);
-    expect(sched.queueMessageId).toBeTruthy();
+    expect(sched.scheduledFor.toISOString()).toBe(res.submittedAt);
+    expect(sched.sentAt?.toISOString()).toBe(res.submittedAt);
+    expect(sched.status).toBe("sent");
+    expect(sched.messageId).toBe(res.acknowledgement?.id);
+    expect(res.acknowledgement).toMatchObject({ sender: "system", body: defaultSettings.autoMessageText, files: [] });
+    expect((await getVisitorChat(sid)).messages).toEqual([res.acknowledgement]);
+    expect(env.queued.some((q) => q.id === sched.id)).toBe(false);
+    expect(sched.queueMessageId).toBeNull();
   });
 
   it("a repeated click does not create a duplicate", async () => {
@@ -124,8 +130,12 @@ describe("task submission", () => {
       submitTask(sid, { idempotencyKey: key, fileIds: [f.id], review: REVIEW }),
     ]);
     expect(r1.submissionId).toBe(r2.submissionId);
+    expect(r1.acknowledgement?.id).toBe(r2.acknowledgement?.id);
     const subs = await env.db.select().from(schema.taskSubmissions).where(eq(schema.taskSubmissions.sessionId, sid));
     expect(subs).toHaveLength(1);
+    const chat = await getVisitorChat(sid);
+    expect(chat.messages).toHaveLength(1);
+    expect(chat.messages[0].sender).toBe("system");
   });
 
   it("requires a written review and shows it to the admin; the review is searchable", async () => {
@@ -162,9 +172,10 @@ describe("task submission", () => {
     expect(await env.db.select().from(schema.taskSubmissions).where(eq(schema.taskSubmissions.sessionId, other))).toHaveLength(0);
   });
 
-  it("if the queue is down, the job stays in the DB and the backup sweep delivers it", async () => {
+  it("keeps a legacy delayed job in the DB when its queue is down, allowing the backup sweep to deliver it", async () => {
+    const { sched } = await submittedVisitor(true);
     env.queue.failNext = true;
-    const { sched } = await submittedVisitor();
+    await enqueue(sched.id, sched.scheduledFor);
     expect(sched.status).toBe("pending");
     const [row] = await env.db.select().from(schema.scheduledMessages).where(eq(schema.scheduledMessages.id, sched.id));
     expect(row.lastError).toMatch(/enqueue failed/);
@@ -175,9 +186,10 @@ describe("task submission", () => {
 });
 
 describe("automatic message", () => {
-  it("rejects invalid second intervals and keeps old saved minute settings readable", async () => {
+  it("validates legacy intervals while reporting immediate delivery for old saved minute settings", async () => {
     expect(settingsSchema.safeParse({ ...defaultSettings, autoMessageMinDelaySeconds: 0.5 }).success).toBe(false);
-    expect(settingsSchema.safeParse({ ...defaultSettings, autoMessageMaxDelaySeconds: 29 }).success).toBe(false);
+    expect(settingsSchema.safeParse({ ...defaultSettings, autoMessageMinDelaySeconds: 30, autoMessageMaxDelaySeconds: 29 }).success).toBe(false);
+    expect(settingsSchema.safeParse({ ...defaultSettings, autoMessageMinDelaySeconds: 30, autoMessageMaxDelaySeconds: 60 }).success).toBe(true);
     const seconds = ["autoMessageMinDelaySeconds", "autoMessageMaxDelaySeconds"];
     const legacy = ["autoMessageMinDelayMinutes", "autoMessageMaxDelayMinutes"];
     await env.db.delete(schema.appSettings).where(inArray(schema.appSettings.key, seconds));
@@ -185,17 +197,17 @@ describe("automatic message", () => {
       await env.db.insert(schema.appSettings).values([
         { key: legacy[0], value: 20 }, { key: legacy[1], value: 30 },
       ]);
-      expect(await getSettings()).toMatchObject({ autoMessageMinDelaySeconds: 1200, autoMessageMaxDelaySeconds: 1800 });
+      expect(await getSettings()).toMatchObject({ autoMessageMinDelaySeconds: 0, autoMessageMaxDelaySeconds: 0 });
       await updateSettings(defaultSettings);
-      expect(await getSettings()).toMatchObject({ autoMessageMinDelaySeconds: 30, autoMessageMaxDelaySeconds: 60 });
+      expect(await getSettings()).toMatchObject({ autoMessageMinDelaySeconds: 0, autoMessageMaxDelaySeconds: 0 });
     } finally {
       await env.db.delete(schema.appSettings).where(inArray(schema.appSettings.key, legacy));
       await updateSettings(defaultSettings);
     }
   });
 
-  it("delivers at the scheduled second without an extra minute or an early reply", async () => {
-    const { sched } = await submittedVisitor();
+  it("continues to deliver legacy jobs at the scheduled second without an early reply", async () => {
+    const { sched } = await submittedVisitor(true);
     const before = new Date(sched.scheduledFor.getTime() - 1);
     expect(await deliverScheduledMessage(sched.id, before)).toBe("not_due");
     expect((await deliverOverdue({ conversationId: sched.conversationId, now: before }))[sched.id]).toBeUndefined();
@@ -203,8 +215,8 @@ describe("automatic message", () => {
     expect(await deliverScheduledMessage(sched.id, sched.scheduledFor)).toBe("already_sent");
   });
 
-  it("is not sent early, is sent once, retries create no duplicates", async () => {
-    const { sched } = await submittedVisitor();
+  it("does not send legacy jobs early and creates no duplicates under concurrent delivery retries", async () => {
+    const { sched } = await submittedVisitor(true);
     expect(await deliverScheduledMessage(sched.id, new Date(sched.scheduledFor.getTime() - 5 * 60_000))).toBe("not_due");
 
     const at = new Date(sched.scheduledFor.getTime() + 1000);
@@ -220,16 +232,22 @@ describe("automatic message", () => {
     expect(row.sentAt).toBeTruthy();
   });
 
-  it("random delay always stays within the configured range", () => {
-    for (let i = 0; i < 1000; i++) {
-      const d = pickDelayMs({ autoMessageMinDelaySeconds: 30, autoMessageMaxDelaySeconds: 60 });
-      expect(d).toBeGreaterThanOrEqual(30_000);
-      expect(d).toBeLessThanOrEqual(60_000);
+  it("canonicalises legacy second intervals to zero and acknowledges new tasks immediately", async () => {
+    try {
+      expect(await updateSettings({ ...defaultSettings, autoMessageMinDelaySeconds: 30, autoMessageMaxDelaySeconds: 60 }))
+        .toMatchObject({ autoMessageMinDelaySeconds: 0, autoMessageMaxDelaySeconds: 0 });
+      expect(await getSettings()).toMatchObject({ autoMessageMinDelaySeconds: 0, autoMessageMaxDelaySeconds: 0 });
+      const { sched, res } = await submittedVisitor();
+      expect(sched.status).toBe("sent");
+      expect(sched.scheduledFor.toISOString()).toBe(res.submittedAt);
+      expect(await deliverScheduledMessage(sched.id, sched.scheduledFor)).toBe("already_sent");
+    } finally {
+      await updateSettings(defaultSettings);
     }
   });
 
-  it("disabling it in settings cancels delivery", async () => {
-    const { sched } = await submittedVisitor();
+  it("disabling it in settings cancels an unsent legacy delivery", async () => {
+    const { sched } = await submittedVisitor(true);
     await updateSettings({ ...(await getSettings()), autoMessageEnabled: false });
     expect(await deliverScheduledMessage(sched.id, new Date(sched.scheduledFor.getTime() + 1000))).toBe("cancelled");
     await updateSettings(defaultSettings);
@@ -263,7 +281,7 @@ describe("chat and leads", () => {
   });
 
   it("visitor messages go to the existing lead, before and after the auto message, without duplicates", async () => {
-    const { sid, sched } = await submittedVisitor();
+    const { sid, sched } = await submittedVisitor(true);
     const [lead] = await env.db.select().from(schema.leads).where(eq(schema.leads.sessionId, sid));
 
     const early = await postVisitorMessage(sid, { clientMessageId: randomUUID(), body: "Wczesne pytanie" });

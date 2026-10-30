@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { SignJWT } from "jose";
-import { setupTestEnv, newSession, PNG } from "./helpers";
+import { setupTestEnv, newSession, PNG, createLegacyScheduledSubmission } from "./helpers";
 import { schema } from "@/db";
 import { candidateOutcomeConfig } from "@/config/candidate-outcome";
 import { saveContact } from "@/server/services/contact";
@@ -27,14 +27,16 @@ beforeAll(async () => { env = await setupTestEnv(); });
 afterAll(async () => { vi.unstubAllEnvs(); await env.client.close(); });
 const publish = { action: "publish", body: candidateOutcomeConfig.defaultBody };
 
-async function candidate(submit = true) {
+async function candidate(submit: boolean | "legacy" = true) {
   const sid = await newSession(env.db);
   await saveContact(sid, { name: "Candidate result test", phone: "600123456" });
   const [lead] = await env.db.select().from(schema.leads).where(eq(schema.leads.sessionId, sid));
   if (submit) {
     for (const key of ["q1", "q2", "q3"]) await saveAnswer(sid, key, "yes");
     const image = await uploadFile({ sessionId: sid, purpose: "submission", uploadedBy: "visitor", file: { name: "shot.png", type: "image/png", buffer: PNG } });
-    await submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [image.id], review: "Task verification completed." });
+    const input = { idempotencyKey: randomUUID(), fileIds: [image.id], review: "Task verification completed." };
+    if (submit === "legacy") await createLegacyScheduledSubmission(sid, input);
+    else await submitTask(sid, input);
   }
   return { sid, lead };
 }
@@ -56,9 +58,11 @@ describe("explicit candidate result publication", () => {
     expect((await getVisitorState(sid)).outcome).toEqual(result);
     expect((await getVisitorChat(sid)).outcome).toEqual(result);
     expect((await getLeadDetails(lead.id)).lead.outcome).toEqual(result);
-    // A retry updates one result, preserving its publication time and creating no chat messages.
+    const messages = (await getVisitorChat(sid)).messages;
+    expect(messages.map(message => message.sender)).toEqual(["system"]);
+    // A retry preserves the existing acknowledgement and creates no further chat messages.
     expect(await updateCandidateOutcome(lead.id, publish)).toEqual(result);
-    expect((await getVisitorChat(sid)).messages).toHaveLength(0);
+    expect((await getVisitorChat(sid)).messages).toEqual(messages);
   });
 
   it("requires both a rejection and a submitted task, validates the text and does not expose another candidate's result", async () => {
@@ -77,7 +81,7 @@ describe("explicit candidate result publication", () => {
   });
 
   it.each(["pending", "failed", "sending"] as const)("cancels an unsent %s welcome message, including queued retries and the chat fallback", async (status) => {
-    const { sid, lead } = await candidate();
+    const { sid, lead } = await candidate("legacy");
     const job = await jobFor(sid);
     await env.db.update(schema.scheduledMessages).set({ status, lockedAt: status === "sending" ? new Date() : null })
       .where(eq(schema.scheduledMessages.id, job.id));
@@ -91,7 +95,7 @@ describe("explicit candidate result publication", () => {
   it("preserves delivered history and admin replies while closing candidate writes until retraction", async () => {
     const { sid, lead } = await candidate();
     const job = await jobFor(sid);
-    expect(await deliverScheduledMessage(job.id, new Date(job.scheduledFor.getTime() + 1))).toBe("sent");
+    expect(await deliverScheduledMessage(job.id, new Date(job.scheduledFor.getTime() + 1))).toBe("already_sent");
     await postVisitorMessage(sid, { clientMessageId: randomUUID(), body: "May I ask a question?" });
     await updateLeadStatus(lead.id, { status: "rejected" });
     await updateCandidateOutcome(lead.id, publish);
@@ -134,7 +138,7 @@ describe("explicit candidate result publication", () => {
   });
 
   it("clears a published result when changing the internal decision and never restarts a cancelled welcome message", async () => {
-    const { sid, lead } = await candidate();
+    const { sid, lead } = await candidate("legacy");
     await updateLeadStatus(lead.id, { status: "rejected" });
     await updateCandidateOutcome(lead.id, publish);
     await updateLeadStatus(lead.id, { status: "new" });
@@ -157,7 +161,8 @@ describe("explicit candidate result publication", () => {
     if (sent.status === "rejected") expect(sent.reason).toMatchObject({ code: "candidate_chat_closed" });
     const chat = await getVisitorChat(sid);
     expect(chat.outcome).not.toBeNull();
-    expect(chat.messages).toHaveLength(sent.status === "fulfilled" ? 1 : 0);
+    expect(chat.messages).toHaveLength(sent.status === "fulfilled" ? 2 : 1);
+    expect(chat.messages[0].sender).toBe("system");
     await expect(postVisitorMessage(sid, { clientMessageId: randomUUID(), body: "After publication" }))
       .rejects.toMatchObject({ status: 403, code: "candidate_chat_closed" });
     expect((await getVisitorChat(sid)).messages).toEqual(chat.messages);
@@ -198,7 +203,7 @@ describe("explicit candidate result publication", () => {
   });
 
   it("serializes publication and due delivery so only an already delivered welcome can remain", async () => {
-    const { sid, lead } = await candidate();
+    const { sid, lead } = await candidate("legacy");
     const job = await jobFor(sid);
     await updateLeadStatus(lead.id, { status: "rejected" });
     await Promise.all([

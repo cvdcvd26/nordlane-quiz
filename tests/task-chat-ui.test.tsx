@@ -4,13 +4,16 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { content, QUESTION_KEYS } from "@/config/content";
 import { chatConfig } from "@/config/settings";
+import { defaultManager, type ManagerProfile } from "@/config/managers";
 import type { ChatMessage, PublicFile } from "@/lib/api";
 
 const mocks = vi.hoisted(() => ({ api: vi.fn(), sound: vi.fn(), composerMount: vi.fn() }));
 vi.mock("@/lib/api", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/api")>(), api: mocks.api }));
 vi.mock("@/lib/sound", () => ({ playChime: mocks.sound }));
 vi.mock("@/components/ui/SoundToggle", () => ({ SoundToggle: () => null }));
-vi.mock("@/components/chat/ManagerAvatar", () => ({ ManagerAvatar: () => null }));
+vi.mock("@/components/chat/ManagerAvatar", () => ({
+  ManagerAvatar: ({ manager }: { manager: ManagerProfile }) => <span data-testid="manager-avatar" data-manager-id={manager.id} />,
+}));
 vi.mock("@/components/chat/Composer", () => ({
   Composer: function MockComposer({ onSend }: { onSend: (body: string, files: PublicFile[]) => void | Promise<void> }) {
     const [draft, setDraft] = useState("");
@@ -57,13 +60,14 @@ const manager = { id: "maja", name: "Maja (HR)", avatar: "/maja-hr.png" };
 const message = (id: string, sequence: number, sender: ChatMessage["sender"], body: string): ChatMessage => ({
   id, sequence: String(sequence), sender, body, createdAt: "2026-10-29T10:00:00.000Z", clientMessageId: `client-${id}`, files: [],
 });
+const acknowledgement = message("submitted-ack", 2, "system", "Persisted task receipt from the server");
 const poll = () => act(async () => { await vi.advanceTimersByTimeAsync(chatConfig.pollIntervalMs); });
 const launcher = () => host.querySelector<HTMLButtonElement>('button[aria-controls="visitor-chat-panel"]')!;
 const panel = () => host.querySelector<HTMLDivElement>("#visitor-chat-panel")!;
 const draft = () => host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Draft"]')!;
 const button = (label: string) => [...host.querySelectorAll("button")].find(node => node.textContent === label)!;
 const click = (node: HTMLElement) => act(async () => { node.click(); });
-const renderChat = (props: { active?: boolean; collapsible?: boolean } = {}) => act(async () => root.render(<VisitorChat collapsible {...props} />));
+const renderChat = (props: { active?: boolean; collapsible?: boolean; acknowledgement?: ChatMessage | null } = {}) => act(async () => root.render(<VisitorChat collapsible {...props} />));
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -91,7 +95,7 @@ beforeEach(() => {
       files: [{ id: "file-preview", name: "task.png", size: 123, mime: "image/png", url: "/test-file.png" }],
       limits: { maxFiles: 6, maxFileSizeBytes: 4000000, types: ["image/png"] },
     };
-    if (url === "/api/submit") return { submissionId: "test-submission", submittedAt: "2026-10-29T10:30:00.000Z" };
+    if (url === "/api/submit") return { submissionId: "test-submission", submittedAt: "2026-10-29T10:30:00.000Z", acknowledgement };
     throw new Error(`Unexpected UI test request: ${url}`);
   });
   sessionStorage.clear();
@@ -104,6 +108,44 @@ afterEach(async () => {
 });
 
 describe("task-stage help chat", () => {
+  it("exposes the assigned HR and a clear chat action before opening, including with existing history", async () => {
+    await renderChat();
+    expect(launcher().textContent).toContain(content.taskChat.title);
+    expect(launcher().textContent).toContain(content.taskChat.hint);
+    expect(launcher().textContent).toContain(content.taskChat.action);
+    expect(launcher().textContent).toContain(manager.name);
+    expect(launcher().querySelector('[data-testid="manager-avatar"]')?.getAttribute("data-manager-id")).toBe(manager.id);
+    expect(launcher().querySelector("button, a, input")).toBeNull();
+    expect(host.querySelector("section")?.getAttribute("aria-labelledby")).toBe("task-chat-title");
+    expect(launcher().getAttribute("aria-controls")).toBe(panel().id);
+    expect(launcher().getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("replaces the initial HR fallback with the server-assigned manager when chat becomes available", async () => {
+    mocks.api.mockRejectedValueOnce(new Error("Network unavailable"));
+    await renderChat();
+    expect(launcher().textContent).toContain(defaultManager.name);
+    expect(launcher().querySelector('[data-testid="manager-avatar"]')?.getAttribute("data-manager-id")).toBe(defaultManager.id);
+    await poll();
+    expect(launcher().textContent).toContain(manager.name);
+    expect(launcher().querySelector('[data-testid="manager-avatar"]')?.getAttribute("data-manager-id")).toBe(manager.id);
+    expect(launcher().getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("moves focus into an opened chat and returns it to the launcher on Escape", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
+    await renderChat();
+    await click(launcher());
+    await act(async () => { frames.splice(0).forEach(callback => callback(0)); });
+    expect(document.activeElement).toBe(panel());
+    expect(launcher().textContent).toContain(content.taskChat.close);
+    await act(async () => { panel().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    await act(async () => { frames.splice(0).forEach(callback => callback(0)); });
+    expect(panel().hidden).toBe(true);
+    expect(document.activeElement).toBe(launcher());
+  });
+
   it("collapses without losing a composer draft, history, or a pending message", async () => {
     let resolvePost!: (value: unknown) => void;
     let sentId = "";
@@ -149,6 +191,34 @@ describe("task-stage help chat", () => {
     await poll(); expect(mocks.sound).toHaveBeenCalledTimes(1);
   });
 
+  it("shows the persisted submission receipt immediately and preserves it through a stale initial poll and polling echoes", async () => {
+    let resolveInitial!: (value: unknown) => void;
+    mocks.api.mockImplementationOnce(() => new Promise(resolve => { resolveInitial = resolve; }));
+    await renderChat();
+    await renderChat({ acknowledgement, collapsible: false });
+    expect(panel().textContent).toContain(acknowledgement.body);
+    expect(mocks.sound).not.toHaveBeenCalled();
+    await act(async () => resolveInitial({
+      messages: [message("history", 1, "admin", "Older conversation history")], nextCursor: "1", previousCursor: null, hasMore: false,
+      changes: { updates: [], deletedIds: [], cursor: "0", hasMore: false }, manager, attachmentsEnabled: false, outcome: null,
+    }));
+    expect(panel().textContent).toContain("Older conversation history");
+    expect(panel().textContent?.match(/Persisted task receipt from the server/g)).toHaveLength(1);
+    await renderChat({ acknowledgement: { ...acknowledgement }, collapsible: false });
+    incoming = [acknowledgement];
+    await poll();
+    expect(panel().textContent?.match(/Persisted task receipt from the server/g)).toHaveLength(1);
+    // A retry/echo is the same logical message even if a transport returns another id.
+    incoming = [{ ...acknowledgement, id: "same-client-receipt" }];
+    await poll();
+    expect(panel().textContent?.match(/Persisted task receipt from the server/g)).toHaveLength(1);
+    expect(mocks.sound).not.toHaveBeenCalled();
+    incoming = [message("genuine-reply", 3, "admin", "A real new HR reply")];
+    await poll();
+    expect(panel().textContent).toContain("A real new HR reply");
+    expect(mocks.sound).toHaveBeenCalledExactlyOnceWith("message");
+  });
+
   it("pauses polling while another quiz step is active and resumes the same chat afterwards", async () => {
     await renderChat(); await click(launcher()); await click(button("Write draft"));
     const original = draft();
@@ -164,6 +234,11 @@ describe("task-stage help chat", () => {
   });
 
   it("keeps one chat and composer through actual task → questions → task → confirmation navigation", async () => {
+    const handler = mocks.api.getMockImplementation()!;
+    let finishSubmission!: (value: unknown) => void;
+    mocks.api.mockImplementation((url: string, init?: unknown) => url === "/api/submit"
+      ? new Promise(resolve => { finishSubmission = resolve; })
+      : handler(url, init));
     sessionStorage.setItem("nl_review_draft", "Opis wykonanego zadania na potrzeby testu.");
     await act(async () => root.render(createElement(QuizApp)));
     expect(host.textContent).toContain("Task overview");
@@ -176,6 +251,9 @@ describe("task-stage help chat", () => {
     expect(window.location.pathname).toBe("/step-3-task");
     expect(draft()).toBe(original);
     await click(button("Submit task preview"));
+    expect(window.location.pathname).toBe("/step-3-task");
+    expect(panel().textContent).not.toContain(acknowledgement.body);
+    await act(async () => finishSubmission({ submissionId: "test-submission", submittedAt: "2026-10-29T10:30:00.000Z", acknowledgement }));
     expect(window.location.pathname).toBe("/step-4-confirmation");
     expect(host.textContent).toContain("Task received");
     expect(host.querySelector('button[aria-controls="visitor-chat-panel"]')).toBeNull();
@@ -183,6 +261,8 @@ describe("task-stage help chat", () => {
     expect(draft()).toBe(original);
     expect(draft().value).toBe("Question draft remains here");
     expect(panel().textContent).toContain("Existing conversation history");
+    expect(panel().textContent).toContain(acknowledgement.body);
+    expect(mocks.sound).not.toHaveBeenCalled();
     expect(mocks.composerMount).toHaveBeenCalledOnce();
   });
 

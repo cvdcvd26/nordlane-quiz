@@ -109,16 +109,18 @@ describe("chat available during the task", () => {
     const submission = await submit(sid);
     const after = await getVisitorChat(sid);
     expect(after.manager).toEqual(before.manager);
-    expect(after.messages).toEqual(before.messages);
+    expect(after.messages).toEqual([...before.messages, submission.acknowledgement]);
+    expect(submission.acknowledgement).toMatchObject({ sender: "system", body: defaultSettings.autoMessageText, files: [] });
     expect(after.messages[0].files).toEqual([chatFile]);
     expect((await getVisitorState(sid)).submission?.id).toBe(submission.submissionId);
     expect((await listLeads({ q: String(lead.id) })).items[0].stage).toBe("submitted");
     const conversations = await env.db.select().from(schema.conversations).where(eq(schema.conversations.sessionId, sid));
     expect(conversations).toHaveLength(1); expect(conversations[0].id).toBe(conversation.id);
     const scheduled = await env.db.select().from(schema.scheduledMessages);
-    expect(scheduled).toHaveLength(1); expect(env.queued).toHaveLength(1);
+    expect(scheduled).toHaveLength(1); expect(env.queued).toHaveLength(0);
     expect(scheduled[0].conversationId).toBe(conversation.id);
-    await deliverScheduledMessage(scheduled[0].id, new Date(Date.now() + 120000));
+    expect(scheduled[0]).toMatchObject({ status: "sent", messageId: submission.acknowledgement?.id, queueMessageId: null });
+    expect(await deliverScheduledMessage(scheduled[0].id, new Date(Date.now() + 120000))).toBe("already_sent");
     const delivered = await getVisitorChat(sid);
     expect(delivered.messages.map(message => message.sender)).toEqual(["visitor", "admin", "system"]);
     expect(delivered.messages[2].body).toBe(defaultSettings.autoMessageText);
@@ -152,7 +154,7 @@ describe("chat available during the task", () => {
     await submit(sid);
     await env.db.delete(schema.visitorContacts).where(eq(schema.visitorContacts.sessionId, sid));
     await env.db.delete(schema.quizAnswers).where(eq(schema.quizAnswers.sessionId, sid));
-    expect((await getVisitorChat(sid)).messages).toHaveLength(0);
+    expect((await getVisitorChat(sid)).messages).toHaveLength(1);
     await expect(postVisitorMessage(sid, { clientMessageId: randomUUID(), body: "History still works" })).resolves.toMatchObject({ message: { body: "History still works" } });
   });
 

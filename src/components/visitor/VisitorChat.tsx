@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, MessageCircle, X } from "lucide-react";
 import { content } from "@/config/content";
-import type { ManagerProfile } from "@/config/managers";
+import { defaultManager, type ManagerProfile } from "@/config/managers";
 import type { CandidateOutcome } from "@/config/candidate-outcome";
 import { chatConfig, uploadConfig } from "@/config/settings";
 import { api, newId, type ChatMessage, type PublicFile, type MessagePage, type MessageChanges } from "@/lib/api";
@@ -19,8 +19,9 @@ type ChatResponse = MessagePage & { attachmentsEnabled: boolean; manager: Manage
  * Built-in chat. New messages arrive by polling every few seconds (paused while the tab is hidden).
  * Sending is idempotent: a retry after a network error reuses the same clientMessageId.
  */
-export function VisitorChat({ onOutcome, closed = false, collapsible = false, active = true }: {
+export function VisitorChat({ onOutcome, acknowledgement = null, closed = false, collapsible = false, active = true }: {
   onOutcome?: (outcome: CandidateOutcome | null) => void;
+  acknowledgement?: ChatMessage | null;
   closed?: boolean;
   collapsible?: boolean;
   active?: boolean;
@@ -62,6 +63,7 @@ export function VisitorChat({ onOutcome, closed = false, collapsible = false, ac
   const [historyError, setHistoryError] = useState<string | null>(null);
   // Ids already shown; the chime plays only for admin/system messages that arrive after the first load.
   const known = useRef<Set<string> | null>(null);
+  const acknowledged = useRef(new Set<string>());
   const soundOn = useRef(true);
 
   const notify = useCallback((incoming: ChatMessage[], silent = false) => {
@@ -72,7 +74,7 @@ export function VisitorChat({ onOutcome, closed = false, collapsible = false, ac
     const fresh = incoming.filter((m) => !known.current!.has(m.id));
     fresh.forEach((m) => known.current!.add(m.id));
     // The revision panel sounds its own notice; its optional chat copy must not chime again.
-    const replies = fresh.filter((m) => m.sender !== "visitor" && !m.clientMessageId.startsWith("revision-request:"));
+    const replies = fresh.filter((m) => m.sender !== "visitor" && !acknowledged.current.has(m.clientMessageId) && !m.clientMessageId.startsWith("revision-request:"));
     if (!silent && replies.length) {
       if (!openRef.current) setUnread(count => Math.min(99, count + replies.length));
       if (soundOn.current) playChime("message");
@@ -81,10 +83,29 @@ export function VisitorChat({ onOutcome, closed = false, collapsible = false, ac
 
   const merge = useCallback((incoming: ChatMessage[]) => {
     if (!incoming.length) return;
-    setMessages((prev) => mergeMessages(reconcileMessageChanges(prev, changes.current), reconcileMessageChanges(incoming, changes.current)));
+    setMessages((prev) => {
+      const previous = reconcileMessageChanges(prev, changes.current);
+      const idByClient = new Map(previous.map(message => [message.clientMessageId, message.id]));
+      const distinct = reconcileMessageChanges(incoming, changes.current).filter(message => {
+        const existingId = idByClient.get(message.clientMessageId);
+        if (existingId && existingId !== message.id) return false;
+        idByClient.set(message.clientMessageId, message.id);
+        return true;
+      });
+      return mergeMessages(previous, distinct);
+    });
     const ids = new Set(incoming.map((m) => m.clientMessageId));
     setPending((p) => p.filter((m) => !ids.has(m.clientMessageId)));
   }, []);
+
+  useEffect(() => {
+    if (!acknowledgement) return;
+    // This is the persisted submit response, not an optimistic message. Keep the
+    // receive cursor untouched so an older in-flight poll still loads all history.
+    acknowledged.current.add(acknowledgement.clientMessageId);
+    known.current?.add(acknowledgement.id);
+    merge([acknowledgement]);
+  }, [acknowledgement, merge]);
 
   const poll = useCallback(async () => {
     if (polling.current || !activeRef.current) return;
@@ -203,6 +224,7 @@ export function VisitorChat({ onOutcome, closed = false, collapsible = false, ac
 
   const confirmed = new Set(messages.map((m) => m.clientMessageId));
   const all: LocalMessage[] = [...messages, ...pending.filter((m) => !confirmed.has(m.clientMessageId))];
+  const assignedManager = manager ?? defaultManager;
   const close = () => {
     setExpanded(false);
     requestAnimationFrame(() => launcher.current?.focus({ preventScroll: true }));
@@ -218,16 +240,24 @@ export function VisitorChat({ onOutcome, closed = false, collapsible = false, ac
   if (closed) return null;
 
   return (
-    <section aria-labelledby={collapsible ? "task-chat-title" : "chat-title"} className={`glass min-w-0 overflow-hidden rounded-(--radius-tile) ${collapsible ? "border-paint/30" : ""}`}>
-      {collapsible && <button ref={launcher} type="button" aria-expanded={open} aria-controls="visitor-chat-panel" onClick={toggle} className="flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-paint/5 sm:gap-4 sm:p-5">
-        <span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-xl border border-paint/25 bg-paint/10 text-cyan"><MessageCircle className="size-5" /></span>
+    <section aria-labelledby={collapsible ? "task-chat-title" : "chat-title"} className={`glass min-w-0 overflow-hidden rounded-(--radius-tile) ${collapsible ? "border-paint/45 shadow-[0_0_32px_-18px_var(--color-paint)]" : ""}`}>
+      {collapsible && <button ref={launcher} type="button" aria-expanded={open} aria-controls="visitor-chat-panel" onClick={toggle} className="grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-4 bg-gradient-to-r from-paint/10 to-transparent p-4 text-left transition-colors hover:bg-paint/5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-paint sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:p-5">
+        <ManagerAvatar manager={assignedManager} size={52} />
         <span className="min-w-0 flex-1">
-          <span id="task-chat-title" className="block text-sm font-semibold sm:text-base">{content.taskChat.title}</span>
-          <span className="mt-1 block text-xs leading-relaxed text-ink-soft">{all.length ? content.taskChat.hasMessages : content.taskChat.hint}</span>
+          <span className="flex flex-wrap items-center gap-2">
+            <span id="task-chat-title" className="text-lg font-semibold leading-tight sm:text-xl">{content.taskChat.title}</span>
+            <span role="status" aria-live="polite" aria-atomic="true">
+              {unread > 0 && !open && <span aria-label={content.taskChat.newMessages(unread)} className="inline-grid min-w-6 place-items-center rounded-full bg-paint px-2 py-1 text-xs font-bold text-on-paint">{unread}</span>}
+            </span>
+          </span>
+          <span className="mt-1 block text-xs font-semibold text-cyan">{assignedManager.name}</span>
+          <span className="mt-1.5 block text-sm leading-relaxed text-ink-soft">{content.taskChat.hint}</span>
         </span>
-        {unread > 0 && !open && <span aria-label={content.taskChat.newMessages(unread)} className="grid min-w-6 shrink-0 place-items-center rounded-full bg-paint px-1.5 py-1 text-[11px] font-bold text-on-paint">{unread}</span>}
-        <span className="hidden shrink-0 text-xs font-semibold text-cyan sm:block">{open ? content.taskChat.close : content.taskChat.action}</span>
-        <ChevronDown aria-hidden="true" className={`size-4 shrink-0 text-cyan transition-transform motion-reduce:transition-none ${open ? "rotate-180" : ""}`} />
+        <span className={`col-span-2 inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-semibold sm:col-span-1 sm:col-start-3 sm:row-start-1 ${open ? "border border-paint/30 text-cyan" : "bg-paint text-on-paint shadow-[0_4px_24px_-10px_var(--color-paint)]"}`}>
+          {!open && <MessageCircle aria-hidden="true" className="size-4 shrink-0" />}
+          {open ? content.taskChat.close : content.taskChat.action}
+          <ChevronDown aria-hidden="true" className={`size-4 shrink-0 transition-transform motion-reduce:transition-none ${open ? "rotate-180" : ""}`} />
+        </span>
       </button>}
       <div id="visitor-chat-panel" ref={panel} hidden={!open} tabIndex={-1} onKeyDown={event => {
         if (collapsible && event.key === "Escape" && !event.nativeEvent.isComposing) { event.stopPropagation(); close(); }
@@ -251,7 +281,7 @@ export function VisitorChat({ onOutcome, closed = false, collapsible = false, ac
       <div className="max-h-[55vh] min-h-48 overflow-y-auto px-4 py-5 sm:px-5">
         {before && <button type="button" className="btn btn-ghost mb-4" disabled={loadingEarlier} onClick={() => void loadEarlier()}>{content.chat.loadEarlier}</button>}
         {historyError && <p role="alert" className="mb-3 text-sm text-danger">{historyError}</p>}
-        {loaded ? (
+        {loaded || acknowledgement ? (
           <MessageList messages={all} viewer="visitor" manager={manager} onRetry={(m) => void deliver(m)} emptyText={collapsible ? content.taskChat.waiting : content.chat.waiting} />
         ) : (
           <div className="space-y-3" aria-hidden>

@@ -3,7 +3,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { badRequest } from "../errors";
-import { getSettings, pickDelayMs } from "../settings";
+import { getSettings } from "../settings";
 import { queue } from "../queue";
 import { log } from "../log";
 import { content } from "@/config/content";
@@ -11,6 +11,8 @@ import { reviewConfig, uploadConfig } from "@/config/settings";
 import { allAnswered, getAnswers } from "./quiz";
 import { getContact } from "./contact";
 import { ensureConversation, ensureLead } from "./leads";
+import { touchConversation } from "./conversation";
+import type { ChatMessage } from "./chat";
 
 export const submitSchema = z.object({
   idempotencyKey: z.string().min(16).max(100),
@@ -22,11 +24,30 @@ export const submitSchema = z.object({
     .max(reviewConfig.maxLength, content.errors.reviewTooLong),
 });
 
-export type SubmitResult = { submissionId: string; submittedAt: string; duplicate: boolean };
+export type SubmitResult = {
+  submissionId: string;
+  submittedAt: string;
+  duplicate: boolean;
+  acknowledgement: ChatMessage | null;
+};
+
+function toAcknowledgement(message: typeof schema.messages.$inferSelect): ChatMessage {
+  return {
+    id: message.id,
+    sequence: message.sequence.toString(),
+    sender: message.sender,
+    body: message.body,
+    bodyRich: message.bodyRich,
+    createdAt: message.createdAt.toISOString(),
+    clientMessageId: message.clientMessageId,
+    changeRevision: message.changeRevision,
+    files: [],
+  };
+}
 
 /**
- * Saves the task atomically (submission + files + conversation + scheduled message),
- * then hands the delayed message to the external queue.
+ * Saves the task and its informational acknowledgement in the same transaction.
+ * Success is returned only after both are durable; no timer or queue is involved.
  * Repeated calls (double click, retry after a timeout) return the same submission.
  */
 export async function submitTask(sessionId: string, input: unknown): Promise<SubmitResult> {
@@ -73,18 +94,35 @@ export async function submitTask(sessionId: string, input: unknown): Promise<Sub
     const conversation = await ensureConversation(tx, sessionId);
     await tx.update(schema.leads).set({ updatedAt: new Date() }).where(eq(schema.leads.sessionId, sessionId));
 
-    let scheduled: typeof schema.scheduledMessages.$inferSelect | null = null;
+    let acknowledgement: ChatMessage | null = null;
     if (settings.autoMessageEnabled) {
-      [scheduled] = await tx
+      const [scheduled] = await tx
         .insert(schema.scheduledMessages)
         .values({
           submissionId: submission.id,
           conversationId: conversation.id,
-          scheduledFor: new Date(submission.submittedAt.getTime() + pickDelayMs(settings)),
+          scheduledFor: submission.submittedAt,
         })
         .returning();
+      const [message] = await tx.insert(schema.messages).values({
+        conversationId: conversation.id,
+        sender: "system",
+        body: settings.autoMessageText,
+        clientMessageId: `scheduled:${scheduled.id}`,
+        createdAt: submission.submittedAt,
+      }).returning();
+      await tx.update(schema.scheduledMessages).set({
+        status: "sent",
+        attempts: 1,
+        sentAt: submission.submittedAt,
+        messageId: message.id,
+        lockedAt: null,
+        lastError: null,
+      }).where(eq(schema.scheduledMessages.id, scheduled.id));
+      await touchConversation(tx, conversation.id, submission.submittedAt);
+      acknowledgement = toAcknowledgement(message);
     }
-    return { submission, scheduled };
+    return { submission, acknowledgement };
   });
 
   if (!result) {
@@ -96,18 +134,17 @@ export async function submitTask(sessionId: string, input: unknown): Promise<Sub
     throw badRequest(content.errors.generic);
   }
 
-  if (result.scheduled) await enqueue(result.scheduled.id, result.scheduled.scheduledFor);
-
   return {
     submissionId: result.submission.id,
     submittedAt: result.submission.submittedAt.toISOString(),
     duplicate: false,
+    acknowledgement: result.acknowledgement,
   };
 }
 
 /**
- * The scheduled message is already safely stored. If the queue is temporarily unavailable,
- * it stays `pending` and the backup sweep delivers it when due.
+ * Compatibility for pending jobs created before acknowledgements became immediate.
+ * New task submissions never publish to this queue.
  */
 export async function enqueue(scheduledId: string, at: Date) {
   const t = schema.scheduledMessages;
@@ -155,5 +192,17 @@ async function findSubmission(sessionId: string) {
     .from(schema.taskSubmissions)
     .where(eq(schema.taskSubmissions.sessionId, sessionId))
     .limit(1);
-  return s ? { submissionId: s.id, submittedAt: s.submittedAt.toISOString() } : null;
+  if (!s) return null;
+  const [message] = await db().select({ message: schema.messages }).from(schema.scheduledMessages)
+    .innerJoin(schema.messages, eq(schema.messages.id, schema.scheduledMessages.messageId))
+    .where(and(
+      eq(schema.scheduledMessages.submissionId, s.id),
+      eq(schema.scheduledMessages.status, "sent"),
+      isNull(schema.messages.deletedAt),
+    )).limit(1);
+  return {
+    submissionId: s.id,
+    submittedAt: s.submittedAt.toISOString(),
+    acknowledgement: message ? toAcknowledgement(message.message) : null,
+  };
 }

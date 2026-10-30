@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { setupTestEnv, newSession, PNG } from "./helpers";
+import { setupTestEnv, newSession, PNG, createLegacyScheduledSubmission } from "./helpers";
 import { schema } from "@/db";
 import { saveContact } from "@/server/services/contact";
 import { saveAnswer } from "@/server/services/quiz";
@@ -17,12 +17,14 @@ let env: Awaited<ReturnType<typeof setupTestEnv>>;
 beforeAll(async () => { env = await setupTestEnv(); });
 afterAll(async () => { await env.client.close(); });
 const image = { name: "test.png", type: "image/png", buffer: PNG };
-async function visitor() {
+async function visitor(legacy = false) {
   const sid = await newSession(env.db);
   await saveContact(sid, { name: "Test", phone: "600123456" });
   for (const key of ["q1", "q2", "q3"]) await saveAnswer(sid, key, "yes");
   const f = await uploadFile({ sessionId: sid, purpose: "submission", uploadedBy: "visitor", file: image });
-  await submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [f.id], review: "A meaningful review" });
+  const input = { idempotencyKey: randomUUID(), fileIds: [f.id], review: "A meaningful review" };
+  if (legacy) await createLegacyScheduledSubmission(sid, input);
+  else await submitTask(sid, input);
   const [conv] = await env.db.select().from(schema.conversations).where(eq(schema.conversations.sessionId, sid));
   return { sid, conv };
 }
@@ -36,6 +38,8 @@ async function history(conversationId: string, count: number) {
 describe("chat regression cases", () => {
   it("loads the newest messages and paginates all older history, including equal timestamps", async () => {
     const { sid, conv } = await visitor();
+    const acknowledgement = (await getVisitorChat(sid)).messages;
+    expect(acknowledgement.map(message => message.sender)).toEqual(["system"]);
     const stored = await history(conv.id, 605);
     let page = await getVisitorChat(sid);
     expect(page.messages).toHaveLength(chatConfig.pageSize);
@@ -45,7 +49,8 @@ describe("chat regression cases", () => {
       page = await getVisitorChat(sid, { before: page.previousCursor! });
       page.messages.forEach(m => { expect(ids.has(m.id)).toBe(false); ids.add(m.id); });
     }
-    expect(ids.size).toBe(605);
+    expect(ids.size).toBe(605 + acknowledgement.length);
+    expect(ids.has(acknowledgement[0].id)).toBe(true);
     const sent = await postVisitorMessage(sid, { clientMessageId: randomUUID(), body: "Latest visitor reply" });
     expect(sent.message.body).toBe("Latest visitor reply");
     const admin = await postAdminMessage(conv.leadId!, { clientMessageId: randomUUID(), body: "Latest admin reply" });
@@ -90,7 +95,7 @@ describe("chat regression cases", () => {
 
 describe("transaction and recovery regression cases", () => {
   it("the backup sweep reclaims expired sending jobs and does not steal a fresh lock", async () => {
-    const { conv } = await visitor();
+    const { conv } = await visitor(true);
     const [job] = await env.db.select().from(schema.scheduledMessages).where(eq(schema.scheduledMessages.conversationId, conv.id));
     const old = new Date(Date.now() - 10 * 60_000);
     await env.db.update(schema.scheduledMessages).set({ status: "sending", scheduledFor: old, lockedAt: new Date() }).where(eq(schema.scheduledMessages.id, job.id));

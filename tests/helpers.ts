@@ -3,9 +3,12 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { setDb, schema, type Db } from "@/db";
+import { eq } from "drizzle-orm";
+import { db as getDb, setDb, schema, type Db } from "@/db";
 import { setStorage, type FileStorage } from "@/server/storage";
 import { setQueue, type JobQueue } from "@/server/queue";
+import { getSettings, updateSettings } from "@/server/settings";
+import { submitTask } from "@/server/services/submission";
 
 /**
  * Real PostgreSQL (PGlite = Postgres compiled to WASM) with the real migrations.
@@ -53,6 +56,40 @@ export async function setupTestEnv() {
 export async function newSession(db: Db) {
   const [s] = await db.insert(schema.visitorSessions).values({ tokenHash: randomUUID() }).returning();
   return s.id;
+}
+
+/** An actual pre-instant-ack job: no system message has been written yet. */
+export async function createLegacyScheduledSubmission(
+  sessionId: string,
+  input: unknown,
+  options: {
+    scheduledFor?: Date;
+    status?: "pending" | "failed" | "sending";
+    lockedAt?: Date | null;
+    lastError?: string | null;
+    queueMessageId?: string | null;
+  } = {},
+) {
+  const settings = await getSettings();
+  await updateSettings({ ...settings, autoMessageEnabled: false });
+  try {
+    const submission = await submitTask(sessionId, input);
+    if (submission.duplicate) throw new Error("Legacy fixtures require a new submission");
+    const [conversation] = await getDb().select().from(schema.conversations)
+      .where(eq(schema.conversations.sessionId, sessionId));
+    const [job] = await getDb().insert(schema.scheduledMessages).values({
+      submissionId: submission.submissionId,
+      conversationId: conversation.id,
+      scheduledFor: options.scheduledFor ?? new Date(new Date(submission.submittedAt).getTime() + 45_000),
+      status: options.status ?? "pending",
+      lockedAt: options.lockedAt ?? null,
+      lastError: options.lastError ?? null,
+      queueMessageId: options.queueMessageId ?? null,
+    }).returning();
+    return { submission, job };
+  } finally {
+    await updateSettings(settings);
+  }
 }
 
 /** Minimal valid images/PDF built from their real magic bytes. */

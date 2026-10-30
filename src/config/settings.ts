@@ -52,8 +52,8 @@ export const defaultSettings: EditableSettings = {
   autoMessageEnabled: true,
   autoMessageText:
     "Dziękujemy za przesłanie zadania. Otrzymaliśmy Twoją odpowiedź i załączniki. Jeśli chcesz coś dodać lub masz pytanie, napisz tutaj.",
-  autoMessageMinDelaySeconds: 30,
-  autoMessageMaxDelaySeconds: 60,
+  autoMessageMinDelaySeconds: 0,
+  autoMessageMaxDelaySeconds: 0,
   chatAttachmentsEnabled: true,
 };
 

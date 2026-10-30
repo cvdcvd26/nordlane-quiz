@@ -2,11 +2,11 @@
 
 > AlleyBiz Quiz landing and recruitment task. UI language: Polish.
 
-A four-step flow: contact details (name, Polish phone number with a +48 mask, optional Telegram), then three yes/no questions, then the company info and a task (PDF brief + screenshot upload), a delayed automatic message, a built-in chat and an admin panel with leads, deletion and sound notifications.
+A four-step flow: contact details (name, Polish phone number with a +48 mask, optional Telegram), then three yes/no questions, then the company info and a task (PDF brief + screenshot upload), an immediate task acknowledgement, a built-in chat and an admin panel with leads, deletion and sound notifications.
 
 **Runtime:** Node.js 22.12 or newer (24 LTS recommended).
 
-**Stack:** Next.js 16 (App Router, TypeScript) · Tailwind CSS 4 · PostgreSQL (Neon) + Drizzle ORM · Vercel Blob (private store) · Vercel Queues (delayed jobs on Vercel; QStash on other hosts).
+**Stack:** Next.js 16 (App Router, TypeScript) · Tailwind CSS 4 · PostgreSQL (Neon) + Drizzle ORM · Vercel Blob (private store) · Vercel Queues / QStash compatibility for historical pending jobs.
 
 ---
 
@@ -16,23 +16,21 @@ A four-step flow: contact details (name, Polish phone number with a +48 mask, op
 Kontakt ──► Pytania (3× "Tak / Nie") ──► Step 3: task + PDF + screenshots + help chat ──► "Zadanie wysłane" + chat
                                      │
               POST /api/submit (one transaction):
-              submission, files, conversation, scheduled_messages row
+              submission, files, conversation, system acknowledgement + sent ledger
                                      │
-              Managed queue: deliver after a random 30–60 sec
-                                     ▼
-              Private queue consumer ──► system message in the chat
+              Success response includes the saved message ──► immediate chat display
                                      │
               Contact saved (step 1) ──► exactly one lead ──► /admin
 ```
 
-**Reliable delayed message**
+**Immediate task acknowledgement**
 
-- The send time is chosen by the server at submission and stored in the database. No client-side `setTimeout`.
-- On Vercel, `@vercel/queue` publishes the job ID to `alleybiz-auto-replies`. `vercel.json` registers `/api/jobs/queue-deliver` as a private consumer; Vercel provides authentication, persistence and retries. No Upstash account or `APP_URL` callback is needed for this path.
-- On other hosts, QStash calls `/api/jobs/deliver` (signature verified). Its settings remain supported, including callbacks for jobs accepted by older deployments.
-- Duplicates are prevented twice: the row is atomically claimed (`pending → sending`), and the system message has a deterministic `client_message_id` under a unique index.
-- If publishing fails, the job stays `pending` in the database. Retrying the saved submission retries its existing unqueued job without changing the due time. The daily Vercel Cron `/api/jobs/sweep` and the visitor's next chat request remain backup paths, not minute-precision schedulers.
-- Status, attempts, last error and actual send time are stored and shown on the lead page.
+- When enabled, the informational message is written in the same database transaction as the task and its files. A successful submission response includes the persisted message, so the final-step chat shows it immediately without waiting for polling.
+- No timer, external queue, cron or open candidate tab is needed for new acknowledgements. A failure to save the message rolls back the submission and attachments; the same request can be retried safely.
+- Repeated or concurrent submissions return the existing message. The sent ledger and deterministic `client_message_id` also make old queue callbacks harmless.
+- The administrator can enable/disable the acknowledgement and edit its text. Obsolete delay settings are normalised to zero.
+- Historical pending jobs remain supported: Vercel Queues, signed QStash callbacks, the daily sweep and chat-load recovery can still finish jobs accepted before this change. Their original scheduled times are preserved.
+- Status, attempts, errors and actual send time remain visible on the lead page.
 
 **Contacts.** Name and phone are required, Telegram is optional. The phone field formats as you type or paste (`+48 600 123 456`) and is stored as E.164 (`+48600123456`); Telegram is stored as `@username` or `null`. The same rules run in the browser and on the server.
 
@@ -106,7 +104,7 @@ Tables: `admin_users`, `visitor_sessions`, `visitor_contacts`, `quiz_answers`, `
 2. **Vercel → Add New → Project → Import** the repository. Default settings (Framework: Next.js). The first deploy builds even without a database.
 3. **Database:** Project → Storage → Create Database → **Neon** → Connect. This adds `DATABASE_URL`. Migrations run automatically on every deploy (`vercel-build`).
 4. **Files:** Project → Storage → Create → **Blob**, choose **Private** → Connect. This adds `BLOB_READ_WRITE_TOKEN`.
-5. **Delayed jobs:** Vercel Queues uses the existing project's runtime authentication. Keep the private queue trigger in `vercel.json` and access to System Environment Variables enabled. The topic is created on first publish; an Upstash account is not required. Verify a test submission with the candidate tab closed, then inspect the queue and runtime logs in Vercel.
+5. **Automatic acknowledgement:** new task submissions save the message immediately in the database transaction. Verify that the final-step chat shows it as soon as submission succeeds. Keep the existing queue trigger and runtime authentication only to finish historical pending jobs; no new Upstash account is needed.
 6. **Settings → Environment Variables**, add:
    - `ADMIN_SESSION_SECRET` — random string, 32+ characters;
    - `ADMIN_EMAIL` and `ADMIN_PASSWORD` — the first administrator;
@@ -144,7 +142,7 @@ docker run -d --name nordlane-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 post
 
 - `*.neon.tech` uses Neon over WebSocket. Other PostgreSQL hosts (including Render, VPS, localhost and IPv6) use `pg` over TCP. `DATABASE_DRIVER=postgres|neon` overrides detection.
 - Without `BLOB_READ_WRITE_TOKEN` in development, files are stored in `./.data` (local only; on Vercel the token is required).
-- Without `QSTASH_TOKEN` in development, the automatic message is delivered by the backup path while the visitor has the chat open. To test real QStash locally, run `npx @upstash/qstash-cli dev`, use its `QSTASH_URL` / `QSTASH_TOKEN` / signing keys and set `APP_URL=http://localhost:3000`.
+- New acknowledgements work immediately in development without a queue token. Queue configuration is relevant only when testing recovery of historical pending jobs.
 
 ### Checks
 
@@ -152,7 +150,7 @@ docker run -d --name nordlane-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 post
 npm run typecheck && npm run lint && npm test && npm run build
 ```
 
-`npm test` runs the critical scenarios against PostgreSQL-compatible PGlite: contact validation and normalisation (E.164 phone, `@telegram`), saving all three answers, accepting and rejecting files, idempotent submission, the 30–60 second delay, no duplicates on repeated delivery, a single lead per visitor, admin replies, hidden internal notes and no access to other visitors' data.
+`npm test` runs the critical scenarios against PostgreSQL-compatible PGlite: contact validation and normalisation (E.164 phone, `@telegram`), saving all three answers, accepting and rejecting files, idempotent submission, immediate durable acknowledgements, rollback on acknowledgement failures, no duplicates on retries or historical callbacks, a single lead per visitor, admin replies, hidden internal notes and no access to other visitors' data.
 
 ---
 
@@ -196,7 +194,7 @@ See `HOSTING-RU.txt` for deployment instructions in Russian and `FIXES-RU.txt` f
 - Review invitations unlock the form and insert the chat message in the same transaction.
 - Upload limits, submission attachment and draft deletion share the visitor lock; concurrent requests cannot attach a file after it was deleted or exceed the upload count. Removed chat attachments are deleted from storage.
 - On Vercel, use private Blob storage. On a standalone Node server, set `UPLOAD_DIR` to an absolute directory on a persistent volume, or use Blob. A production server without either configuration refuses local uploads rather than silently using ephemeral storage.
-- On non-Vercel hosts, configure QStash, `APP_URL` and an external authenticated schedule for `/api/jobs/sweep`. `vercel.json` is only executed by Vercel. The bundled daily cron is a fallback; the configured durable queue handles 30–60 second delivery.
+- New acknowledgements require only the app and database on any host. To finish historical pending jobs outside Vercel, retain QStash, `APP_URL` and an external authenticated schedule for `/api/jobs/sweep`. `vercel.json` only runs on Vercel.
 - Vercel Queues separates production and preview. Use a separate preview database; do not connect previews to the production database. For legacy QStash, callbacks use the preview deployment URL unless `APP_URL` explicitly overrides it, and the callback must be reachable.
 
 `npm run typecheck` generates route types before invoking TypeScript. `npm test` includes regression tests for pagination, duplicate timestamps, parallel uploads, stale delivery locks, transactional review invitations, authorization, password session invalidation, request limits and upgrade migrations.

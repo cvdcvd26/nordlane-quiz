@@ -223,9 +223,9 @@ export const content = {
   },
 
   taskChat: {
-    title: "Masz pytanie? Napisz do nas",
-    hint: "Potrzebujesz pomocy z zadaniem? Twój opiekun HR odpowie tutaj.",
-    action: "Zapytaj HR",
+    title: "Czat z HR",
+    hint: "Masz pytanie dotyczące zadania? Napisz tutaj.",
+    action: "Napisz do HR",
     waiting: "Opisz, co jest niejasne w zadaniu. Twój opiekun HR odpowie w tej rozmowie.",
     hasMessages: "Twoja rozmowa z opiekunem HR jest dostępna tutaj.",
     close: "Zwiń czat",
@@ -480,12 +480,12 @@ export const content = {
       sectionAuto: "Wiadomość automatyczna",
       title: "Wiadomość automatyczna",
       intro:
-        "Wysyłana na czat po wysłaniu zadania, po losowym czasie. Na czacie jest oznaczona jako wiadomość automatyczna.",
+        "Wysyłana od razu po zapisaniu zadania. Na czacie jest oznaczona jako wiadomość automatyczna.",
       enabled: "Wysyłaj wiadomość automatyczną",
       text: "Treść wiadomości",
       delayFrom: "Opóźnienie od, s",
       delayTo: "do, s",
-      delayHint: "Nowy przedział obowiązuje dla zadań wysłanych po zapisaniu.",
+      delayHint: "Potwierdzenie pojawia się od razu na etapie „Gotowe”, bez oczekiwania na wysyłkę w tle.",
       delayOrder: "Maksymalne opóźnienie nie może być mniejsze niż minimalne.",
       chat: "Czat",
       attachments: "Pozwól użytkownikom załączać pliki",

@@ -8,9 +8,9 @@ import { updateSettings } from "@/server/settings";
 import { saveContact } from "@/server/services/contact";
 import { saveAnswer } from "@/server/services/quiz";
 import { uploadFile } from "@/server/services/uploads";
-import { submitTask } from "@/server/services/submission";
+import { enqueue, submitTask } from "@/server/services/submission";
 import { deliverScheduledMessage } from "@/server/services/delivery";
-import { newSession, PNG, setupTestEnv } from "./helpers";
+import { createLegacyScheduledSubmission, newSession, PNG, setupTestEnv } from "./helpers";
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>;
 beforeAll(async () => { env = await setupTestEnv(); });
@@ -36,16 +36,17 @@ async function candidate() {
 
 async function failedEnqueue() {
   const value = await candidate();
+  const { submission, job: pending } = await createLegacyScheduledSubmission(value.sessionId, value.input);
   env.queue.failNext = true;
-  const submission = await submitTask(value.sessionId, value.input);
-  const [job] = await env.db.select().from(schema.scheduledMessages).where(eq(schema.scheduledMessages.submissionId, submission.submissionId));
+  await enqueue(pending.id, pending.scheduledFor);
+  const job = await loadJob(pending.id);
   expect(job.queueMessageId).toBeNull(); expect(job.lastError).toContain("enqueue failed");
   return { ...value, submission, job };
 }
 
 const loadJob = async (id: string) => (await env.db.select().from(schema.scheduledMessages).where(eq(schema.scheduledMessages.id, id)))[0];
 
-describe("retrying a committed submission repairs only its unqueued auto message", () => {
+describe("retrying a legacy committed submission repairs only its unqueued auto message", () => {
   it("repairs a failed enqueue using the same job and scheduled second, without another submission or early auto message", async () => {
     const { sessionId, input, submission, job } = await failedEnqueue();
     const retry = await submitTask(sessionId, input);
@@ -64,8 +65,9 @@ describe("retrying a committed submission repairs only its unqueued auto message
 
   it("does not enqueue a pending job already accepted by the external queue", async () => {
     const { sessionId, input } = await candidate();
-    const submission = await submitTask(sessionId, input);
-    const [job] = await env.db.select().from(schema.scheduledMessages);
+    const { submission, job: pending } = await createLegacyScheduledSubmission(sessionId, input);
+    await enqueue(pending.id, pending.scheduledFor);
+    const job = await loadJob(pending.id);
     expect(job.status).toBe("pending"); expect(job.queueMessageId).toBeTruthy();
     await submitTask(sessionId, input);
     expect(env.queued).toHaveLength(1);
@@ -90,6 +92,7 @@ describe("retrying a committed submission repairs only its unqueued auto message
     await submitTask(sessionId, input);
     expect(env.queued).toHaveLength(0);
     expect(await env.db.select().from(schema.scheduledMessages)).toHaveLength(0);
+    expect(await env.db.select().from(schema.messages)).toHaveLength(0);
   });
 
   it("does not enqueue a pending recovery after automatic messages have been disabled", async () => {

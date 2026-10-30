@@ -86,11 +86,14 @@ describe("received-data handling status", () => {
     const file = await uploadFile({ sessionId: sid, purpose: "submission", uploadedBy: "visitor", file: { name: "shot.png", type: "image/png", buffer: PNG } });
     const submitted = await submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [file.id], review: "Opis wykonanego zadania testowego." });
     const [before] = await env.db.select().from(schema.scheduledMessages).where(eq(schema.scheduledMessages.submissionId, submitted.submissionId));
+    expect(before).toMatchObject({ status: "sent", messageId: submitted.acknowledgement?.id });
+    const messages = (await getVisitorChat(sid)).messages;
+    expect(messages.map(message => message.sender)).toEqual(["system"]);
     await updateLeadStatus(lead.id, { status: "data_received" });
     const [after] = await env.db.select().from(schema.scheduledMessages).where(eq(schema.scheduledMessages.id, before.id));
     expect(after).toEqual(before);
-    expect(await deliverScheduledMessage(before.id, new Date(before.scheduledFor.getTime() + 1000))).toBe("sent");
-    expect((await getVisitorChat(sid)).messages.at(-1)?.sender).toBe("system");
+    expect(await deliverScheduledMessage(before.id, new Date(before.scheduledFor.getTime() + 1000))).toBe("already_sent");
+    expect((await getVisitorChat(sid)).messages).toEqual(messages);
     expect((await getLeadDetails(lead.id)).lead).toMatchObject({ status: "data_received", outcome: null });
     expect(await env.db.select().from(schema.leadResults)).toEqual([]);
   });

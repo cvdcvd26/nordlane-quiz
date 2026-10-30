@@ -9,21 +9,24 @@ import { submitTask } from "@/server/services/submission";
 import { postVisitorMessage } from "@/server/services/chat";
 import { deliverScheduledMessage } from "@/server/services/delivery";
 import { getLeadDetails, listLeads, postAdminMessage, updateCandidateOutcome, updateLeadStatus } from "@/server/services/admin";
-import { newSession, PNG, setupTestEnv } from "./helpers";
+import { createLegacyScheduledSubmission, newSession, PNG, setupTestEnv } from "./helpers";
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>;
 beforeAll(async () => { env = await setupTestEnv(); });
 beforeEach(async () => { await env.db.delete(schema.visitorSessions); });
 afterAll(async () => { await env.client.close(); });
 
-async function candidate(name = "Jan Kowalski") {
+async function candidate(name = "Jan Kowalski", legacy = false) {
   const sessionId = await newSession(env.db);
   await saveContact(sessionId, { name, phone: "600123456", telegram: "" });
   const [lead] = await env.db.select({ id: schema.leads.id }).from(schema.leads).where(eq(schema.leads.sessionId, sessionId));
   const leadId = lead.id;
   for (const key of ["q1", "q2", "q3"]) await saveAnswer(sessionId, key, "yes");
   const file = await uploadFile({ sessionId, purpose: "submission", uploadedBy: "visitor", file: { name: "test.png", type: "image/png", buffer: PNG } });
-  const submission = await submitTask(sessionId, { idempotencyKey: randomUUID(), fileIds: [file.id], review: "Opis wykonania zadania testowego." });
+  const input = { idempotencyKey: randomUUID(), fileIds: [file.id], review: "Opis wykonania zadania testowego." };
+  const submission = legacy
+    ? (await createLegacyScheduledSubmission(sessionId, input)).submission
+    : await submitTask(sessionId, input);
   const [scheduled] = await env.db.select().from(schema.scheduledMessages).where(eq(schema.scheduledMessages.submissionId, submission.submissionId));
   return { sessionId, leadId, scheduled };
 }
@@ -37,11 +40,11 @@ describe("automatic needs-reply queue", () => {
     expect((await getLeadDetails(c.leadId)).lead.needsReply).toBe(false);
   });
 
-  it("queues a visitor message, keeps the first waiting time, and ignores a later automatic message", async () => {
-    const c = await candidate();
+  it("queues a visitor message, keeps the first waiting time, and ignores a later legacy automatic message", async () => {
+    const c = await candidate("Jan Kowalski", true);
     const first = await postVisitorMessage(c.sessionId, { clientMessageId: randomUUID(), body: "Pierwsze pytanie" });
     await postVisitorMessage(c.sessionId, { clientMessageId: randomUUID(), body: "Dodatkowe pytanie" });
-    await deliverScheduledMessage(c.scheduled.id, new Date(Date.now() + 120000));
+    expect(await deliverScheduledMessage(c.scheduled.id, new Date(Date.now() + 120000))).toBe("sent");
     const queue = await listLeads({ queue: "needs_reply" });
     expect(queue.total).toBe(1);
     expect(queue.needsReplyCount).toBe(1);

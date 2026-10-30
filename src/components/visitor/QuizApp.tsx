@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { content, QUESTION_KEYS } from "@/config/content";
 import { reviewConfig } from "@/config/settings";
 import type { CandidateOutcome } from "@/config/candidate-outcome";
-import { api, newId, type PublicFile } from "@/lib/api";
+import { api, newId, type ChatMessage, type PublicFile } from "@/lib/api";
 import { QUIZ_HISTORY_STEP, QUIZ_STEP_PATHS, resolveQuizStep, type QuizProgress } from "@/lib/quiz-steps";
 import { Lane, type Step } from "./Lane";
 import { Backdrop } from "../visual/Backdrop";
@@ -59,6 +59,7 @@ export function QuizApp() {
   const [outcome, setOutcome] = useState<CandidateOutcome | null>(null);
   const [activeRevision, setActiveRevision] = useState<TaskRevision | null>(null);
   const [chatUnlocked, setChatUnlocked] = useState(false);
+  const [submissionAcknowledgement, setSubmissionAcknowledgement] = useState<ChatMessage | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [step, setStep] = useState<Step>(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -239,11 +240,12 @@ export function QuizApp() {
     idem.current ??= readIdem();
     setSubmitting(true);
     try {
-      const res = await api<{ submissionId: string; submittedAt: string }>("/api/submit", {
+      const res = await api<{ submissionId: string; submittedAt: string; acknowledgement: ChatMessage | null }>("/api/submit", {
         method: "POST",
         json: { idempotencyKey: idem.current, fileIds: ready.map((i) => i.serverId), review: review.trim() },
       });
       setState((s) => (s ? { ...s, submission: { id: res.submissionId, submittedAt: res.submittedAt } } : s));
+      setSubmissionAcknowledgement(res.acknowledgement);
       if (progress.current) progress.current.submitted = true;
       setItems(ready);
       try {
@@ -347,7 +349,7 @@ export function QuizApp() {
             </section>
           )}
           {state && chatUnlocked && <div hidden={step < 2 || Boolean(outcome)} className="mt-6">
-            <VisitorChat onOutcome={setOutcome} closed={Boolean(outcome)} collapsible={step !== 3} active={step >= 2} />
+            <VisitorChat onOutcome={setOutcome} acknowledgement={submissionAcknowledgement} closed={Boolean(outcome)} collapsible={step !== 3} active={step >= 2} />
           </div>}
           {state && step === 2 && <StepTaskSubmission
             items={items}

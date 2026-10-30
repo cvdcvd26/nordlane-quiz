@@ -44,7 +44,6 @@ export default function SettingsPage() {
     e.preventDefault();
     if (!s) return;
     setFormError(null);
-    if (s.autoMessageMaxDelaySeconds < s.autoMessageMinDelaySeconds) return setFormError(S.delayOrder);
     setBusy(true);
     try {
       const r = await api<{ settings: EditableSettings }>("/api/admin/settings", { method: "PUT", json: s });
@@ -81,31 +80,6 @@ export default function SettingsPage() {
               onChange={(e) => setS({ ...s, autoMessageText: e.target.value })}
               maxLength={4000}
             />
-            <div className="mt-4 grid max-w-xs grid-cols-2 gap-3">
-              <label className="adm-label">
-                {S.delayFrom}
-                <input
-                  type="number"
-                  min={0}
-                  max={86400}
-                  className="adm-input mt-1.5 tabular-nums"
-                  value={s.autoMessageMinDelaySeconds}
-                  onChange={(e) => setS({ ...s, autoMessageMinDelaySeconds: Number(e.target.value) })}
-                />
-              </label>
-              <label className="adm-label">
-                {S.delayTo}
-                <input
-                  type="number"
-                  min={0}
-                  max={86400}
-                  className="adm-input mt-1.5 tabular-nums"
-                  aria-invalid={s.autoMessageMaxDelaySeconds < s.autoMessageMinDelaySeconds || undefined}
-                  value={s.autoMessageMaxDelaySeconds}
-                  onChange={(e) => setS({ ...s, autoMessageMaxDelaySeconds: Number(e.target.value) })}
-                />
-              </label>
-            </div>
             <p className="adm-help mt-2">{S.delayHint}</p>
           </Row>
 
