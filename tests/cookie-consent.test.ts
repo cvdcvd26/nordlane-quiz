@@ -4,8 +4,11 @@ import {
   parseCookieConsent, readCookieConsent, writeCookieConsent,
 } from "@/lib/cookie-consent";
 import { isSoundEnabled, setSoundEnabled } from "@/lib/sound";
+import { clearMetaMarketingStorage } from "@/lib/meta-pixel-storage";
 
-afterEach(() => vi.unstubAllGlobals());
+vi.mock("@/lib/meta-pixel-storage", () => ({ clearMetaMarketingStorage: vi.fn() }));
+
+afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 function browser() {
   let raw = "";
@@ -29,9 +32,37 @@ describe("cookie choices and optional sound preferences", () => {
     const encode = (changes: object) => encodeURIComponent(JSON.stringify({ version: 2, necessary: true, preferences: true, updatedAt: now, ...changes }));
     expect(parseCookieConsent(undefined, now)).toBeNull();
     expect(parseCookieConsent("%zz", now)).toBeNull();
-    for (const changes of [{version: 1}, {version: 3}, {necessary: false}, {preferences: "yes"}, {updatedAt: now + 120_000}, {updatedAt: now - COOKIE_CONSENT_MAX_AGE_SECONDS * 1000}])
+    for (const changes of [{version: 1}, {version: 4}, {version: 3}, {version: 3, marketing: "yes"}, {necessary: false}, {preferences: "yes"}, {updatedAt: now + 120_000}, {updatedAt: now - COOKIE_CONSENT_MAX_AGE_SECONDS * 1000}])
       expect(parseCookieConsent(encode(changes), now)).toBeNull();
     expect(parseCookieConsent(encode({preferences: false}), now)?.preferences).toBe(false);
+  });
+
+  it("preserves legacy preferences without treating old all-cookies consent as a marketing grant", () => {
+    const now = Date.now();
+    for (const preferences of [true, false]) {
+      const raw = encodeURIComponent(JSON.stringify({ version: 2, necessary: true, preferences, marketing: true, updatedAt: now }));
+      expect(parseCookieConsent(raw, now)).toEqual({ version: 2, necessary: true, preferences, marketing: false, updatedAt: now });
+    }
+  });
+
+  it("keeps marketing and internal preferences independent and defaults older callers to no marketing", () => {
+    browser();
+    expect(writeCookieConsent(true)).toMatchObject({ version: 3, preferences: true, marketing: false });
+    expect(writeCookieConsent(false, true)).toMatchObject({ version: 3, preferences: false, marketing: true });
+    expect(readCookieConsent()).toMatchObject({ version: 3, preferences: false, marketing: true });
+    expect(writeCookieConsent(true, false)).toMatchObject({ version: 3, preferences: true, marketing: false });
+    expect(readCookieConsent()).toMatchObject({ preferences: true, marketing: false });
+  });
+
+  it("clears Meta storage only after a successful denial or withdrawal write", () => {
+    browser();
+    writeCookieConsent(true, true);
+    expect(clearMetaMarketingStorage).not.toHaveBeenCalled();
+    writeCookieConsent(true, false);
+    expect(clearMetaMarketingStorage).toHaveBeenCalledTimes(1);
+    vi.stubGlobal("document", { get cookie() { return ""; }, set cookie(_value: string) {} });
+    expect(() => writeCookieConsent(false, false)).toThrow();
+    expect(clearMetaMarketingStorage).toHaveBeenCalledTimes(1);
   });
 
   it("stores a secure 180-day decision and provides stable UI snapshots", () => {

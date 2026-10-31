@@ -18,10 +18,12 @@ import { displayPhone, validateContact, type ContactDraft, type ContactErrors } 
 import { SubmissionConfirmation, SubmissionFilesSummary } from "./SubmissionConfirmation";
 import { CandidateOutcomeCard } from "./CandidateOutcomeCard";
 import { VisitorTelemetry } from "./VisitorTelemetry";
+import { MetaQuizPixel } from "./MetaQuizPixel";
 import { TaskRevisionNotice, TaskRevisionPanel } from "./TaskRevisionPanel";
 import type { TaskRevision } from "@/config/task-revisions";
 
 type SessionState = {
+  marketingScope: string;
   answers: Record<string, string>;
   contact: { name: string; phone: string; telegram: string | null } | null;
   submission: { id: string; submittedAt: string } | null;
@@ -263,6 +265,7 @@ export function QuizApp() {
   return (
     <>
     <VisitorTelemetry ready={Boolean(state)} step={step} />
+    <MetaQuizPixel scope={state?.marketingScope ?? null} step={step} contactSaved={Boolean(state?.contact)} questionsComplete={chatUnlocked} submitted={Boolean(state?.submission)} />
     <div className="min-h-dvh overflow-x-clip" data-outcome={outcome?.status}>
       <Backdrop />
       {/* Top bar */}

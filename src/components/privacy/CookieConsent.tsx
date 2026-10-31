@@ -22,7 +22,7 @@ function subscribeToConsent(onChange: () => void) {
 
 function getConsentSnapshot(): ConsentSnapshot {
   const consent = readCookieConsent();
-  return consent ? (consent.preferences ? "preferences" : "necessary") : "unset";
+  return consent?.version === 3 ? (consent.preferences ? "preferences" : "necessary") : "unset";
 }
 
 function getServerSnapshot(): ConsentSnapshot {
@@ -31,14 +31,14 @@ function getServerSnapshot(): ConsentSnapshot {
 
 const choiceButton = "btn btn-ghost min-h-11 w-full border-paint/50 px-4 text-sm text-ink hover:border-paint sm:w-auto";
 
-function ConsentChoices({ choose, banner = false }: { choose: (preferences: boolean) => void; banner?: boolean }) {
+function ConsentChoices({ choose, banner = false }: { choose: (preferences: boolean, marketing: boolean) => void; banner?: boolean }) {
   const bannerButton = "btn min-h-14 w-full px-6 text-sm sm:w-auto sm:text-base";
   return (
     <>
-      <button type="button" onClick={() => choose(false)} className={banner ? `${bannerButton} btn-ghost` : choiceButton}>
+      <button type="button" onClick={() => choose(false, false)} className={banner ? `${bannerButton} btn-ghost` : choiceButton}>
         {copy.necessaryOnly}
       </button>
-      <button type="button" onClick={() => choose(true)} className={banner ? `${bannerButton} btn-primary` : choiceButton}>
+      <button type="button" onClick={() => choose(true, true)} className={banner ? `${bannerButton} btn-primary` : choiceButton}>
         {copy.acceptAll}
       </button>
     </>
@@ -62,6 +62,7 @@ function PolicyLink({ className = "" }: { className?: string }) {
 function VisitorCookieConsent() {
   const consent = useSyncExternalStore(subscribeToConsent, getConsentSnapshot, getServerSnapshot);
   const [preferences, setPreferences] = useState(false);
+  const [marketing, setMarketing] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const dialog = useRef<HTMLDialogElement>(null);
@@ -69,6 +70,7 @@ function VisitorCookieConsent() {
 
   const openSettings = useCallback(() => {
     setPreferences(readCookieConsent()?.preferences ?? false);
+    setMarketing(readCookieConsent()?.marketing ?? false);
     setError("");
     if (dialog.current && !dialog.current.open) dialog.current.showModal();
   }, []);
@@ -78,9 +80,9 @@ function VisitorCookieConsent() {
     return () => window.removeEventListener(COOKIE_SETTINGS_EVENT, openSettings);
   }, [openSettings]);
 
-  function choose(nextPreferences: boolean) {
+  function choose(nextPreferences: boolean, nextMarketing: boolean) {
     try {
-      writeCookieConsent(nextPreferences);
+      writeCookieConsent(nextPreferences, nextMarketing);
       setError("");
       setNotice(copy.saved);
       dialog.current?.close();
@@ -115,6 +117,7 @@ function VisitorCookieConsent() {
               </p>
             </div>
             <div className="grid shrink-0 grid-cols-1 gap-4 sm:flex">
+              <button type="button" onClick={openSettings} className="btn btn-ghost min-h-14 w-full px-6 text-sm sm:w-auto sm:text-base">{copy.settings}</button>
               <ConsentChoices choose={choose} banner />
             </div>
           </div>
@@ -154,7 +157,7 @@ function VisitorCookieConsent() {
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            choose(preferences);
+            choose(preferences, marketing);
           }}
           className="px-5 pb-5 sm:px-7 sm:pb-7"
         >
@@ -172,6 +175,13 @@ function VisitorCookieConsent() {
               <span>{copy.preferencesTitle}</span>
             </label>
             <p id="cookie-preferences-description" className="mt-2 text-xs leading-relaxed text-ink-soft">{copy.preferencesDescription}</p>
+          </div>
+          <div className="mt-3 rounded-xl border border-line bg-paper/40 p-4">
+            <label htmlFor="cookie-marketing" className="flex min-h-7 cursor-pointer items-center gap-3 text-sm font-bold">
+              <input id="cookie-marketing" type="checkbox" checked={marketing} onChange={(event) => setMarketing(event.target.checked)} className="size-4 accent-paint" aria-describedby="cookie-marketing-description" />
+              <span>{copy.marketingTitle}</span>
+            </label>
+            <p id="cookie-marketing-description" className="mt-2 text-xs leading-relaxed text-ink-soft">{copy.marketingDescription}</p>
           </div>
           <p className="mt-4 text-xs leading-relaxed text-ink-soft">{copy.noTracking} {copy.validity}</p>
           <p className="mt-3 text-xs text-ink"><PolicyLink /></p>

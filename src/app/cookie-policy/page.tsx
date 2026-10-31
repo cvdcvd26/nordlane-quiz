@@ -19,6 +19,8 @@ const entries = [
   ["nl_submit_key", "sessionStorage", "Pomaga zapobiegać podwójnemu wysłaniu tego samego zadania.", "Do zamknięcia karty lub poprawnego wysłania zadania"],
   ["Robocza odpowiedź do poprawy", "sessionStorage", "Zachowuje tekst odpowiedzi na konkretną prośbę o poprawę zadania w bieżącej karcie.", "Do zamknięcia karty lub wysłania poprawy"],
   ["nl-sound-visitor", "localStorage", "Po zgodzie na preferencje zapamiętuje ustawienie dźwięku powiadomień kandydata.", "Do wycofania zgody lub usunięcia danych przeglądarki; odczytywany przy ważnej zgodzie"],
+  ["_fbp, _fbc", "Cookie Meta", "Wyłącznie po zgodzie na pomiar reklam: pomagają Meta powiązać zdarzenia z przeglądarką i kliknięciem reklamy. _fbc może wystąpić po wejściu z reklamy Meta.", "Okres ustalany przez Meta i przeglądarkę; dostępne cookies naszej domeny usuwamy po wycofaniu zgody"],
+  ["ab_meta_events:*", "localStorage", "Wyłącznie po zgodzie na pomiar reklam: ogranicza ponowne wysyłanie tych samych zdarzeń po odświeżeniu lub powrocie do formularza. Zawiera lokalny, niejawny identyfikator zakresu sesji oraz znaczniki wysłanych zdarzeń; nie zawiera danych kontaktowych ani treści odpowiedzi i nie jest wysyłany do Meta.", "Do 180 dni; usuwany po wycofaniu zgody lub usunięciu danych przeglądarki"],
   ["nl-sound-admin, nl-admin-lang", "localStorage", "Zapamiętują ustawienia dźwięku i języka wybrane przez administratora w panelu.", "Do usunięcia danych przeglądarki"],
 ];
 
@@ -38,7 +40,7 @@ export default function CookiePolicyPage() {
         <p className="chip"><span className="chip-dot" />Prywatność</p>
         <h1 className="display mt-6 text-4xl font-semibold sm:text-5xl">Polityka plików cookie</h1>
         <p className="mt-5 max-w-2xl leading-relaxed text-ink-soft">Wyjaśniamy, co zapisujemy w przeglądarce, do czego służą te informacje i jak możesz zarządzać swoim wyborem.</p>
-        <p className="mt-3 text-xs text-slate">Ostatnia aktualizacja: 24 października 2026 r.</p>
+        <p className="mt-3 text-xs text-slate">Ostatnia aktualizacja: 1 listopada 2026 r.</p>
 
         <section className="mt-10 space-y-3" aria-labelledby="cookies-what">
           <h2 id="cookies-what" className="text-xl font-semibold">Czym są pliki cookie?</h2>
@@ -47,8 +49,15 @@ export default function CookiePolicyPage() {
         <section className="mt-9 space-y-3" aria-labelledby="cookies-purpose">
           <h2 id="cookies-purpose" className="text-xl font-semibold">Jak korzystamy z pamięci przeglądarki?</h2>
           <p className="leading-relaxed text-ink-soft">Sesja łączy Twoje kontakty, odpowiedzi, zadanie i rozmowę. Dzięki niej możesz wrócić do zgłoszenia w tej samej przeglądarce i uzyskać dostęp do swoich plików. W przeglądarce zapisujemy też wybór cookies oraz roboczą odpowiedź do zadania.</p>
-          <p className="leading-relaxed text-ink-soft">Dodatkowe preferencje obejmują zapamiętanie dźwięku oraz analizę źródła wizyty. Dopiero po zgodzie zapisujemy w naszym systemie oznaczenia kampanii UTM i nazwę domeny odsyłającej, połączone z sesją zgłoszenia. Nie zapisujemy pełnego adresu strony odsyłającej ani reklamowych identyfikatorów kliknięć. Wybór „Tylko niezbędne” pozwala nadal korzystać z formularza i czatu bez zapisu opcjonalnego źródła wizyty.</p>
-          <p className="leading-relaxed text-ink-soft">Postęp zgłoszenia i czas ostatniej aktywności pomagają przywrócić formularz oraz rozpoznać niedokończone zadania. Na ich podstawie pokazujemy zespołowi zbiorczą ścieżkę zgłoszeń. Nie uruchamiamy Google Analytics, zewnętrznych narzędzi śledzących ani reklamowych pikseli Meta. Po zmianie zakresu opcjonalnej analizy ponownie prosimy o wybór; wcześniejsza zgoda dotycząca samego dźwięku jej nie włącza.</p>
+          <p className="leading-relaxed text-ink-soft">Dodatkowe preferencje obejmują zapamiętanie dźwięku oraz analizę źródła wizyty. Dopiero po zgodzie zapisujemy w naszym systemie oznaczenia kampanii UTM i nazwę domeny odsyłającej, połączone z sesją zgłoszenia. Nasza wewnętrzna analiza nie zapisuje pełnego adresu strony odsyłającej ani reklamowych identyfikatorów kliknięć. Wybór „Tylko niezbędne” pozwala nadal korzystać z formularza i czatu bez zapisu opcjonalnego źródła wizyty.</p>
+          <p className="leading-relaxed text-ink-soft">Postęp zgłoszenia i czas ostatniej aktywności pomagają przywrócić formularz oraz rozpoznać niedokończone zadania. Na ich podstawie pokazujemy zespołowi zbiorczą ścieżkę zgłoszeń. Pomiar reklam Meta wymaga osobnej zgody opisanej poniżej. Wcześniejsza zgoda dotycząca dźwięku i naszej analizy źródeł nie włącza piksela; prosimy o nowy wybór.</p>
+        </section>
+
+        <section className="mt-9 space-y-3" aria-labelledby="cookies-meta">
+          <h2 id="cookies-meta" className="text-xl font-semibold">Pomiar reklam Meta</h2>
+          <p className="leading-relaxed text-ink-soft">Po zgodzie na „Pomiar reklam Meta” uruchamiamy Meta Pixel o identyfikatorze 1823278402432437 na publicznych etapach formularza. Wysyłamy PageView (wyświetlenie etapu) oraz cztery zdarzenia: LandingView (otwarcie pierwszego etapu), ContactCompleted (przejście do pytań po zapisaniu danych kontaktowych), QuizCompleted (przejście do zadania po zapisaniu trzech odpowiedzi) i TaskSubmitted (potwierdzenie wysłania zadania). Pomaga to oceniać skuteczność reklam. Piksel nie jest uruchamiany w panelu administratora.</p>
+          <p className="leading-relaxed text-ink-soft">Nie dodajemy do tych zdarzeń imienia, numeru telefonu, treści odpowiedzi, plików ani wiadomości z czatu. Połączenie z Meta przekazuje jednak dane techniczne przeglądarki, takie jak adres IP, informacje o urządzeniu i przeglądarce oraz dane o zdarzeniu i stronie. Meta może przetwarzać identyfikatory reklamowe i powiązać zdarzenia z reklamami lub kontem użytkownika zgodnie ze swoimi zasadami.</p>
+          <p className="leading-relaxed text-ink-soft">Przed zgodą piksel nie jest ładowany. Możesz wyłączyć pomiar reklam niezależnie od preferencji i naszej analizy źródeł. Więcej informacji: <a href="https://www.facebook.com/privacy/policy/" target="_blank" rel="noopener noreferrer" className="text-paint underline underline-offset-4">Polityka prywatności Meta</a> i <a href="https://www.facebook.com/privacy/policies/cookies/" target="_blank" rel="noopener noreferrer" className="text-paint underline underline-offset-4">Zasady Meta dotyczące plików cookie</a>.</p>
         </section>
 
         <section className="mt-9" aria-labelledby="cookies-list">
@@ -67,7 +76,7 @@ export default function CookiePolicyPage() {
 
         <section className="mt-9 space-y-3" aria-labelledby="cookies-choice">
           <h2 id="cookies-choice" className="text-xl font-semibold">Jak zmienić lub wycofać wybór?</h2>
-          <p className="leading-relaxed text-ink-soft">Otwórz ustawienia poniższym przyciskiem lub linkiem „Ustawienia cookies” w stopce. Po wycofaniu zgody usuwamy zapamiętane ustawienie dźwięku, a przy połączeniu z serwerem usuwamy opcjonalne oznaczenia źródła tej sesji. Nie usuwamy przy tym zgłoszenia ani historii rozmowy.</p>
+          <p className="leading-relaxed text-ink-soft">Otwórz ustawienia poniższym przyciskiem lub linkiem „Ustawienia cookies” w stopce. Po wycofaniu zgody na preferencje usuwamy zapamiętane ustawienie dźwięku, a przy połączeniu z serwerem usuwamy opcjonalne oznaczenia źródła tej sesji. Po wycofaniu zgody na pomiar reklam zatrzymujemy dalsze wysyłanie zdarzeń Meta i usuwamy dostępne cookies Meta naszej domeny oraz lokalny znacznik konwersji. Nie cofa to danych już wysłanych do Meta. Nie usuwamy przy tym zgłoszenia ani historii rozmowy.</p>
           <p className="leading-relaxed text-ink-soft">Wybór zapisujemy na 180 dni. Możesz również usunąć cookies i pamięć witryny w ustawieniach przeglądarki. Całkowite zablokowanie cookies może utrudnić zapis formularza, dostęp do czatu i logowanie administratora.</p>
           <div className="pt-2"><CookieSettingsButton /></div>
         </section>

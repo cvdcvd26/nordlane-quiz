@@ -11,6 +11,8 @@ import { syncVisitorAttribution } from "@/server/services/visitor-activity";
 import { setupTestEnv } from "./helpers";
 
 const jar = vi.hoisted(() => new Map<string, string>());
+// Meta cookie cleanup has its own DOM integration tests; this fixture models only our consent cookie.
+vi.mock("@/lib/meta-pixel-storage", () => ({ clearMetaMarketingStorage: vi.fn() }));
 vi.mock("next/headers", () => ({ cookies: async () => ({
   get: (name: string) => jar.has(name) ? { value: jar.get(name)! } : undefined,
 }) }));
@@ -20,7 +22,7 @@ beforeAll(async () => { env = await setupTestEnv(); });
 afterAll(async () => { await env.client.close(); });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-const choice = (preferences: boolean, updatedAt = Date.now()): CookieConsent => ({ version: 2, necessary: true, preferences, updatedAt });
+const choice = (preferences: boolean, updatedAt = Date.now()): CookieConsent => ({ version: 2, necessary: true, preferences, marketing: false, updatedAt });
 function controllerFixture(initial: CookieConsent | null = choice(true)) {
   let consent = initial;
   let visible = true;

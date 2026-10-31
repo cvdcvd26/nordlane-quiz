@@ -1,3 +1,5 @@
+import { clearMetaMarketingStorage } from "./meta-pixel-storage";
+
 export const COOKIE_CONSENT_NAME = "ab_cookie_consent";
 export const COOKIE_CONSENT_EVENT = "alleybiz:cookie-consent";
 export const COOKIE_SETTINGS_EVENT = "alleybiz:cookie-settings";
@@ -5,9 +7,10 @@ export const COOKIE_CONSENT_MAX_AGE_SECONDS = 60 * 60 * 24 * 180;
 export const VISITOR_SOUND_KEY = "nl-sound-visitor";
 
 export type CookieConsent = {
-  version: 2;
+  version: 2 | 3;
   necessary: true;
   preferences: boolean;
+  marketing: boolean;
   updatedAt: number;
 };
 
@@ -18,10 +21,12 @@ export function parseCookieConsent(raw: string | undefined, now = Date.now()): C
     const value: unknown = JSON.parse(decodeURIComponent(raw));
     if (!value || typeof value !== "object") return null;
     const item = value as Partial<CookieConsent>;
-    if (item.version !== 2 || item.necessary !== true || typeof item.preferences !== "boolean" ||
+    if ((item.version !== 2 && item.version !== 3) || item.necessary !== true || typeof item.preferences !== "boolean" ||
+        (item.version === 3 && typeof item.marketing !== "boolean") ||
         typeof item.updatedAt !== "number" || !Number.isSafeInteger(item.updatedAt) || item.updatedAt <= 0 ||
         item.updatedAt > now + 60_000 || now - item.updatedAt >= COOKIE_CONSENT_MAX_AGE_SECONDS * 1000) return null;
-    return { version: 2, necessary: true, preferences: item.preferences, updatedAt: item.updatedAt };
+    // A previous choice covered only our own analytics and sound, never Meta.
+    return { version: item.version, necessary: true, preferences: item.preferences, marketing: item.version === 3 && item.marketing === true, updatedAt: item.updatedAt };
   } catch {
     return null;
   }
@@ -55,8 +60,8 @@ export function clearVisitorSoundPreference() {
 }
 
 /** Persists just the decision, with no visitor ID, contact details or tracking data. */
-export function writeCookieConsent(preferences: boolean): CookieConsent {
-  const decision: CookieConsent = { version: 2, necessary: true, preferences, updatedAt: Date.now() };
+export function writeCookieConsent(preferences: boolean, marketing = false): CookieConsent {
+  const decision: CookieConsent = { version: 3, necessary: true, preferences, marketing, updatedAt: Date.now() };
   const encoded = encodeURIComponent(JSON.stringify(decision));
   const secure = window.location.protocol === "https:" ? "; Secure" : "";
   document.cookie = `${COOKIE_CONSENT_NAME}=${encoded}; Path=/; Max-Age=${COOKIE_CONSENT_MAX_AGE_SECONDS}; SameSite=Lax${secure}`;
@@ -64,6 +69,7 @@ export function writeCookieConsent(preferences: boolean): CookieConsent {
   lastRaw = encoded;
   lastConsent = decision;
   if (!preferences) clearVisitorSoundPreference();
+  if (!marketing) clearMetaMarketingStorage();
   window.dispatchEvent(new Event(COOKIE_CONSENT_EVENT));
   return decision;
 }

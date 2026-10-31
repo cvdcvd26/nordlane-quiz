@@ -14,7 +14,7 @@ beforeAll(async () => { env = await setupTestEnv(); });
 beforeEach(async () => { await env.db.delete(schema.visitorSessions); });
 afterAll(async () => { await env.client.close(); });
 
-const choice = (preferences: boolean, updatedAt = Date.now()): CookieConsent => ({ version: 2, necessary: true, preferences, updatedAt });
+const choice = (preferences: boolean, updatedAt = Date.now()): CookieConsent => ({ version: 2, necessary: true, preferences, marketing: false, updatedAt });
 async function session(createdAt = new Date(), lastSeenAt = createdAt) {
   const [row] = await env.db.insert(schema.visitorSessions).values({ tokenHash: randomUUID(), createdAt, lastSeenAt }).returning();
   return row.id;
