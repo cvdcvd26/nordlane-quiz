@@ -109,16 +109,22 @@ async function refresh() {
     if (pending.has(key) || handedOff.has(key)) return;
     pending.add(key);
     const send = () => {
-      if (current !== stage || !canTrack(stage) || handedOff.has(key) || hasMetaStageMarker(stage.scope, stage.step)) return;
+      const live = current;
+      // React can replace the stage object while this Web Lock is waiting.
+      // Keep the same visitor/stage eligible, but recheck its latest state.
+      if (!canTrack(live) || live.scope !== stage.scope || live.step !== stage.step ||
+          handedOff.has(key) || hasMetaStageMarker(live.scope, live.step)) return;
       // No session identifiers, contacts, answers, files, or chat text go to Meta.
-      fbq("trackSingleCustom", metaPixelConfig.id, metaPixelConfig.events[stage.step], { step: stage.step + 1 });
+      fbq("trackSingleCustom", metaPixelConfig.id, metaPixelConfig.events[live.step], { step: live.step + 1 });
       handedOff.add(key);
-      saveMetaStageMarker(stage.scope, stage.step);
+      saveMetaStageMarker(live.scope, live.step);
     };
     try {
       // Serialize two tabs belonging to the same visitor, where Web Locks is available.
-      if (navigator.locks?.request) await navigator.locks.request(`ab-meta:${key}`, send);
-      else send();
+      if (navigator.locks?.request) {
+        try { await navigator.locks.request(`ab-meta:${key}`, send); }
+        catch { send(); } // Some browsers expose this optional API but deny access.
+      } else send();
     } finally { pending.delete(key); }
   } catch { /* Ad blockers/network failure must never interrupt the application. */ }
 }

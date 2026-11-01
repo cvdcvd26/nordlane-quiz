@@ -140,6 +140,56 @@ describe("consented Meta quiz funnel", () => {
     expect(request).toHaveBeenCalledWith(`ab-meta:${scope}:2`, expect.any(Function));
   });
 
+  it.each([0, 1, 2, 3] as const)("keeps stage %i when an equivalent React effect replaces a waiting lock", async (step) => {
+    const release: (() => void)[] = [];
+    const request = vi.fn((_name: string, callback: () => void) => new Promise<void>((resolve) => {
+      release.push(() => { callback(); resolve(); });
+    }));
+    vi.stubGlobal("navigator", { locks: { request } });
+    consent.writeCookieConsent(true, true); enter(step); const calls = sdkReady(); await flush();
+    // Native History/usePathname updates or Strict Mode can rerun the effect
+    // while Chrome is asynchronously acquiring the Web Lock.
+    tracker.updateMetaQuizStage(null); enter(step); await flush();
+    expect(calls.mock.calls.filter(([m]) => m === "trackSingle")).toHaveLength(1);
+    expect(request).toHaveBeenCalledTimes(1);
+    release.shift()!(); await flush();
+    const names = ["LandingView", "ContactCompleted", "QuizCompleted", "TaskSubmitted"];
+    expect(calls.mock.calls.filter(([m]) => m === "trackSingleCustom")).toEqual([
+      ["trackSingleCustom", "1823278402432437", names[step], { step: step + 1 }],
+    ]);
+    expect(browser.localStorage.length).toBe(1);
+    enter(step); await flush();
+    expect(calls.mock.calls.filter(([m]) => m === "trackSingleCustom")).toHaveLength(1);
+  });
+
+  it.each(["withdrawal", "unmount", "different stage", "different visitor"])("drops a waiting conversion after %s", async (change) => {
+    const release: (() => void)[] = [];
+    const request = vi.fn((_name: string, callback: () => void) => new Promise<void>((resolve) => {
+      release.push(() => { callback(); resolve(); });
+    }));
+    vi.stubGlobal("navigator", { locks: { request } });
+    consent.writeCookieConsent(true, true); enter(2); const calls = sdkReady(); await flush();
+    if (change === "withdrawal") consent.writeCookieConsent(true, false);
+    if (change === "unmount") tracker.updateMetaQuizStage(null);
+    if (change === "different stage") enter(3);
+    if (change === "different visitor") enter(2, marketingScope("visitor-b"));
+    await flush(); release.shift()!(); await flush();
+    expect(calls.mock.calls.filter(([m]) => m === "trackSingleCustom")).toHaveLength(0);
+    expect(browser.localStorage.length).toBe(0);
+    // Finish a later valid request independently of the stale one.
+    if (release.length) { release.shift()!(); await flush(); }
+  });
+
+  it("still sends once when the browser exposes Web Locks but denies access", async () => {
+    const request = vi.fn().mockRejectedValue(new Error("Web Locks unavailable"));
+    vi.stubGlobal("navigator", { locks: { request } });
+    consent.writeCookieConsent(true, true); enter(3); const calls = sdkReady(); await flush();
+    expect(calls).toHaveBeenCalledWith("trackSingleCustom", "1823278402432437", "TaskSubmitted", { step: 4 });
+    expect(browser.localStorage.length).toBe(1);
+    enter(3); await flush();
+    expect(calls.mock.calls.filter(([m]) => m === "trackSingleCustom")).toHaveLength(1);
+  });
+
   it("never runs on admin, preview/local, unknown-query, hash or private referrer URLs", () => {
     for (const url of ["https://alleybiz.vercel.app/admin", "http://localhost:3008/", "https://preview.vercel.app/", "https://alleybiz.vercel.app/?email=private", "https://alleybiz.vercel.app/#token", "https://alleybiz.vercel.app:444/"]) {
       expect(tracker.isMetaQuizLocation(url)).toBe(false);
