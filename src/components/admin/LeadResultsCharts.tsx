@@ -2,12 +2,16 @@
 
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { ChevronDown, Circle } from "lucide-react";
-import type { LeadClosure, LeadResultsReport } from "@/config/lead-results";
+import type { LeadResultsReport } from "@/config/lead-results";
 import { leadResultsCopy } from "@/config/lead-results-copy";
+import { ACTIVE_LEAD_STATUSES, LEAD_STATUSES, type LeadStatus } from "@/config/content";
+import { useAdminI18n } from "./i18n";
+import { STATUS_TONE } from "./ui";
 
 type Labels = typeof leadResultsCopy.en;
 type Point = { x: number; y: number };
-const OUTCOME_ORDER: LeadClosure[] = ["signal_working", "data_received", "open", "not_suitable", "candidate_declined", "no_contact", "completed"];
+const LEGACY_STATUSES = LEAD_STATUSES.filter(status => !(ACTIVE_LEAD_STATUSES as readonly LeadStatus[]).includes(status));
+const STATUS_ORDER: readonly LeadStatus[] = [...ACTIVE_LEAD_STATUSES, ...LEGACY_STATUSES];
 const round = (value: number) => Math.round(value * 100) / 100;
 
 /** Every Bézier control stays inside its data interval, so curves cannot invent peaks or negative values. */
@@ -128,27 +132,44 @@ function arcPath(start: number, end: number, radius: number) {
   return `M ${round(a.x)} ${round(a.y)} A ${radius} ${radius} 0 ${end - start > Math.PI ? 1 : 0} 1 ${round(b.x)} ${round(b.y)}`;
 }
 
-export function LeadOutcomeDonut({ closures, total, locale, labels }: { closures: LeadResultsReport["closures"]; total: number; locale: string; labels: Labels }) {
+export function LeadOutcomeDonut({ statuses, total, locale, labels }: { statuses: LeadResultsReport["statuses"]; total: number; locale: string; labels: Labels }) {
+  const { t } = useAdminI18n();
   const numbers = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const compact = useMemo(() => new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }), [locale]);
   const percents = useMemo(() => new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 }), [locale]);
   const segments = useMemo(() => {
-    const nonzero = OUTCOME_ORDER.filter(key => closures[key] > 0);
-    return OUTCOME_ORDER.map((key, index) => {
-      const ratio = total ? closures[key] / total : 0;
-      const start = OUTCOME_ORDER.slice(0, index).reduce((sum, previous) => sum + closures[previous], 0) / (total || 1) * Math.PI * 2 - Math.PI / 2;
+    const nonzero = STATUS_ORDER.filter(key => statuses[key] > 0);
+    return STATUS_ORDER.map((key, index) => {
+      const ratio = total ? statuses[key] / total : 0;
+      const start = STATUS_ORDER.slice(0, index).reduce((sum, previous) => sum + statuses[previous], 0) / (total || 1) * Math.PI * 2 - Math.PI / 2;
       const sweep = ratio * Math.PI * 2;
       const gap = nonzero.length > 1 ? Math.min(.065, sweep * .22) : 0;
       const stroke = Math.min(18, (sweep - gap) * 76 * .5);
       const capAngle = stroke / 76;
       return { key, ratio, full: nonzero.length === 1 && ratio > 0, stroke, path: sweep > 0 ? arcPath(start + gap / 2 + capAngle / 2, start + sweep - gap / 2 - capAngle / 2, 76) : "" };
     });
-  }, [closures, total]);
+  }, [statuses, total]);
+  const legacyStatuses = LEGACY_STATUSES.filter(status => statuses[status] > 0);
+  const statusRow = (status: LeadStatus) => <li key={status} data-lead-status={status}>
+    <div className="lres-outcome-row">
+      <span className={`lres-legend-mark ${STATUS_TONE[status].dot}`} aria-hidden />
+      <span className="lres-outcome-name">{t.ui.statuses[status]}</span>
+      <strong>{numbers.format(statuses[status])}</strong>
+      <span className="lres-outcome-percent">{total ? percents.format(statuses[status] / total) : "—"}</span>
+    </div>
+    <div className="lres-outcome-track" aria-hidden><span className={STATUS_TONE[status].dot} style={{ width: `${total ? statuses[status] / total * 100 : 0}%` }} /></div>
+  </li>;
 
   return <div className="lres-outcomes">
     <div className="lres-donut" aria-hidden><svg viewBox="0 0 208 208"><circle cx="104" cy="104" r="93" fill="none" stroke="var(--color-adm-line)" strokeWidth="1" strokeDasharray="1 7" /><circle cx="104" cy="104" r="76" fill="none" stroke="var(--color-adm-subtle)" strokeWidth="18" />
-      {segments.map(segment => segment.ratio > 0 ? segment.full ? <circle key={segment.key} className={`lres-stroke-${segment.key}`} cx="104" cy="104" r="76" fill="none" strokeWidth="18" /> : <path key={segment.key} d={segment.path} className={`lres-stroke-${segment.key}`} fill="none" strokeWidth={segment.stroke} strokeLinecap="round" /> : null)}
-    </svg><div><span className="lres-donut-caption">{labels.allLeads}</span><strong title={numbers.format(total)}>{total >= 100_000 ? compact.format(total) : numbers.format(total)}</strong><span className="lres-donut-subtotal"><Circle className="size-2" fill="currentColor" />{numbers.format(closures.signal_working)} {labels.successLegend.toLocaleLowerCase(locale)}</span></div></div>
-    <ul className="lres-outcome-legend">{OUTCOME_ORDER.map(key => <li key={key}><div className="lres-outcome-row"><span className={`lres-legend-mark lres-fill-${key}`} aria-hidden /><span className="lres-outcome-name">{labels.closures[key]}</span><strong>{numbers.format(closures[key])}</strong><span className="lres-outcome-percent">{total ? percents.format(closures[key] / total) : "—"}</span></div><div className="lres-outcome-track" aria-hidden><span className={`lres-fill-${key}`} style={{ width: `${total ? closures[key] / total * 100 : 0}%` }} /></div></li>)}</ul>
+      {segments.map(segment => segment.ratio > 0 ? segment.full ? <circle key={segment.key} data-lead-status={segment.key} stroke={STATUS_TONE[segment.key].color} cx="104" cy="104" r="76" fill="none" strokeWidth="18" /> : <path key={segment.key} data-lead-status={segment.key} d={segment.path} stroke={STATUS_TONE[segment.key].color} fill="none" strokeWidth={segment.stroke} strokeLinecap="round" /> : null)}
+    </svg><div><span className="lres-donut-caption">{labels.allLeads}</span><strong title={numbers.format(total)}>{total >= 100_000 ? compact.format(total) : numbers.format(total)}</strong><span className="lres-donut-subtotal"><Circle className="size-2" fill="currentColor" />{numbers.format(statuses.signal_working)} {labels.successLegend.toLocaleLowerCase(locale)}</span></div></div>
+    <div className="lres-status-legends">
+      <ul className="lres-outcome-legend">{ACTIVE_LEAD_STATUSES.map(statusRow)}</ul>
+      {legacyStatuses.length > 0 ? <section className="lres-legacy-statuses" aria-label={labels.legacyStatuses}>
+        <h3>{labels.legacyStatuses}</h3>
+        <ul className="lres-outcome-legend">{legacyStatuses.map(statusRow)}</ul>
+      </section> : null}
+    </div>
   </div>;
 }

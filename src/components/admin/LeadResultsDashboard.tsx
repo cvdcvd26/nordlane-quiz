@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDownToLine, ArrowUpRight, Check, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, Clock3, Filter, Globe2, LockKeyhole, PartyPopper, RefreshCw, ShieldCheck, Sparkles, Target, Users, X } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { ArrowDownToLine, ArrowUpRight, Check, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, Clock3, Filter, Globe2, LockKeyhole, PartyPopper, RefreshCw, ShieldCheck, Sparkles, Users, X } from "lucide-react";
 import type { AnalyticsPeriod } from "@/config/analytics";
+import { ACTIVE_LEAD_STATUSES, LEAD_STATUSES, type LeadStatus } from "@/config/content";
 import { type LeadResultsReport, type LeadResultsSource } from "@/config/lead-results";
 import { leadResultsCopy } from "@/config/lead-results-copy";
 import { api, ApiError } from "@/lib/api";
 import { useAdminI18n } from "./i18n";
-import { ErrorState, PageHeader, StatusBadge } from "./ui";
+import { ErrorState, PageHeader, STATUS_TONE, StatusBadge } from "./ui";
 import LeadResultEditor from "./LeadResultEditor";
 import { DailyResultChart, LeadOutcomeDonut } from "./LeadResultsCharts";
 import LeadSuccessDialog, { type LeadSuccessSelection } from "./LeadSuccessDialog";
@@ -17,6 +18,8 @@ import "./lead-results.css";
 type Query = { period: AnalyticsPeriod; from?: string; to?: string; source: string; responsible: string; page: number };
 type SourceOption = LeadResultsSource & { key: string };
 const INITIAL_QUERY: Query = { period: "30d", source: "all", responsible: "all", page: 1 };
+const STATUS_ICONS = { new: Users, in_progress: Clock3, awaiting_data: ClipboardCheck, data_received: CheckCircle2, rejected: X };
+const LEGACY_STATUSES = LEAD_STATUSES.filter(status => !(ACTIVE_LEAD_STATUSES as readonly LeadStatus[]).includes(status));
 
 function PanelHeading({ title, hint, accessory, id }: { title: string; hint?: string; accessory?: ReactNode; id: string }) {
   return <div className="lres-panel-heading"><div className="min-w-0"><h2 id={id} className="text-[14px] font-bold">{title}</h2>{hint ? <p className="mt-1 text-[11.5px] leading-relaxed text-adm-ink-3">{hint}</p> : null}</div>{accessory}</div>;
@@ -140,6 +143,7 @@ export default function LeadResultsDashboard() {
     });
   };
   const total = report?.totals.leads ?? 0;
+  const hasLegacyStatuses = !!report && LEGACY_STATUSES.some(status => report.statuses[status] > 0);
   const lost = report ? report.closures.not_suitable + report.closures.candidate_declined + report.closures.no_contact : 0;
 
   return <div className="lres lres-dashboard" tabIndex={-1}>
@@ -185,7 +189,7 @@ export default function LeadResultsDashboard() {
     </form>
     {error ? <div className="mt-5"><ErrorState text={error === "forbidden" ? copy.forbidden : error === "range" ? copy.rangeError : copy.failed} onRetry={error === "forbidden" ? undefined : refresh} /></div> : null}
     {loading ? <div className="lres-loading" role="status" aria-label={copy.loading}>
-      <div className="lres-summary-grid"><div className="adm-skeleton h-80" /><div className="lres-metrics">{[0, 1, 2, 3].map(key => <div key={key} className="adm-skeleton h-38" />)}</div></div><div className="adm-skeleton h-96" /><span className="sr-only">{copy.loading}</span>
+      <div className="lres-summary-grid"><div className="adm-skeleton h-80" /><div className="lres-metrics">{[0, 1, 2, 3, 4, 5].map(key => <div key={key} className="adm-skeleton h-38" />)}</div></div><div className="adm-skeleton h-96" /><span className="sr-only">{copy.loading}</span>
     </div> : null}
     {report ? <div className="lres-report">
       <div className="lres-report-meta">
@@ -196,18 +200,16 @@ export default function LeadResultsDashboard() {
         <section className="lres-success" aria-labelledby={`${id}-success`}>
           <div className="lres-hero-art" aria-hidden><span /><span /><PartyPopper /></div>
           <div className="lres-hero-top"><span className="lres-hero-icon"><PartyPopper aria-hidden className="size-5" /></span><span className="lres-hero-check"><Check aria-hidden className="size-3" />{copy.successLegend}</span></div>
-          <h2 id={`${id}-success`}>{copy.success}</h2>
+          <h2 id={`${id}-success`}>{t.ui.statuses.signal_working}</h2>
           <div className="lres-hero-values"><p className="lres-hero-number">{number(report.totals.success)}</p><div className="lres-hero-ratio"><strong>{rate(report.rates.successOfAll)}</strong><span>{copy.successRate}</span><small>{number(report.totals.success)} / {number(total)}</small></div></div>
           <div className="lres-hero-footer"><div className="lres-hero-track" aria-hidden><span style={{ width: `${(report.rates.successOfAll ?? 0) * 100}%` }} /></div><p><ShieldCheck aria-hidden className="size-3.5" />{copy.successHint}</p><button className="lres-success-open" type="button" data-lead-success-open onClick={openSuccesses} aria-label={`${copy.successesOpen} — ${copy.success}`}><span>{copy.successesOpen}</span><ArrowUpRight aria-hidden className="size-4" /></button></div>
         </section>
         <dl className="lres-metrics">
           {[
-            { label: copy.allLeads, count: total, icon: Users, tone: "neutral", hint: copy.allHint, ratio: total ? 1 : 0, comparison: null },
-            { label: copy.reviewed, count: report.totals.reviewed, icon: ClipboardCheck, tone: "blue", hint: copy.reviewedHint, ratio: total ? report.totals.reviewed / total : 0, comparison: `${percent(report.totals.reviewed, total)} · ${number(report.totals.reviewed)} / ${number(total)}` },
-            { label: copy.suitable, count: report.totals.suitable, icon: Target, tone: "green", hint: copy.suitableRate, ratio: report.rates.suitableOfReviewed ?? 0, comparison: `${rate(report.rates.suitableOfReviewed)} · ${number(report.totals.suitable)} / ${number(report.totals.reviewed)}` },
-            { label: copy.unreviewed, count: report.totals.unreviewed, icon: Clock3, tone: "amber", hint: copy.allLeads, ratio: total ? report.totals.unreviewed / total : 0, comparison: `${percent(report.totals.unreviewed, total)} · ${number(report.totals.unreviewed)} / ${number(total)}` },
-          ].map(metric => <div key={metric.label} className={`adm-panel lres-metric lres-metric-${metric.tone}`}>
-            <div className="lres-metric-top"><dt>{metric.label}</dt><span className={`lres-metric-icon lres-tone-${metric.tone}`}><metric.icon aria-hidden className="size-4" /></span></div>
+            { key: "all", label: copy.allLeads, count: total, icon: Users, color: "var(--color-adm-ink-3)", hint: copy.allHint, ratio: total ? 1 : 0, comparison: null },
+            ...ACTIVE_LEAD_STATUSES.filter(status => status !== "signal_working").map(status => ({ key: status, label: t.ui.statuses[status], count: report.statuses[status], icon: STATUS_ICONS[status], color: STATUS_TONE[status].color, hint: copy.allLeads, ratio: total ? report.statuses[status] / total : 0, comparison: `${percent(report.statuses[status], total)} · ${number(report.statuses[status])} / ${number(total)}` })),
+          ].map(metric => <div key={metric.key} data-lead-status-metric={metric.key} className="adm-panel lres-metric" style={{ "--lres-metric-tint": metric.color } as CSSProperties}>
+            <div className="lres-metric-top"><dt>{metric.label}</dt><span className="lres-metric-icon"><metric.icon aria-hidden className="size-4" /></span></div>
             <div className="lres-metric-value"><dd>{number(metric.count)}</dd>{metric.comparison ? <span>{metric.comparison}</span> : null}</div>
             <dd className="lres-metric-hint">{metric.hint}</dd>
             <div className="lres-metric-track" aria-hidden><span style={{ width: `${metric.ratio * 100}%` }} /></div>
@@ -223,17 +225,18 @@ export default function LeadResultsDashboard() {
         </section>
         <section className="adm-panel lres-card" aria-labelledby={`${id}-outcomes`}>
           <PanelHeading id={`${id}-outcomes`} title={copy.outcomes} hint={copy.outcomesHint} />
-          <LeadOutcomeDonut closures={report.closures} total={total} locale={t.locale} labels={copy} />
+          <LeadOutcomeDonut statuses={report.statuses} total={total} locale={t.locale} labels={copy} />
         </section>
       </div>
       {total > 0 ? <>
         <div className="lres-performance-grid">
           <section className="adm-panel lres-card lres-sources-card" aria-labelledby={`${id}-sources`}>
             <PanelHeading id={`${id}-sources`} title={copy.sources} hint={copy.sourceHint} accessory={<span className="lres-section-icon"><Globe2 aria-hidden className="size-4" /></span>} />
-            <div className="lres-table-scroll"><table className="adm-table lres-table lres-source-table"><thead><tr>{[copy.source, copy.leads, copy.reviewed, copy.suitable, copy.successLegend, copy.conversion].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
+            <div className="lres-table-scroll"><table className="adm-table lres-table lres-source-table"><thead><tr><th scope="col">{copy.source}</th><th scope="col">{copy.leads}</th>{ACTIVE_LEAD_STATUSES.map(status => <th key={status} scope="col"><span style={{ color: STATUS_TONE[status].color }}>{t.ui.statuses[status]}</span></th>)}{hasLegacyStatuses ? <th scope="col">{copy.legacyStatuses}</th> : null}<th scope="col">{copy.conversion}</th></tr></thead>
               <tbody>{report.sources.map((row, index) => <tr key={row.key ?? `other-${index}`}>
                 <th scope="row"><div className="lres-source-name"><span className="lres-source-avatar"><Globe2 aria-hidden className="size-4" /></span><div><strong>{sourceName(row)}</strong>{row.medium || row.campaign ? <div className="lres-source-tags">{row.medium ? <span title={copy.medium}>{row.medium}</span> : null}{row.campaign ? <span title={copy.campaign}>{row.campaign}</span> : null}</div> : null}</div></div></th>
-                <td>{number(row.leads)}</td><td>{number(row.reviewed)}</td><td>{number(row.suitable)}</td><td className="lres-source-success">{number(row.success)}</td>
+                <td>{number(row.leads)}</td>{ACTIVE_LEAD_STATUSES.map(status => <td key={status} data-lead-source-status={status} className={status === "signal_working" ? "lres-source-success" : undefined}>{number(row.statuses[status])}</td>)}
+                {hasLegacyStatuses ? <td data-lead-source-status="legacy">{number(LEGACY_STATUSES.reduce((sum, status) => sum + row.statuses[status], 0))}</td> : null}
                 <td><div className="lres-source-conversion"><strong>{percent(row.success, row.leads)}</strong><div aria-hidden><span style={{ width: `${row.leads ? row.success / row.leads * 100 : 0}%` }} /></div></div></td>
               </tr>)}</tbody>
             </table></div>

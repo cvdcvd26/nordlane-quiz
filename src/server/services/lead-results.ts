@@ -2,6 +2,7 @@ import { eq, sql, type SQL } from "drizzle-orm";
 import { z, ZodError } from "zod";
 import { unstable_rethrow } from "next/navigation";
 import { db, schema } from "@/db";
+import { LEAD_STATUSES } from "@/config/content";
 import {
   leadResultReasons, leadResultsConfig,
   type LeadResultDetail, type LeadResultState, type LeadResultsReport, type LeadResultsSource, type LeadResultsSuccessList,
@@ -102,8 +103,16 @@ function sourceFilter(value: string): SQL {
   const [kind, source, medium, campaign] = parsed.data;
   return sql`kind = ${kind} and source is not distinct from ${source} and medium is not distinct from ${medium} and campaign is not distinct from ${campaign}`;
 }
+// Status keys and values come from the canonical persisted status, without closure grouping.
+const statusCounts = sql`jsonb_build_object(${sql.join(LEAD_STATUSES.flatMap(status => [
+  sql`${status}::text`, sql`count(*) filter(where status = ${status})::int`,
+]), sql`, `)})`;
+const summedStatusCounts = sql`jsonb_build_object(${sql.join(LEAD_STATUSES.flatMap(status => [
+  sql`${status}::text`, sql`sum((statuses ->> ${status})::int)::int`,
+]), sql`, `)})`;
 const counts = sql`count(*)::int as leads, count(*) filter(where qualification <> 'unreviewed')::int as reviewed,
-  count(*) filter(where qualification = 'suitable')::int as suitable, count(*) filter(where closure = 'signal_working')::int as success`;
+  count(*) filter(where qualification = 'suitable')::int as suitable, count(*) filter(where closure = 'signal_working')::int as success,
+  ${statusCounts} as statuses`;
 
 async function getLeadResultsImpl(input: Record<string, string | undefined>, now = new Date(), onlySuccess = false): Promise<LeadResultsReport> {
   const parsed = reportSchema.parse(input);
@@ -142,16 +151,17 @@ async function getLeadResultsImpl(input: Record<string, string | undefined>, now
     source_buckets as (select case when rank < ${leadResultsConfig.maxGroups} then kind else 'other' end as kind,
       case when rank < ${leadResultsConfig.maxGroups} then source end as source,
       case when rank < ${leadResultsConfig.maxGroups} then medium end as medium,
-      case when rank < ${leadResultsConfig.maxGroups} then campaign end as campaign, leads, reviewed, suitable, success from source_ranked),
+      case when rank < ${leadResultsConfig.maxGroups} then campaign end as campaign, leads, reviewed, suitable, success, statuses from source_ranked),
     sources as (select kind, source, medium, campaign, sum(leads)::int as leads, sum(reviewed)::int as reviewed,
-      sum(suitable)::int as suitable, sum(success)::int as success from source_buckets group by kind, source, medium, campaign),
+      sum(suitable)::int as suitable, sum(success)::int as success, ${summedStatusCounts} as statuses from source_buckets group by kind, source, medium, campaign),
     responsible_groups as (select responsible_id, responsible_email, ${counts} from cohort group by responsible_id, responsible_email),
     responsible_ranked as (select *, row_number() over(order by leads desc, responsible_id nulls first) as rank from responsible_groups),
     responsible_buckets as (select case when rank >= ${leadResultsConfig.maxGroups} then 'other' when responsible_id is null then 'unassigned' else 'admin' end as kind,
       case when rank < ${leadResultsConfig.maxGroups} then responsible_id end as id,
-      case when rank < ${leadResultsConfig.maxGroups} then responsible_email end as email, leads, reviewed, suitable, success from responsible_ranked),
+      case when rank < ${leadResultsConfig.maxGroups} then responsible_email end as email, leads, reviewed, suitable, success, statuses from responsible_ranked),
     responsibles as (select kind, case when kind = 'admin' then jsonb_build_object('id', id, 'email', email) end as admin,
-      sum(leads)::int as leads, sum(reviewed)::int as reviewed, sum(suitable)::int as suitable, sum(success)::int as success
+      sum(leads)::int as leads, sum(reviewed)::int as reviewed, sum(suitable)::int as suitable, sum(success)::int as success,
+      ${summedStatusCounts} as statuses
       from responsible_buckets group by kind, id, email),
     daily as (select to_char(calendar.day, 'YYYY-MM-DD') as date, coalesce(c.leads, 0)::int as leads, coalesce(c.success, 0)::int as success
       from generate_series(${range.labels.from}::date, ${range.labels.to}::date, interval '1 day') calendar(day)
@@ -167,6 +177,8 @@ async function getLeadResultsImpl(input: Record<string, string | undefined>, now
       'closed', count(*) filter(where closure not in ('open', 'data_received'))::int, 'attributed', count(*) filter(where attributed)::int) from cohort) as totals,
       (select jsonb_build_object('unreviewed', count(*) filter(where qualification = 'unreviewed')::int,
         'suitable', count(*) filter(where qualification = 'suitable')::int, 'unsuitable', count(*) filter(where qualification = 'unsuitable')::int) from cohort) as qualifications,
+      (select coalesce(jsonb_object_agg(status, lead_count), '{}'::jsonb)
+        from (select status, count(*)::int as lead_count from cohort group by status) status_counts) as statuses,
       (select jsonb_build_object('open', count(*) filter(where closure = 'open')::int,
         'data_received', count(*) filter(where closure = 'data_received')::int,
         'signal_working', count(*) filter(where closure = 'signal_working')::int, 'not_suitable', count(*) filter(where closure = 'not_suitable')::int,
@@ -182,6 +194,7 @@ async function getLeadResultsImpl(input: Record<string, string | undefined>, now
       (select coalesce(jsonb_agg(to_jsonb(page_rows) order by "createdAt" desc, id desc), '[]'::jsonb) from page_rows) as items
   `);
   type Row = Pick<LeadResultsReport, "totals" | "qualifications" | "closures" | "daily" | "responsibles" | "lossReasons" | "responsibleAdmins"> & {
+    statuses: Partial<LeadResultsReport["statuses"]>;
     sources: Omit<LeadResultsReport["sources"][number], "key">[]; sourceOptions: LeadResultsSource[]; items: LeadResultsReport["leads"]["items"];
   };
   const row = (response as unknown as { rows: Row[] }).rows[0];
@@ -196,7 +209,9 @@ async function getLeadResultsImpl(input: Record<string, string | undefined>, now
     range: range.labels, generatedAt: now.toISOString(), filters: { source: parsed.source, responsible: parsed.responsible },
     totals: row.totals, rates: { suitableOfReviewed: row.totals.reviewed ? row.totals.suitable / row.totals.reviewed : null,
       successOfAll: row.totals.leads ? row.totals.success / row.totals.leads : null },
-    qualifications: row.qualifications, closures: row.closures, daily: row.daily,
+    qualifications: row.qualifications,
+    statuses: Object.fromEntries(LEAD_STATUSES.map(status => [status, row.statuses[status] ?? 0])) as LeadResultsReport["statuses"],
+    closures: row.closures, daily: row.daily,
     sources: row.sources.map(s => ({ ...s, key: sourceKey(s) })), sourceOptions, responsibles: row.responsibles,
     lossReasons: row.lossReasons, responsibleAdmins: row.responsibleAdmins,
     leads: { items: row.items.map(item => ({ ...item, createdAt: new Date(item.createdAt).toISOString(), result: canonicalState(item.result) })),

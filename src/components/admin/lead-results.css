@@ -115,6 +115,9 @@
 .lres .lres-donut-subtotal { display: flex; max-width: 120px; align-items: center; justify-content: center; gap: 4px; margin-top: 4px; color: var(--color-adm-accent); font-size: 9px; }
 .lres .lres-donut-subtotal svg { width: 5px; height: 5px; flex-shrink: 0; }
 .lres .lres-outcome-legend { display: grid; gap: 12px; width: 100%; }
+.lres .lres-status-legends { min-width: 0; width: 100%; flex: 1; }
+.lres .lres-legacy-statuses { border-top: 1px solid var(--color-adm-line); margin-top: 18px; padding-top: 15px; }
+.lres .lres-legacy-statuses h3 { color: var(--color-adm-ink-3); font-size: 10.5px; font-weight: 600; line-height: 1.5; margin-bottom: 12px; }
 .lres .lres-outcome-row { display: flex; align-items: center; gap: 9px; }
 .lres .lres-legend-mark { width: 7px; height: 7px; flex-shrink: 0; border-radius: 2px; }
 .lres .lres-outcome-name { min-width: 0; flex: 1; color: var(--color-adm-ink-2); font-size: 10.5px; line-height: 1.5; }
@@ -143,8 +146,10 @@
 .lres .lres-table tbody tr:last-child td, .lres .lres-table tbody tr:last-child th { border-bottom: 0; }
 .lres .lres-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--color-adm-subtle) 23%, transparent); }
 .lres .lres-table tbody tr:hover { background: color-mix(in srgb, var(--color-adm-accent-soft) 42%, transparent); }
-.lres .lres-source-table { min-width: 560px; }
-.lres .lres-source-table thead th { white-space: normal; font-size: 9.5px; line-height: 1.5; }
+.lres .lres-source-table { min-width: 1040px; }
+.lres .lres-source-table thead th { white-space: normal; min-width: 84px; font-size: 10px; line-height: 1.5; vertical-align: bottom; }
+.lres .lres-source-table thead th:not(:first-child) { text-align: right; }
+.lres .lres-source-table thead th:nth-child(5), .lres .lres-source-table thead th:nth-child(7) { min-width: 145px; }
 .lres .lres-source-table td, .lres .lres-source-table th { padding: 14px 11px; }
 .lres .lres-source-table td { text-align: right; }
 .lres .lres-source-table td:last-child, .lres .lres-source-table th:last-child { padding-right: 20px; }
@@ -324,7 +329,6 @@
 @media (min-width: 640px) and (max-width: 1199px) {
   .lres .lres-outcomes { flex-direction: row; align-items: center; gap: 28px; padding-top: 4px; }
   .lres .lres-donut { width: 200px; height: 200px; margin: 0; }
-  .lres .lres-outcome-legend { flex: 1; }
 }
 @media (max-width: 639px) {
   .lres .lres-filter-panel { padding: 15px; }

@@ -46,6 +46,7 @@ export type LeadResultsSource = {
   campaign: string | null;
 };
 export type LeadResultsCounts = { leads: number; reviewed: number; suitable: number; success: number };
+export type LeadStatusCounts = Record<LeadStatus, number>;
 export type LeadResultListItem = {
   id: number;
   name: string | null;
@@ -75,13 +76,15 @@ export type LeadResultsReport = {
   /** Ratios in [0,1], null when their explicitly named denominator is zero. */
   rates: { suitableOfReviewed: number | null; successOfAll: number | null };
   qualifications: Record<LeadQualification, number>;
+  /** Exact current lead statuses; includes zero counts and retained legacy statuses. */
+  statuses: LeadStatusCounts;
   closures: Record<LeadClosure, number>;
   daily: { date: string; leads: number; success: number }[];
   /** At most maxGroups rows; final "other" bucket is not an individual filter option (key=null). */
-  sources: (LeadResultsSource & LeadResultsCounts & { key: string | null })[];
+  sources: (LeadResultsSource & LeadResultsCounts & { key: string | null; statuses: LeadStatusCounts })[];
   /** Date/responsible cohort options are independent of the active source filter. */
   sourceOptions: (LeadResultsSource & { key: string })[];
-  responsibles: (LeadResultsCounts & { kind: "admin" | "unassigned" | "other"; admin: LeadResponsibleAdmin | null })[];
+  responsibles: (LeadResultsCounts & { kind: "admin" | "unassigned" | "other"; admin: LeadResponsibleAdmin | null; statuses: LeadStatusCounts })[];
   lossReasons: { reason: LeadResultReason | null; leads: number }[];
   responsibleAdmins: LeadResponsibleAdmin[];
   leads: { items: LeadResultListItem[]; total: number; page: number; pageSize: number; pages: number };
