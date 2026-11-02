@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, ChevronRight, Trash2 } from "lucide-react";
-import { LEAD_STATUSES, QUESTION_KEYS, type LeadStatus } from "@/config/content";
+import { ACTIVE_LEAD_STATUSES, QUESTION_KEYS, type LeadStatus } from "@/config/content";
 import { api, formatBytes, newId, type ChatMessage, type PublicFile, type MessagePage, type MessageChanges, type MessageChange } from "@/lib/api";
 import { mergeMessages, reconcileMessageChanges, rememberMessageChanges } from "@/lib/chat";
 import { AdminTranslatedMessageList } from "@/components/admin/AdminTranslatedMessageList";
@@ -336,7 +336,7 @@ function Lead({ id }: { id: string }) {
             {W.statusTitle}
           </h2>
           <div role="radiogroup" aria-labelledby="status-title" className="mt-3 flex flex-wrap gap-1.5">
-            {LEAD_STATUSES.map((s) => {
+            {ACTIVE_LEAD_STATUSES.map((s) => {
               const active = s === d.lead.status;
               const tone = STATUS_TONE[s];
               return (
@@ -366,11 +366,16 @@ function Lead({ id }: { id: string }) {
             )}
             <p className="adm-help">{W.statusHint}</p>
           </div>
-          {d.lead.status === "rejected" && !d.submission && <p className="adm-help mt-2">{t.ui.candidateOutcome.requiresSubmission}</p>}
+          {!(ACTIVE_LEAD_STATUSES as readonly LeadStatus[]).includes(d.lead.status) && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="adm-help">{W.legacyStatus}:</span>
+              <StatusBadge status={d.lead.status} />
+            </div>
+          )}
         </section>
       </div>
 
-      {d.lead.status === "rejected" && d.submission && (
+      {d.lead.status === "rejected" && (
         <CandidateOutcomeEditor
           key={d.lead.outcome?.publishedAt ?? "unpublished"}
           outcome={d.lead.outcome}

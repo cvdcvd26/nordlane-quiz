@@ -1,6 +1,6 @@
 "use client";
 import { Check, ChevronDown, Inbox, CircleAlert } from "lucide-react";
-import { LEAD_STATUSES, type LeadStatus } from "@/config/content";
+import { ACTIVE_LEAD_STATUSES, type LeadStatus } from "@/config/content";
 import { useAdminI18n } from "./i18n";
 import { workflowCopy } from "@/config/admin-workflow";
 
@@ -10,6 +10,7 @@ export const STATUS_TONE: Record<LeadStatus, { text: string; bg: string; dot: st
   new: { text: "text-adm-blue", bg: "bg-adm-blue-bg", dot: "bg-adm-blue", border: "border-adm-blue/30", active: "border-adm-blue! bg-adm-blue! text-adm-bg!" },
   in_progress: { text: "text-adm-amber", bg: "bg-adm-amber-bg", dot: "bg-adm-amber", border: "border-adm-amber/30", active: "border-adm-amber! bg-adm-amber! text-adm-bg!" },
   awaiting_reply: { text: "text-adm-violet", bg: "bg-adm-violet-bg", dot: "bg-adm-violet", border: "border-adm-violet/30", active: "border-adm-violet! bg-adm-violet! text-adm-bg!" },
+  awaiting_data: { text: "text-adm-orange", bg: "bg-adm-orange-bg", dot: "bg-adm-orange", border: "border-adm-orange/30", active: "border-adm-orange! bg-adm-orange! text-adm-bg!" },
   suitable: { text: "text-adm-green", bg: "bg-adm-green-bg", dot: "bg-adm-green", border: "border-adm-green/30", active: "border-adm-green! bg-adm-green! text-adm-bg!" },
   data_received: { text: "text-adm-teal", bg: "bg-adm-teal-bg", dot: "bg-adm-teal", border: "border-adm-teal/30", active: "border-adm-teal! bg-adm-teal! text-adm-bg!" },
   signal_working: { text: "text-adm-accent", bg: "bg-adm-accent-soft", dot: "bg-adm-accent", border: "border-adm-accent/40", active: "border-adm-accent! bg-adm-accent! text-adm-on-accent!" },
@@ -22,10 +23,11 @@ export const STATUS_TONE: Record<LeadStatus, { text: string; bg: string; dot: st
 /** Next administrative handling step; terminal statuses (including Signal success) have none. */
 export const NEXT_STATUS: Partial<Record<LeadStatus, LeadStatus>> = {
   new: "in_progress",
-  in_progress: "awaiting_reply",
-  awaiting_reply: "data_received",
-  suitable: "data_received",
-  data_received: "completed",
+  in_progress: "awaiting_data",
+  awaiting_reply: "awaiting_data",
+  awaiting_data: "data_received",
+  suitable: "awaiting_data",
+  data_received: "signal_working",
 };
 
 export function StatusBadge({ status }: { status: LeadStatus }) {
@@ -87,7 +89,8 @@ function StatusPicker({ value, onChange, disabled, label, allLabel, id }: {
         onChange={(e) => onChange(e.target.value as LeadStatus | "")}
       >
         {allLabel && <option value="">{allLabel}</option>}
-        {LEAD_STATUSES.map((s) => (
+        {value && !(ACTIVE_LEAD_STATUSES as readonly string[]).includes(value) && <option value={value} disabled>{t.ui.statuses[value]}</option>}
+        {ACTIVE_LEAD_STATUSES.map((s) => (
           <option key={s} value={s}>
             {t.ui.statuses[s]}
           </option>

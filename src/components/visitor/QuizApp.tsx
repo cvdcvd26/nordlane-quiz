@@ -2,9 +2,9 @@
 import { LogoMark } from "@/components/ui/LogoMark";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { content, QUESTION_KEYS } from "@/config/content";
-import { reviewConfig } from "@/config/settings";
+import { chatConfig, reviewConfig } from "@/config/settings";
 import type { CandidateOutcome } from "@/config/candidate-outcome";
-import { api, newId, type ChatMessage, type PublicFile } from "@/lib/api";
+import { api, ApiError, newId, type ChatMessage, type PublicFile } from "@/lib/api";
 import { QUIZ_HISTORY_STEP, QUIZ_STEP_PATHS, resolveQuizStep, latestQuizStep, type QuizProgress } from "@/lib/quiz-steps";
 import { observeCandidateIdentity } from "@/lib/candidate-identity";
 import { Lane, type Step } from "./Lane";
@@ -101,9 +101,21 @@ export function QuizApp() {
   const autoTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const progress = useRef<QuizProgress | null>(null);
   const navigationRevision = useRef(0);
+  const outcomeRef = useRef<CandidateOutcome | null>(null);
   useEffect(() => {
     const t = autoTimer;
     return () => clearTimeout(t.current);
+  }, []);
+
+  const handleOutcome = useCallback((next: CandidateOutcome | null) => {
+    outcomeRef.current = next;
+    setOutcome(next);
+    if (next) {
+      // A published result can arrive while the last answer is being saved.
+      // Stop both queued and in-flight automatic navigation to the task.
+      clearTimeout(autoTimer.current);
+      navigationRevision.current += 1;
+    }
   }, []);
 
   const goTo = useCallback((next: Step, history: "push" | "replace" = "push", moveFocus = true) => {
@@ -138,7 +150,7 @@ export function QuizApp() {
           setState(s);
           if (s.candidateEmail?.enabled && new URLSearchParams(window.location.search).get("account") === "1") setAccountOpen(true);
           setChatUnlocked(Boolean(s.submission || (s.contact && allAnswered(s.answers))));
-          setOutcome(s.outcome);
+          handleOutcome(s.outcome);
           setAnswers(s.answers);
           answersRef.current = s.answers;
           if (s.contact)
@@ -153,7 +165,7 @@ export function QuizApp() {
           goTo(requested, "replace", false);
         })
         .catch((err: Error) => setLoadError(err.message)),
-    [goTo],
+    [goTo, handleOutcome],
   );
 
   const load = () => {
@@ -167,6 +179,35 @@ export function QuizApp() {
     return () => identity.dispose();
   }, [fetchSession]);
 
+  const hasContact = Boolean(state?.contact);
+  useEffect(() => {
+    // The chat already polls outcomes on the task/confirmation steps. Before
+    // that, refresh only the result so a rejection never overwrites form drafts.
+    if (!hasContact || (chatUnlocked && step >= 2)) return;
+    const controller = new AbortController();
+    let polling = false;
+    const pollOutcome = async () => {
+      if (polling || controller.signal.aborted || document.visibilityState === "hidden") return;
+      polling = true;
+      try {
+        const session = await api<SessionState>("/api/session", { signal: controller.signal });
+        if (!controller.signal.aborted) handleOutcome(session.outcome);
+      } catch {
+        // Keep the current screen on a temporary network failure; retry below.
+      } finally {
+        polling = false;
+      }
+    };
+    const onVisibilityChange = () => { void pollOutcome(); };
+    const timer = setInterval(() => void pollOutcome(), chatConfig.pollIntervalMs);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [chatUnlocked, handleOutcome, hasContact, step]);
+
   useEffect(() => {
     const onPopState = () => {
       if (!progress.current) return;
@@ -177,8 +218,19 @@ export function QuizApp() {
     return () => window.removeEventListener("popstate", onPopState);
   }, [goTo]);
 
+  const refreshClosedApplication = async (error: unknown) => {
+    if (!(error instanceof ApiError) || error.code !== "candidate_application_closed") return;
+    try {
+      const session = await api<SessionState>("/api/session");
+      handleOutcome(session.outcome);
+    } catch {
+      // The caller still shows the server's closed-application error if refresh
+      // fails, and the regular outcome poll retries when connectivity returns.
+    }
+  };
+
   const choose = async (questionKey: string, value: string) => {
-    if (answerSaving.current) return;
+    if (answerSaving.current || outcomeRef.current) return;
     answerSaving.current = true;
     clearTimeout(autoTimer.current);
     const previous = answersRef.current;
@@ -200,6 +252,7 @@ export function QuizApp() {
     } catch (err) {
       setAnswers(previous);
       setAnswerError((err as Error).message);
+      await refreshClosedApplication(err);
     } finally {
       answerSaving.current = false;
       setSaving((s) => (s === questionKey ? null : s));
@@ -214,6 +267,7 @@ export function QuizApp() {
 
   /** Step 1 "Dalej": validate, save the contact on the server, then show the questions. */
   const saveContact = async () => {
+    if (outcomeRef.current) return;
     setContactError(null);
     if (state?.candidateEmail?.enabled && !state.candidateEmail.verified && !state.contact) {
       document.getElementById("candidate-email-access")?.focus();
@@ -234,6 +288,7 @@ export function QuizApp() {
       goTo(1);
     } catch (err) {
       setContactError((err as Error).message);
+      await refreshClosedApplication(err);
     } finally {
       setContactSaving(false);
     }
@@ -241,12 +296,14 @@ export function QuizApp() {
 
   /** Step 2 "Dalej" (if the visitor came back and the answers were already complete). */
   const continueFromQuestions = () => {
+    if (outcomeRef.current) return;
     if (!allAnswered(answers)) return setAnswerError(content.errors.answerRequired);
     clearTimeout(autoTimer.current);
     goTo(2);
   };
 
   const submit = async () => {
+    if (outcomeRef.current) return;
     setSubmitError(null);
     if (items.some((i) => i.status === "uploading")) return setSubmitError(content.errors.filesPending);
     if (items.some((i) => i.status === "error")) return setSubmitError(content.task.upload.resolveErrors);
@@ -275,6 +332,7 @@ export function QuizApp() {
       goTo(3);
     } catch (err) {
       setSubmitError((err as Error).message);
+      await refreshClosedApplication(err);
     } finally {
       setSubmitting(false);
     }
@@ -298,8 +356,8 @@ export function QuizApp() {
 
   return (
     <>
-    <VisitorTelemetry ready={Boolean(state)} step={step} />
-    <MetaQuizPixel scope={state?.marketingScope ?? null} step={step} contactSaved={Boolean(state?.contact)} questionsComplete={chatUnlocked} submitted={Boolean(state?.submission)} restoredThrough={restoredThrough} />
+    <VisitorTelemetry ready={Boolean(state) && !outcome} step={step} />
+    <MetaQuizPixel scope={outcome ? null : state?.marketingScope ?? null} step={step} contactSaved={Boolean(state?.contact)} questionsComplete={chatUnlocked} submitted={Boolean(state?.submission)} restoredThrough={restoredThrough} />
     <div className="min-h-dvh overflow-x-clip" data-outcome={outcome?.status}>
       <Backdrop />
       {/* Top bar */}
@@ -344,7 +402,7 @@ export function QuizApp() {
             </div>
           )}
 
-          {state && step === 0 && (
+          {state && !outcome && step === 0 && (
             <StepContact
               contact={contact}
               errors={contactErrors}
@@ -357,12 +415,20 @@ export function QuizApp() {
             />
           )}
 
-          {state && step > 0 && accountOpen && emailAccess && <div className="mb-8">
+          {state && (step > 0 || outcome) && accountOpen && emailAccess && <div className="mb-8">
             {emailAccess}
             <button type="button" className="mt-3 min-h-10 text-sm font-semibold text-ink-soft" onClick={() => { setAccountOpen(false); accountButton.current?.focus(); }}>Zamknij ustawienia konta</button>
           </div>}
 
-          {state && step === 1 && (
+          {state && outcome && (
+            <section className="step-enter" aria-labelledby="outcome-title" aria-live="polite" aria-atomic="true">
+              <CandidateOutcomeCard title={outcome.title} body={outcome.body} as="h1" id="outcome-title" live={false}>
+                {state.submission && <SubmissionFilesSummary fileCount={items.filter((item) => item.status === "done" && item.serverId).length} muted />}
+              </CandidateOutcomeCard>
+            </section>
+          )}
+
+          {state && !outcome && step === 1 && (
             <StepQuestions
               answers={answers}
               saving={saving}
@@ -376,27 +442,21 @@ export function QuizApp() {
             />
           )}
 
-          {state && step === 2 && <StepTaskOverview />}
+          {state && !outcome && step === 2 && <StepTaskOverview />}
 
-          {state && step === 3 && (
+          {state && !outcome && step === 3 && (
             <section className="step-enter space-y-6" aria-labelledby="done-title">
-              {!outcome && <TaskRevisionNotice revision={activeRevision} />}
+              <TaskRevisionNotice revision={activeRevision} />
               <div aria-live="polite" aria-atomic="true">
-                {outcome ? (
-                  <CandidateOutcomeCard title={outcome.title} body={outcome.body} as="h1" id="done-title" live={false}>
-                    <SubmissionFilesSummary fileCount={items.filter((item) => item.status === "done" && item.serverId).length} muted />
-                  </CandidateOutcomeCard>
-                ) : (
-                  <SubmissionConfirmation fileCount={items.filter((item) => item.status === "done" && item.serverId).length} />
-                )}
+                <SubmissionConfirmation fileCount={items.filter((item) => item.status === "done" && item.serverId).length} />
               </div>
-              <TaskRevisionPanel closed={Boolean(outcome)} onRevisionChange={setActiveRevision} />
+              <TaskRevisionPanel closed={false} onRevisionChange={setActiveRevision} />
             </section>
           )}
           {state && chatUnlocked && <div hidden={step < 2 || Boolean(outcome)} className="mt-6">
-            <VisitorChat onOutcome={setOutcome} acknowledgement={submissionAcknowledgement} closed={Boolean(outcome)} collapsible={step !== 3} active={step >= 2} emailReadTracking={Boolean(state.candidateEmail?.enabled && state.candidateEmail.verified)} />
+            <VisitorChat onOutcome={handleOutcome} acknowledgement={submissionAcknowledgement} closed={Boolean(outcome)} collapsible={step !== 3} active={step >= 2} emailReadTracking={Boolean(state.candidateEmail?.enabled && state.candidateEmail.verified)} />
           </div>}
-          {state && step === 2 && <StepTaskSubmission
+          {state && !outcome && step === 2 && <StepTaskSubmission
             items={items}
             setItems={setItems}
             limits={state.limits}

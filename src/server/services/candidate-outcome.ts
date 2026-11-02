@@ -27,13 +27,24 @@ export async function getSessionOutcome(sessionId: string) {
 }
 
 /** The caller holds lockVisitor, which also orders publication and retraction. */
-export async function assertVisitorChatOpen(tx: Transaction, sessionId: string) {
+async function assertVisitorWriteOpen(tx: Transaction, sessionId: string, chat: boolean) {
   const [lead] = await tx.select({
     status: schema.leads.status,
     candidateResultBody: schema.leads.candidateResultBody,
     candidateResultPublishedAt: schema.leads.candidateResultPublishedAt,
   }).from(schema.leads).where(eq(schema.leads.sessionId, sessionId)).limit(1);
   if (toCandidateOutcome(lead)) {
-    throw new AppError(403, "candidate_chat_closed", "Czat jest zamknięty po opublikowaniu wyniku zgłoszenia.");
+    throw chat
+      ? new AppError(403, "candidate_chat_closed", "Czat jest zamknięty po opublikowaniu wyniku zgłoszenia.")
+      : new AppError(403, "candidate_application_closed", "Zgłoszenie jest zamknięte po opublikowaniu wyniku rekrutacji.");
   }
+}
+
+/** Keep the established chat error while applying the same publication boundary to every candidate write. */
+export async function assertVisitorChatOpen(tx: Transaction, sessionId: string) {
+  await assertVisitorWriteOpen(tx, sessionId, true);
+}
+
+export async function assertVisitorApplicationOpen(tx: Transaction, sessionId: string) {
+  await assertVisitorWriteOpen(tx, sessionId, false);
 }

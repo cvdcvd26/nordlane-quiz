@@ -389,6 +389,7 @@ export const content = {
       stageHint: "Zmienia się automatycznie, gdy użytkownik przechodzi formularz. „Gotowe” = zadanie wysłane, użytkownik widzi ekran końcowy.",
       statusTitle: "Status obsługi",
       statusHint: "Status jest wewnętrzny. Przy „Nie zakwalifikowano” wynik można osobno opublikować kandydatowi.",
+      legacyStatus: "Zapisany poprzedni status",
       next: (label: string) => `Przenieś do: ${label}`,
       statusChanged: (id: number, label: string) => `Lead #${id}: status „${label}”`,
       steps: ["Kontakt", "Pytania", "Zadanie", "Gotowe"],
@@ -397,7 +398,7 @@ export const content = {
     },
     candidateOutcome: {
       title: "Wynik dla kandydata",
-      intro: "Sam status jest widoczny tylko w panelu. Sprawdź podgląd i opublikuj wynik, gdy chcesz przekazać decyzję kandydatowi.",
+      intro: "Sam status jest widoczny tylko w panelu. Wynik można opublikować na każdym etapie zgłoszenia. Sprawdź podgląd, zanim przekażesz decyzję kandydatowi.",
       bodyLabel: "Treść wiadomości po polsku",
       preview: "Podgląd ekranu kandydata",
       draft: "Jeszcze nieopublikowany",
@@ -410,10 +411,9 @@ export const content = {
       retracting: "Wycofywanie…",
       saved: "Wynik opublikowany kandydatowi.",
       retracted: "Publikacja wyniku została cofnięta.",
-      hint: "Po publikacji czat kandydata zostanie zamknięty. Historia pozostanie w panelu, a oczekująca wiadomość powitalna zostanie anulowana. Zmiana statusu na inny ukryje wynik i ponownie otworzy czat.",
-      retractHint: "Po cofnięciu publikacji kandydat znów zobaczy oczekiwanie na odpowiedź i będzie mógł korzystać z czatu. Anulowana wiadomość powitalna nie zostanie wysłana ponownie.",
+      hint: "Publikacja zamknie formularz i czat kandydata. Postęp oraz historia pozostaną zapisane, a oczekująca wiadomość powitalna zostanie anulowana. Zmiana statusu na inny ukryje wynik i przywróci dostęp do poprzedniego etapu.",
+      retractHint: "Po cofnięciu publikacji kandydat wróci do zapisanego etapu zgłoszenia i odzyska dostęp do czatu, jeśli jest już dostępny na tym etapie. Anulowana wiadomość powitalna nie zostanie wysłana ponownie.",
       required: "Wpisz treść wiadomości przed publikacją.",
-      requiresSubmission: "Wynik można opublikować po wysłaniu zadania przez kandydata.",
     },
     reviews: {
       title: "Opinie",
@@ -530,6 +530,7 @@ export const content = {
       new: "Nowy",
       in_progress: "W trakcie",
       awaiting_reply: "Czeka na odpowiedź",
+      awaiting_data: "Zadanie wykonane, czekamy na dane",
       suitable: "Odpowiedni",
       data_received: "Otrzymano dane",
       signal_working: "🎉 Przeniesiono do Signal / Współpracujemy",
@@ -558,4 +559,6 @@ export type QuizQuestion = (typeof content.quiz.questions)[number];
 export const QUESTION_KEYS: string[] = content.quiz.questions.map((q) => q.key);
 
 export type LeadStatus = keyof typeof content.admin.statuses;
+/** Statuses administrators can assign now; legacy values remain readable in saved leads/history. */
+export const ACTIVE_LEAD_STATUSES = ["new", "in_progress", "awaiting_data", "data_received", "signal_working", "rejected"] as const satisfies readonly LeadStatus[];
 export const LEAD_STATUSES = Object.keys(content.admin.statuses) as LeadStatus[];

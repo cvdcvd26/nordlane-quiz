@@ -13,6 +13,7 @@ import { getContact } from "./contact";
 import { ensureConversation, ensureLead } from "./leads";
 import { touchConversation } from "./conversation";
 import type { ChatMessage } from "./chat";
+import { assertVisitorApplicationOpen } from "./candidate-outcome";
 
 export const submitSchema = z.object({
   idempotencyKey: z.string().min(16).max(100),
@@ -66,6 +67,7 @@ export async function submitTask(sessionId: string, input: unknown): Promise<Sub
 
   const result = await db().transaction(async (tx) => {
     await lockVisitor(tx, sessionId);
+    await assertVisitorApplicationOpen(tx, sessionId);
     const [submission] = await tx
       .insert(schema.taskSubmissions)
       .values({ sessionId, idempotencyKey, review })

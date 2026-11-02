@@ -8,7 +8,7 @@ import { validateFile } from "../file-validation";
 import { badRequest, conflict, notFound } from "../errors";
 import { uploadConfig } from "@/config/settings";
 import { content } from "@/config/content";
-import { assertVisitorChatOpen } from "./candidate-outcome";
+import { assertVisitorApplicationOpen, assertVisitorChatOpen } from "./candidate-outcome";
 import { revisionFilePrefix, revisionIdForFileKey } from "@/config/task-revisions";
 import { requireVisitorChatAccess } from "./visitor-chat-access";
 
@@ -37,14 +37,19 @@ export async function uploadFile({ sessionId, purpose, uploadedBy, file }: Uploa
     { allowed, maxBytes: uploadConfig.maxFileSizeBytes },
   );
 
-  const visitorChatUpload = purpose === "chat" && uploadedBy === "visitor";
-  if (visitorChatUpload) {
-    // Reject a closed chat before writing an object to storage. Do not keep the
+  const visitorUpload = uploadedBy === "visitor";
+  const visitorChatUpload = purpose === "chat" && visitorUpload;
+  if (visitorUpload) {
+    // Reject a closed application before writing an object to storage. Do not keep the
     // database lock across the external upload; the final transaction checks again.
     await db().transaction(async (tx) => {
       await lockVisitor(tx, sessionId);
-      await requireVisitorChatAccess(tx, sessionId);
-      await assertVisitorChatOpen(tx, sessionId);
+      if (visitorChatUpload) {
+        await requireVisitorChatAccess(tx, sessionId);
+        await assertVisitorChatOpen(tx, sessionId);
+      } else {
+        await assertVisitorApplicationOpen(tx, sessionId);
+      }
     });
   }
 
@@ -58,6 +63,8 @@ export async function uploadFile({ sessionId, purpose, uploadedBy, file }: Uploa
       if (visitorChatUpload) {
         await requireVisitorChatAccess(tx, sessionId);
         await assertVisitorChatOpen(tx, sessionId);
+      } else if (visitorUpload) {
+        await assertVisitorApplicationOpen(tx, sessionId);
       }
       if (purpose === "submission") {
         const [sub] = await tx

@@ -53,6 +53,8 @@
   --color-adm-blue-bg: #e9f2fd;
   --color-adm-amber: #8a5000;
   --color-adm-amber-bg: #fcf1dc;
+  --color-adm-orange: #a14308;
+  --color-adm-orange-bg: #fff0e1;
   --color-adm-violet: #5a3ec0;
   --color-adm-violet-bg: #efebfc;
   --color-adm-teal: #087b80;
@@ -334,6 +336,8 @@ html:has(.adm) body::before {
   --color-adm-blue-bg: #2d4158;
   --color-adm-amber: #f4c470;
   --color-adm-amber-bg: #4b3f2b;
+  --color-adm-orange: #ffb681;
+  --color-adm-orange-bg: #503b2f;
   --color-adm-violet: #bcabff;
   --color-adm-violet-bg: #423952;
   --color-adm-teal: #6de0d5;

@@ -32,13 +32,13 @@ describe("Signal success status controls", () => {
       expect(select.value).toBe("signal_working");
       expect(select.selectedOptions[0].textContent).toBe(label);
       expect(select.parentElement?.className).toContain("text-adm-accent");
-      expect(select.querySelector('option[value="completed"]')).not.toBeNull();
+      expect(select.querySelector('option[value="completed"]')).toBeNull();
       await act(async () => select.dispatchEvent(new Event("change", { bubbles: true })));
     }
     expect(changed).toHaveBeenCalledWith("signal_working");
     expect(host.querySelector(".adm-badge")?.textContent).toBe(label);
     expect(host.querySelector(".adm-badge")?.className).toContain("text-adm-accent");
     expect(NEXT_STATUS.signal_working).toBeUndefined();
-    expect(NEXT_STATUS.data_received).toBe("completed");
+    expect(NEXT_STATUS.data_received).toBe("signal_working");
   });
 });

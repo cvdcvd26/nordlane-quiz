@@ -5,6 +5,7 @@ import { db, schema } from "@/db";
 import { content } from "@/config/content";
 import { normalizePhone, normalizeTelegram } from "@/lib/contact";
 import { ensureLead } from "./leads";
+import { assertVisitorApplicationOpen } from "./candidate-outcome";
 
 const e = content.errors;
 
@@ -37,6 +38,7 @@ export async function saveContact(sessionId: string, input: unknown): Promise<Co
   const now = new Date();
   await db().transaction(async (tx) => {
     await lockVisitor(tx, sessionId);
+    await assertVisitorApplicationOpen(tx, sessionId);
     await tx
       .insert(schema.visitorContacts)
       .values({ sessionId, ...c })

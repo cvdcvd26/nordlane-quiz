@@ -253,9 +253,6 @@ export async function updateCandidateOutcome(leadId: number, input: unknown) {
       return null;
     }
     if (lead.status !== "rejected") throw conflict("Najpierw ustaw status „Nie pasuje”.", "outcome_status");
-    const [submission] = await tx.select({ id: schema.taskSubmissions.id }).from(schema.taskSubmissions)
-      .where(eq(schema.taskSubmissions.sessionId, lead.sessionId)).limit(1);
-    if (!submission) throw conflict("Wynik można opublikować dopiero po przesłaniu zadania.", "outcome_not_submitted");
     // Retries preserve the original publication time; an edited text updates the same result.
     const now = new Date();
     const publishedAt = lead.candidateResultPublishedAt ?? now;

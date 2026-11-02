@@ -65,11 +65,10 @@ describe("explicit candidate result publication", () => {
     expect((await getVisitorChat(sid)).messages).toEqual(messages);
   });
 
-  it("requires both a rejection and a submitted task, validates the text and does not expose another candidate's result", async () => {
+  it("requires a rejected status, validates the text and does not expose another candidate's result", async () => {
     const unsubmitted = await candidate(false);
     await expect(updateCandidateOutcome(unsubmitted.lead.id, publish)).rejects.toMatchObject({ code: "outcome_status" });
     await updateLeadStatus(unsubmitted.lead.id, { status: "rejected" });
-    await expect(updateCandidateOutcome(unsubmitted.lead.id, publish)).rejects.toMatchObject({ code: "outcome_not_submitted" });
     expect((await getVisitorState(unsubmitted.sid)).outcome).toBeNull();
     const { sid, lead } = await candidate();
     await updateLeadStatus(lead.id, { status: "rejected" });
@@ -78,6 +77,63 @@ describe("explicit candidate result publication", () => {
     await updateCandidateOutcome(lead.id, publish);
     expect((await getVisitorState(sid)).outcome?.body).toBe(publish.body);
     expect((await getVisitorState(unsubmitted.sid)).outcome).toBeNull();
+  });
+
+  it("publishes an early rejection at the task stage, blocks further writes and resumes the same draft after retraction", async () => {
+    const { sid, lead } = await candidate(false);
+    for (const key of ["q1", "q2", "q3"]) await saveAnswer(sid, key, "yes");
+    const draft = await uploadFile({ sessionId: sid, purpose: "submission", uploadedBy: "visitor", file: { name: "draft-task.png", type: "image/png", buffer: PNG } });
+    await postVisitorMessage(sid, { clientMessageId: randomUUID(), body: "I am working on the task." });
+    const before = await getVisitorState(sid);
+    expect(before.submission).toBeNull();
+    await updateLeadStatus(lead.id, { status: "rejected" });
+    expect((await getVisitorState(sid)).outcome).toBeNull();
+
+    const outcome = await updateCandidateOutcome(lead.id, publish);
+    expect(outcome).toMatchObject({ status: "rejected", body: publish.body });
+    expect(await updateCandidateOutcome(lead.id, publish)).toEqual(outcome);
+    expect((await getVisitorState(sid)).outcome).toEqual(outcome);
+    expect((await getVisitorState(sid)).submission).toBeNull();
+    expect((await getVisitorChat(sid)).outcome).toEqual(outcome);
+    expect((await getVisitorChat(sid)).messages.map(message => message.body)).toEqual(["I am working on the task."]);
+    await expect(postVisitorMessage(sid, { clientMessageId: randomUUID(), body: "After rejection" })).rejects.toMatchObject({ status: 403 });
+    const put = vi.spyOn(storage(), "put");
+    try {
+      await expect(uploadFile({ sessionId: sid, purpose: "submission", uploadedBy: "visitor", file: { name: "after-rejection.png", type: "image/png", buffer: PNG } })).rejects.toMatchObject({ status: 403 });
+      expect(put).not.toHaveBeenCalled();
+    } finally { put.mockRestore(); }
+    const input = { idempotencyKey: randomUUID(), fileIds: [draft.id], review: "Task draft completed." };
+    await expect(submitTask(sid, input)).rejects.toMatchObject({ status: 403 });
+    await expect(saveAnswer(sid, "q1", "no")).rejects.toMatchObject({ status: 403 });
+    await expect(saveContact(sid, { name: "Changed", phone: "600654321" })).rejects.toMatchObject({ status: 403 });
+    expect((await getVisitorState(sid)).answers).toEqual(before.answers);
+    expect((await getVisitorState(sid)).contact).toEqual(before.contact);
+    expect(await env.db.select().from(schema.taskSubmissions).where(eq(schema.taskSubmissions.sessionId, sid))).toHaveLength(0);
+
+    await updateCandidateOutcome(lead.id, { action: "retract" });
+    const restored = await getVisitorState(sid);
+    expect(restored.outcome).toBeNull();
+    expect(restored.submission).toBeNull();
+    expect(restored.files.map(file => file.id)).toContain(draft.id);
+    await postVisitorMessage(sid, { clientMessageId: randomUUID(), body: "Continuing the same task." });
+    expect((await submitTask(sid, input)).duplicate).toBe(false);
+    expect((await getVisitorState(sid)).submission).not.toBeNull();
+  });
+
+  it("shows a rejection before all questions are answered and changing status restores unfinished progress", async () => {
+    const { sid, lead } = await candidate(false);
+    await saveAnswer(sid, "q1", "yes");
+    await updateLeadStatus(lead.id, { status: "rejected" });
+    const outcome = await updateCandidateOutcome(lead.id, publish);
+    const rejected = await getVisitorState(sid);
+    expect(rejected).toMatchObject({ outcome, submission: null, answers: { q1: "yes" } });
+    await expect(saveAnswer(sid, "q2", "yes")).rejects.toMatchObject({ status: 403 });
+    await updateLeadStatus(lead.id, { status: "in_progress" });
+    expect((await getVisitorState(sid)).outcome).toBeNull();
+    await saveAnswer(sid, "q2", "yes");
+    await saveAnswer(sid, "q3", "no");
+    expect((await getVisitorState(sid)).answers).toEqual({ q1: "yes", q2: "yes", q3: "no" });
+    expect((await getVisitorState(sid)).submission).toBeNull();
   });
 
   it.each(["pending", "failed", "sending"] as const)("cancels an unsent %s welcome message, including queued retries and the chat fallback", async (status) => {
@@ -168,8 +224,8 @@ describe("explicit candidate result publication", () => {
     expect((await getVisitorChat(sid)).messages).toEqual(chat.messages);
   });
 
-  it("rechecks a visitor upload after external storage and cleans the object if publication won the race", async () => {
-    const { sid, lead } = await candidate();
+  it.each(["chat", "submission"] as const)("rechecks a visitor %s upload after external storage and cleans the object if publication won the race", async (purpose) => {
+    const { sid, lead } = await candidate(purpose === "chat");
     await updateLeadStatus(lead.id, { status: "rejected" });
     const original = storage();
     let startUpload!: () => void;
@@ -187,11 +243,11 @@ describe("explicit candidate result publication", () => {
       },
     });
     try {
-      const uploading = uploadFile({ sessionId: sid, purpose: "chat", uploadedBy: "visitor", file: { name: "during-publication.png", type: "image/png", buffer: PNG } });
+      const uploading = uploadFile({ sessionId: sid, purpose, uploadedBy: "visitor", file: { name: "during-publication.png", type: "image/png", buffer: PNG } });
       await started;
       await updateCandidateOutcome(lead.id, publish);
       finishUpload();
-      await expect(uploading).rejects.toMatchObject({ status: 403, code: "candidate_chat_closed" });
+      await expect(uploading).rejects.toMatchObject({ status: 403, code: purpose === "chat" ? "candidate_chat_closed" : "candidate_application_closed" });
       expect(uploadedKey).not.toBeNull();
       expect(env.blobs.has(uploadedKey!)).toBe(false);
       const rows = await env.db.select().from(schema.files).where(eq(schema.files.storageKey, uploadedKey!));

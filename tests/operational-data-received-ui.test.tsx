@@ -33,7 +33,8 @@ describe("received-data status controls", () => {
     expect(changed).toHaveBeenCalledWith("data_received");
     expect(host.querySelector(".adm-badge")?.textContent).toBe(label);
     expect(host.querySelector(".adm-badge")?.className).toContain("text-adm-teal");
-    expect(NEXT_STATUS.awaiting_reply).toBe("data_received");
-    expect(NEXT_STATUS.data_received).toBe("completed");
+    expect(NEXT_STATUS.awaiting_reply).toBe("awaiting_data");
+    expect(NEXT_STATUS.awaiting_data).toBe("data_received");
+    expect(NEXT_STATUS.data_received).toBe("signal_working");
   });
 });
