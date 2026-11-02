@@ -5,8 +5,9 @@ import { eq } from "drizzle-orm";
 import { schema } from "@/db";
 import type { LeadClosure, LeadResultsSuccessList } from "@/config/lead-results";
 import { GET } from "@/app/api/admin/lead-results/successes/route";
-import { getLeadResults, getLeadResultsSuccesses, updateLeadResult } from "@/server/services/lead-results";
+import { getLeadResult, getLeadResults, getLeadResultsSuccesses, updateLeadResult } from "@/server/services/lead-results";
 import { setupTestEnv } from "./helpers";
+import { updateLeadStatus } from "@/server/services/admin";
 
 const jar = vi.hoisted(() => new Map<string, string>());
 vi.mock("next/headers", () => ({ cookies: async () => ({
@@ -61,8 +62,11 @@ async function candidate(options: {
     createdAt: new Date(options.createdAt ?? "2020-10-03T12:00:00Z"), status: options.status ?? "new" }).returning();
   await env.db.insert(schema.visitorContacts).values({ sessionId: session.id, name: `Candidate ${lead.id}`, phone: "+48600123456" });
   if (options.attribution) await env.db.insert(schema.visitorAttribution).values({ sessionId: session.id, ...options.attribution });
+  const closure = options.closure ?? "signal_working";
+  const status = options.status ?? (closure === "open" ? "suitable" : closure === "not_suitable" ? "rejected" : closure);
+  await updateLeadStatus(lead.id, { status }, owner.id, closingTime);
   await updateLeadResult(lead.id, owner.id, {
-    expectedVersion: 0, qualification: "suitable", closure: options.closure ?? "signal_working", reason: null,
+    expectedVersion: (await getLeadResult(lead.id)).result.version, reason: null,
     comment: "Private result", responsibleAdminId: options.responsibleAdminId ?? null,
   }, closingTime);
   return lead;
@@ -119,8 +123,7 @@ describe("owner-only successful lead drilldown", () => {
     await candidate({ createdAt: "2020-10-07T22:00:00Z", attribution: googleAttribution, responsibleAdminId: staff.id });
     // Current closure, rather than a historical success audit entry, is authoritative.
     const reopened = await candidate({ attribution: googleAttribution, responsibleAdminId: staff.id });
-    await updateLeadResult(reopened.id, owner.id, { expectedVersion: 1, qualification: "suitable", closure: "open",
-      reason: null, comment: "Reopened", responsibleAdminId: staff.id });
+    await updateLeadStatus(reopened.id, { status: "suitable" }, owner.id, closingTime);
     await authenticate();
     const pages: LeadResultsSuccessList[] = [];
     for (const page of ["1", "2", "3"]) {

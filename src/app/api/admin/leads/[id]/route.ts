@@ -13,9 +13,9 @@ export const GET = route("admin.lead", async (req: Request, ctx: RouteContext<"/
 
 export const PATCH = route("admin.lead.patch", async (req: Request, ctx: RouteContext<"/api/admin/leads/[id]">) => {
   assertSameOrigin(req);
-  await requireAdmin();
+  const admin = await requireAdmin();
   const id = leadIdFrom((await ctx.params).id);
-  await updateLeadStatus(id, await readJson(req));
+  await updateLeadStatus(id, await readJson(req), admin.id);
   return json(await getLeadDetails(id));
 });
 

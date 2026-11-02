@@ -6,8 +6,9 @@ import { schema } from "@/db";
 import type { LeadResultUpdate } from "@/config/lead-results";
 import { GET as reportGET } from "@/app/api/admin/lead-results/route";
 import { GET as resultGET, PATCH } from "@/app/api/admin/leads/[id]/result/route";
-import { GET as leadGET } from "@/app/api/admin/leads/[id]/route";
+import { GET as leadGET, PATCH as statusPATCH } from "@/app/api/admin/leads/[id]/route";
 import { getSessionOutcome } from "@/server/services/candidate-outcome";
+import { updateLeadStatus } from "@/server/services/admin";
 import { setupTestEnv, newSession } from "./helpers";
 
 const jar = vi.hoisted(() => new Map<string, string>());
@@ -17,7 +18,7 @@ vi.mock("next/headers", () => ({ cookies: async () => ({
 
 const secret = "lead-results-api-test-secret-with-at-least-thirty-two-characters";
 const valid: LeadResultUpdate = {
-  qualification: "suitable", closure: "signal_working", reason: null, comment: "PRIVATE_RESULT_COMMENT",
+  reason: null, comment: "PRIVATE_RESULT_COMMENT",
   responsibleAdminId: null, expectedVersion: 0,
 };
 let env: Awaited<ReturnType<typeof setupTestEnv>>;
@@ -107,20 +108,22 @@ describe("owner-only lead results APIs", () => {
     expect(await env.db.select().from(schema.leadResultHistory)).toEqual([]);
   });
 
-  it.each(["signal_working", "data_received"] as const)("saves %s and its audit only for the owner, without exposing it to other admins or candidates", async closure => {
+  it.each(["signal_working", "data_received"] as const)("derives %s from the shared status while keeping notes and their audit owner-only", async closure => {
+    await updateLeadStatus(lead.id, { status: closure }, staff.id);
     await authenticate();
-    const response = await PATCH(patchRequest({ ...valid, closure, responsibleAdminId: staff.id }), context());
+    const response = await PATCH(patchRequest({ ...valid, expectedVersion: 1, responsibleAdminId: staff.id }), context());
     privateResponse(response, 200);
     const detail = await response.json();
-    expect(detail).toMatchObject({ leadId: lead.id, hasSavedResult: true, result: { qualification: "suitable", closure, version: 1,
+    expect(detail).toMatchObject({ leadId: lead.id, status: closure, hasSavedResult: true, result: { qualification: closure === "signal_working" ? "suitable" : "unreviewed", closure, version: 2,
       comment: valid.comment, responsibleAdminId: staff.id, updatedById: owner.id } });
-    expect(detail.history).toHaveLength(1);
+    expect(detail.history).toHaveLength(2);
+    expect(detail.history).toEqual(expect.arrayContaining([expect.objectContaining({ actor: expect.objectContaining({ id: staff.id }), next: expect.objectContaining({ status: closure, version: 1 }) })]));
     privateResponse(await resultGET(resultRequest(), context()), 200);
     const report = await reportGET(reportRequest());
     privateResponse(report, 200);
     expect(await report.json()).toMatchObject({ totals: { leads: 1, success: closure === "signal_working" ? 1 : 0 } });
     const stored = (await env.db.select().from(schema.leads))[0];
-    expect(stored).toEqual(lead);
+    expect(stored).toMatchObject({ id: lead.id, status: closure, sessionId: lead.sessionId, candidateResultBody: null, candidateResultPublishedAt: null });
     expect(await getSessionOutcome(lead.sessionId)).toBeNull();
 
     await authenticate(staff);
@@ -129,9 +132,9 @@ describe("owner-only lead results APIs", () => {
     const body = await normalLead.text();
     expect(body).not.toContain(valid.comment);
     expect(body).not.toContain("responsibleAdminId");
-    expect(body).not.toContain("data_received");
+    expect(JSON.parse(body).lead.status).toBe(closure);
     privateResponse(await resultGET(resultRequest(), context()), 403);
-    privateResponse(await PATCH(patchRequest({ ...valid, closure: "data_received", expectedVersion: 1 }), context()), 403);
+    privateResponse(await PATCH(patchRequest({ ...valid, expectedVersion: 2 }), context()), 403);
     expect(await env.db.select().from(schema.messages)).toEqual([]);
     expect(await env.db.select().from(schema.scheduledMessages)).toEqual([]);
   });
@@ -140,6 +143,7 @@ describe("owner-only lead results APIs", () => {
     await authenticate();
     const invalid = [
       null, { ...valid, qualification: "hired" }, { ...valid, closure: "completed" },
+      { ...valid, qualification: "suitable" }, { ...valid, closure: "signal_working" },
       { ...valid, reason: "unapproved" }, { ...valid, comment: "x".repeat(2001) },
       { ...valid, responsibleAdminId: randomUUID() }, { ...valid, responsibleAdminId: lead.managerId },
       { ...valid, expectedVersion: -1 }, { ...valid, expectedVersion: undefined },
@@ -156,6 +160,16 @@ describe("owner-only lead results APIs", () => {
     expect(await stale.json()).toMatchObject({ code: "lead_result_changed" });
     expect((await env.db.select().from(schema.leadResults))[0]).toMatchObject({ comment: "x".repeat(2000), version: 1 });
     expect(await env.db.select().from(schema.leadResultHistory)).toHaveLength(1);
+  });
+
+  it("rejects a private-note draft made stale by a shared status change", async () => {
+    await authenticate();
+    privateResponse(await PATCH(patchRequest(), context()), 200);
+    await updateLeadStatus(lead.id, { status: "signal_working" }, staff.id);
+    const stale = await PATCH(patchRequest({ ...valid, comment: "Old draft", expectedVersion: 1 }), context());
+    privateResponse(stale, 409);
+    const detail = await resultGET(resultRequest(), context());
+    expect(await detail.json()).toMatchObject({ status: "signal_working", result: { version: 2, closure: "signal_working", comment: valid.comment } });
   });
 
   it("validates bounded report ranges, filters and pagination, with private errors for missing leads", async () => {
@@ -190,6 +204,36 @@ describe("owner-only lead results APIs", () => {
       expect(await env.db.select().from(schema.leadResults)).toEqual([]);
       expect(await env.db.select().from(schema.leadResultHistory)).toEqual([]);
       expect((await env.db.select().from(schema.leads))[0]).toEqual(lead);
+    } finally {
+      await env.client.exec("drop trigger if exists reject_result_audit on lead_result_history; drop function if exists reject_result_audit();");
+      warn.mockRestore(); error.mockRestore();
+    }
+  });
+
+  it("does not leak existing private notes if an ordinary admin's status update fails during audit", async () => {
+    await authenticate();
+    privateResponse(await PATCH(patchRequest(), context()), 200);
+    await authenticate(staff);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    await env.client.exec(`
+      create function reject_result_audit() returns trigger language plpgsql as $$ begin raise exception 'Simulated audit failure'; end $$;
+      create trigger reject_result_audit before insert on lead_result_history for each row execute function reject_result_audit();
+    `);
+    try {
+      const failed = await statusPATCH(new Request(`https://example.com/api/admin/leads/${lead.id}`, {
+        method: "PATCH", headers: { host: "example.com", origin: "https://example.com", "content-type": "application/json" },
+        body: JSON.stringify({ status: "signal_working" }),
+      }), context());
+      expect(failed.status).toBe(500);
+      expect(await failed.text()).not.toContain(valid.comment);
+      const diagnostics = JSON.stringify([...warn.mock.calls, ...error.mock.calls]);
+      expect(diagnostics).not.toContain(valid.comment);
+      expect(diagnostics).not.toMatch(/Failed query|params:/);
+      expect(error).not.toHaveBeenCalled();
+      expect((await env.db.select().from(schema.leads))[0]).toEqual(lead);
+      expect((await env.db.select().from(schema.leadResults))[0]).toMatchObject({ version: 1, comment: valid.comment });
+      expect(await env.db.select().from(schema.leadResultHistory)).toHaveLength(1);
     } finally {
       await env.client.exec("drop trigger if exists reject_result_audit on lead_result_history; drop function if exists reject_result_audit();");
       warn.mockRestore(); error.mockRestore();

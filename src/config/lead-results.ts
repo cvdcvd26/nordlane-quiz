@@ -2,7 +2,7 @@ import type { AnalyticsPeriod } from "./analytics";
 import type { LeadStatus } from "./content";
 
 export const leadQualifications = ["unreviewed", "suitable", "unsuitable"] as const;
-export const leadClosures = ["open", "data_received", "signal_working", "not_suitable", "candidate_declined", "no_contact"] as const;
+export const leadClosures = ["open", "data_received", "signal_working", "not_suitable", "candidate_declined", "no_contact", "completed"] as const;
 export const leadResultReasons = ["task", "skills", "conditions", "schedule", "communication", "candidate_choice", "other"] as const;
 export const leadResultsConfig = { commentLimit: 2000, pageSize: 25, maxPageSize: 100, maxGroups: 30, historyLimit: 10 } as const;
 
@@ -11,6 +11,8 @@ export type LeadClosure = typeof leadClosures[number];
 export type LeadResultReason = typeof leadResultReasons[number];
 export type LeadResponsibleAdmin = { id: string; email: string };
 export type LeadResultState = {
+  /** Present on new history snapshots; legacy assessments retain their original shape. */
+  status?: LeadStatus;
   qualification: LeadQualification;
   closure: LeadClosure;
   reason: LeadResultReason | null;
@@ -21,7 +23,7 @@ export type LeadResultState = {
   updatedAt: string | null;
   closedAt: string | null;
 };
-export type LeadResultUpdate = Pick<LeadResultState, "qualification" | "closure" | "reason" | "comment" | "responsibleAdminId"> & { expectedVersion: number };
+export type LeadResultUpdate = Pick<LeadResultState, "reason" | "comment" | "responsibleAdminId"> & { expectedVersion: number };
 export type LeadResultHistoryEntry = {
   id: string;
   previous: LeadResultState;
@@ -31,6 +33,7 @@ export type LeadResultHistoryEntry = {
 };
 export type LeadResultDetail = {
   leadId: number;
+  status: LeadStatus;
   hasSavedResult: boolean;
   result: LeadResultState;
   history: LeadResultHistoryEntry[];

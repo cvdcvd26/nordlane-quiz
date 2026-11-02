@@ -10,6 +10,7 @@ import { PATCH } from "@/app/api/admin/leads/[id]/route";
 import { saveContact } from "@/server/services/contact";
 import { getVisitorState, saveAnswer } from "@/server/services/quiz";
 import { getLeadDetails, listLeads, updateLeadStatus } from "@/server/services/admin";
+import { getLeadResult, getLeadResults } from "@/server/services/lead-results";
 import { getVisitorChat, postVisitorMessage } from "@/server/services/chat";
 import { uploadFile } from "@/server/services/uploads";
 import { submitTask } from "@/server/services/submission";
@@ -64,8 +65,8 @@ describe("received-data handling status", () => {
     }
     expect((await PATCH(request(lead.id, "unknown"), context(lead.id))).status).toBe(400);
     expect((await getVisitorState(sid)).outcome).toBeNull();
-    // Ordinary handling does not create or modify the owner's separate reporting result.
-    expect(await env.db.select().from(schema.leadResults)).toEqual([]);
+    expect((await getLeadResult(lead.id)).result).toMatchObject({ closure: "data_received", closedAt: null });
+    expect((await getLeadResults({ period: "7d" })).closures.data_received).toBe(1);
   });
 
   it("keeps unfinished and needs-reply queues and the candidate conversation open", async () => {
@@ -95,7 +96,8 @@ describe("received-data handling status", () => {
     expect(await deliverScheduledMessage(before.id, new Date(before.scheduledFor.getTime() + 1000))).toBe("already_sent");
     expect((await getVisitorChat(sid)).messages).toEqual(messages);
     expect((await getLeadDetails(lead.id)).lead).toMatchObject({ status: "data_received", outcome: null });
-    expect(await env.db.select().from(schema.leadResults)).toEqual([]);
+    expect((await getLeadResult(lead.id)).result).toMatchObject({ closure: "data_received", closedAt: null });
+    expect((await getLeadResults({ period: "7d" })).totals).toMatchObject({ success: 0, closed: 0 });
   });
 
   it("upgrades existing enum values without changing any legacy lead rows", async () => {

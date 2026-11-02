@@ -12,7 +12,7 @@ type Pixel = ((...args: unknown[]) => void) & {
   disablePushState?: boolean;
 };
 type PixelWindow = Window & { fbq?: Pixel; _fbq?: Pixel };
-export type MetaQuizStage = { scope: string; step: QuizStep; progress: QuizProgress };
+export type MetaQuizStage = { scope: string; step: QuizStep; progress: QuizProgress; restoredThrough?: number };
 const QUERY_KEYS = new Set(["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "fbclid"]);
 const SCRIPT_ID = "alleybiz-meta-pixel";
 let scriptPromise: Promise<void> | null = null;
@@ -105,6 +105,9 @@ async function refresh() {
       fbq("trackSingle", metaPixelConfig.id, "PageView");
       pageViews.add(path);
     }
+    // Email login can restore completed stages on a new device without local
+    // dedupe markers. Visiting an existing application is not a new conversion.
+    if (stage.step > 0 && stage.step <= (stage.restoredThrough ?? -1)) return;
     const key = `${stage.scope}:${stage.step}`;
     if (pending.has(key) || handedOff.has(key)) return;
     pending.add(key);
@@ -113,6 +116,7 @@ async function refresh() {
       // React can replace the stage object while this Web Lock is waiting.
       // Keep the same visitor/stage eligible, but recheck its latest state.
       if (!canTrack(live) || live.scope !== stage.scope || live.step !== stage.step ||
+          (live.step > 0 && live.step <= (live.restoredThrough ?? -1)) ||
           handedOff.has(key) || hasMetaStageMarker(live.scope, live.step)) return;
       // No session identifiers, contacts, answers, files, or chat text go to Meta.
       fbq("trackSingleCustom", metaPixelConfig.id, metaPixelConfig.events[live.step], { step: live.step + 1 });

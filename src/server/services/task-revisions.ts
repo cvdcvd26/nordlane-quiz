@@ -14,6 +14,7 @@ import { assertVisitorChatOpen, toCandidateOutcome } from "./candidate-outcome";
 import { ensureConversation } from "./leads";
 import { touchConversation } from "./conversation";
 import { toPublicFile } from "./uploads";
+import { recordAdminMessageEmail, enqueueCandidateEmail } from "./candidate-email-notifications";
 
 export const requestRevisionSchema = z.object({
   id: z.uuid(),
@@ -64,11 +65,13 @@ async function requirePending(tx: Transaction, sessionId: string, revisionId: st
 async function requestTaskRevisionImpl(leadId: number, adminId: string, input: unknown) {
   const parsed = requestRevisionSchema.parse(input);
   const lead = await leadFor(leadId);
-  return db().transaction(async tx => {
+  let emailJobId: string | null = null;
+  const result = await db().transaction(async tx => {
     await lockVisitor(tx, lead.sessionId);
     const [existing] = await tx.select().from(schema.taskRevisions).where(eq(schema.taskRevisions.id, parsed.id));
     if (existing) {
       if (existing.leadId !== leadId) throw conflict(revisionErrors.duplicate, "revision_duplicate");
+      if (existing.requestMessageId) emailJobId = await recordAdminMessageEmail(tx, lead.sessionId, existing.requestMessageId);
       return publicRevision(existing);
     }
     await assertVisitorChatOpen(tx, lead.sessionId);
@@ -89,6 +92,7 @@ async function requestTaskRevisionImpl(leadId: number, adminId: string, input: u
       }).returning();
       requestMessageId = message.id;
       await touchConversation(tx, conv.id, now);
+      emailJobId = await recordAdminMessageEmail(tx, lead.sessionId, message.id, now);
     }
     const [row] = await tx.insert(schema.taskRevisions).values({
       id: parsed.id, leadId, instructions: parsed.instructions, createdBy: adminId, requestMessageId, createdAt: now, updatedAt: now,
@@ -97,6 +101,8 @@ async function requestTaskRevisionImpl(leadId: number, adminId: string, input: u
     await tx.update(schema.leads).set({ updatedAt: now }).where(eq(schema.leads.id, leadId));
     return publicRevision(row);
   });
+  if (emailJobId) await enqueueCandidateEmail(emailJobId).catch(() => console.warn("candidate_email.enqueue_pending"));
+  return result;
 }
 
 async function cancelTaskRevisionImpl(leadId: number, revisionId: string) {

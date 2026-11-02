@@ -2,9 +2,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { schema } from "@/db";
-import type { LeadResultUpdate } from "@/config/lead-results";
+import type { LeadResultState, LeadResultUpdate } from "@/config/lead-results";
 import { getLeadResult, getLeadResults, getLeadResultsSuccesses, updateLeadResult } from "@/server/services/lead-results";
 import { setupTestEnv } from "./helpers";
+import { updateLeadStatus } from "@/server/services/admin";
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>;
 let owner: typeof schema.adminUsers.$inferSelect;
@@ -12,7 +13,7 @@ let staff: typeof schema.adminUsers.$inferSelect;
 const now = new Date("2026-10-28T12:00:00Z");
 const cohort = { period: "custom", from: "2026-10-01", to: "2026-10-07" };
 const unchanged: LeadResultUpdate = {
-  qualification: "unreviewed", closure: "open", reason: null, comment: "", responsibleAdminId: null, expectedVersion: 0,
+  reason: null, comment: "", responsibleAdminId: null, expectedVersion: 0,
 };
 
 beforeAll(async () => { env = await setupTestEnv(); });
@@ -38,132 +39,125 @@ async function source(sessionId: string, values: Partial<typeof schema.visitorAt
   await env.db.insert(schema.visitorAttribution).values({ sessionId, ...values });
 }
 
-describe("private lead result state and audit", () => {
-  it("keeps received data in progress, records transitions and clears a former closing date when reopened", async () => {
+describe("canonical lead status and private metadata audit", () => {
+  it("uses one status for Signal success, retains assessment on data collection, clears closing time when reopened", async () => {
     const row = await lead();
-    const received = await save(row.id, { closure: "data_received", comment: "Received candidate details" });
-    expect(received.result).toMatchObject({ closure: "data_received", qualification: "unreviewed", version: 1, closedAt: null });
-    expect(received.history[0]).toMatchObject({ previous: { closure: "open" }, next: received.result });
-    const successful = await save(row.id, { closure: "signal_working", expectedVersion: 1 });
-    expect(successful.result).toMatchObject({ qualification: "suitable", closure: "signal_working", closedAt: now.toISOString(), version: 2 });
-    const reopened = await save(row.id, { qualification: "suitable", closure: "data_received", expectedVersion: 2 });
-    expect(reopened.result).toMatchObject({ qualification: "suitable", closure: "data_received", closedAt: null, version: 3 });
-    expect(reopened.history).toHaveLength(3);
-    await expect(save(row.id, { closure: "data_received", expectedVersion: 1 })).rejects.toMatchObject({ status: 409 });
+    await updateLeadStatus(row.id, { status: "data_received" }, owner.id, now);
+    expect((await getLeadResult(row.id)).result).toMatchObject({ qualification: "unreviewed", closure: "data_received", version: 1, closedAt: null });
+    await updateLeadStatus(row.id, { status: "signal_working" }, staff.id, now);
+    const success = await getLeadResult(row.id);
+    expect(success).toMatchObject({ status: "signal_working", result: { status: "signal_working", qualification: "suitable", closure: "signal_working", closedAt: now.toISOString(), version: 2 } });
+    expect(success.history[0]).toMatchObject({ actor: { id: staff.id }, previous: { status: "data_received" }, next: { status: "signal_working" } });
+    await updateLeadStatus(row.id, { status: "data_received" }, owner.id, now);
+    expect((await getLeadResult(row.id)).result).toMatchObject({ qualification: "suitable", closure: "data_received", closedAt: null, version: 3 });
+    await updateLeadStatus(row.id, { status: "in_progress" }, owner.id, now);
+    expect((await getLeadResult(row.id)).result).toMatchObject({ qualification: "unreviewed", closure: "open", version: 4 });
+    expect((await getLeadResults(cohort, now)).totals.success).toBe(0);
+    expect((await getLeadResultsSuccesses(cohort, now)).leads.total).toBe(0);
   });
 
-  it("gives existing leads explicit unreviewed/open defaults without inventing a saved result or audit entry", async () => {
+  it("keeps new leads unreviewed without inventing history or a closing date", async () => {
     const row = await lead();
     const detail = await getLeadResult(row.id);
-    expect(detail).toMatchObject({ leadId: row.id, hasSavedResult: false, history: [], result: {
+    expect(detail).toMatchObject({ leadId: row.id, status: "new", hasSavedResult: false, history: [], result: {
       qualification: "unreviewed", closure: "open", reason: null, comment: "", responsibleAdminId: null,
       updatedById: null, updatedAt: null, closedAt: null, version: 0,
     } });
-    expect(detail.responsibleAdmins).toEqual(expect.arrayContaining([
-      { id: owner.id, email: owner.email }, { id: staff.id, email: staff.email },
-    ]));
     expect(await save(row.id, {})).toEqual(detail);
     expect(await env.db.select().from(schema.leadResults)).toEqual([]);
-    expect(await env.db.select().from(schema.leadResultHistory)).toEqual([]);
     await expect(getLeadResult(9999999)).rejects.toMatchObject({ status: 404 });
   });
 
-  it("records real edits atomically, preserves earlier audit snapshots, and leaves closed dates stable for a no-op", async () => {
+  it("preserves metadata, earlier snapshots and stable closedAt across notes/no-op changes", async () => {
     const row = await lead();
     const closed = new Date("2026-10-20T10:00:00Z");
-    const first = await save(row.id, { qualification: "suitable", closure: "signal_working", comment: "Private decision", responsibleAdminId: staff.id }, closed);
-    expect(first.result).toMatchObject({ qualification: "suitable", closure: "signal_working", version: 1,
-      updatedById: owner.id, responsibleAdminId: staff.id, closedAt: closed.toISOString(), updatedAt: closed.toISOString() });
-    expect(first.history).toHaveLength(1);
-    expect(first.history[0]).toMatchObject({ previous: { version: 0, qualification: "unreviewed", closure: "open" }, next: first.result,
-      actor: { id: owner.id, email: owner.email } });
-    const same = await save(row.id, { qualification: "suitable", closure: "signal_working", comment: "Private decision", responsibleAdminId: staff.id, expectedVersion: 1 });
-    expect(same).toEqual(first);
-
-    const edited = await save(row.id, { qualification: "suitable", closure: "signal_working", comment: "Further private context", responsibleAdminId: staff.id, expectedVersion: 1 });
-    expect(edited.result).toMatchObject({ version: 2, closedAt: closed.toISOString(), comment: "Further private context" });
-    expect(edited.history).toHaveLength(2);
+    await updateLeadStatus(row.id, { status: "signal_working" }, owner.id, closed);
+    const first = await save(row.id, { expectedVersion: 1, comment: "Private decision", responsibleAdminId: staff.id });
+    expect(first.result).toMatchObject({ version: 2, closedAt: closed.toISOString(), responsibleAdminId: staff.id });
+    expect(await save(row.id, { expectedVersion: 2, comment: "Private decision", responsibleAdminId: staff.id })).toEqual(first);
+    await updateLeadStatus(row.id, { status: "signal_working" }, owner.id, now);
+    expect(await getLeadResult(row.id)).toEqual(first);
+    const edited = await save(row.id, { expectedVersion: 2, comment: "Further context", responsibleAdminId: staff.id });
+    expect(edited.result).toMatchObject({ version: 3, closedAt: closed.toISOString() });
     expect(edited.history.find(entry => entry.id === first.history[0].id)).toEqual(first.history[0]);
-    const reopened = await save(row.id, { qualification: "suitable", expectedVersion: 2 });
-    expect(reopened.result).toMatchObject({ closure: "open", closedAt: null, version: 3 });
-    expect(await env.db.select().from(schema.leadResultHistory)).toHaveLength(3);
+    await updateLeadStatus(row.id, { status: "awaiting_reply" }, staff.id, now);
+    expect((await getLeadResult(row.id)).result).toMatchObject({ comment: "Further context", responsibleAdminId: staff.id, closure: "open", closedAt: null });
   });
 
-  it("prevents two stale editors from overwriting the same result, including the first save", async () => {
+  it("rejects stale metadata editors after both concurrent notes and operational status changes", async () => {
     const row = await lead();
-    const results = await Promise.allSettled([
-      save(row.id, { qualification: "suitable", comment: "First reviewer" }),
-      save(row.id, { qualification: "unsuitable", closure: "not_suitable", reason: "skills", comment: "Second reviewer" }),
-    ]);
+    const results = await Promise.allSettled([save(row.id, { comment: "First" }), save(row.id, { comment: "Second" })]);
     expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
     expect(results.find(result => result.status === "rejected")).toMatchObject({ reason: { status: 409, code: "lead_result_changed" } });
-    const current = await getLeadResult(row.id);
-    expect(current.result.version).toBe(1);
-    expect(current.history).toHaveLength(1);
-    await expect(save(row.id, { qualification: "suitable", comment: "Stale tab" })).rejects.toMatchObject({ status: 409 });
-    expect(await getLeadResult(row.id)).toEqual(current);
+    const previous = await getLeadResult(row.id);
+    await updateLeadStatus(row.id, { status: "signal_working" }, staff.id, now);
+    await expect(save(row.id, { expectedVersion: previous.result.version, comment: "Stale tab" })).rejects.toMatchObject({ status: 409 });
+    expect((await getLeadResult(row.id)).result).toMatchObject({ status: "signal_working", comment: previous.result.comment, version: 2 });
+    await expect(updateLeadResult(row.id, owner.id, { ...unchanged, expectedVersion: 2, qualification: "unreviewed", closure: "open" })).rejects.toThrow();
   });
 
-  it("normalizes business combinations and validates actual responsible accounts without trusting a chat manager ID", async () => {
+  it("preserves suitable assessment for non-assessment closures, never carries unsuitable into reopening", async () => {
     const row = await lead();
-    const success = await save(row.id, { closure: "signal_working" });
-    expect(success.result).toMatchObject({ qualification: "suitable", closure: "signal_working" });
-    const rejected = await save(row.id, { closure: "not_suitable", expectedVersion: 1 });
-    expect(rejected.result).toMatchObject({ qualification: "unsuitable", closure: "not_suitable" });
-    const unsuitable = await save(row.id, { qualification: "unsuitable", expectedVersion: 2 });
-    expect(unsuitable.result).toMatchObject({ qualification: "unsuitable", closure: "not_suitable" });
+    await updateLeadStatus(row.id, { status: "suitable" }, owner.id, now);
+    for (const status of ["candidate_declined", "no_contact", "completed", "data_received"] as const) {
+      await updateLeadStatus(row.id, { status }, owner.id, now);
+      expect((await getLeadResult(row.id)).result).toMatchObject({ qualification: "suitable", closure: status });
+      expect((await getLeadResults(cohort, now)).totals.success).toBe(0);
+    }
+    await updateLeadStatus(row.id, { status: "rejected" }, owner.id, now);
+    await updateLeadStatus(row.id, { status: "no_contact" }, owner.id, now);
     const before = await getLeadResult(row.id);
-    await expect(save(row.id, { qualification: "suitable", expectedVersion: before.result.version, responsibleAdminId: randomUUID() })).rejects.toMatchObject({ status: 400, code: "lead_result_responsible" });
-    await expect(save(row.id, { qualification: "suitable", expectedVersion: before.result.version, responsibleAdminId: row.managerId })).rejects.toThrow();
+    expect(before.result.qualification).toBe("unreviewed");
+    await expect(save(row.id, { expectedVersion: before.result.version, responsibleAdminId: randomUUID() })).rejects.toMatchObject({ status: 400, code: "lead_result_responsible" });
+    await expect(save(row.id, { expectedVersion: before.result.version, responsibleAdminId: row.managerId })).rejects.toThrow();
     expect(await getLeadResult(row.id)).toEqual(before);
   });
 
-  it("keeps chat state, the published candidate outcome, and delayed messages unchanged when saving a private result", async () => {
+  it("does not mutate candidate workflow when private metadata changes, including an unknown legacy close date", async () => {
     const row = await lead();
-    await env.db.update(schema.leads).set({ status: "rejected", candidateResultBody: "Published candidate feedback", candidateResultPublishedAt: now }).where(eq(schema.leads.id, row.id));
+    await env.db.update(schema.leads).set({ status: "rejected", candidateResultBody: "Published feedback", candidateResultPublishedAt: now }).where(eq(schema.leads.id, row.id));
     const [conversation] = await env.db.insert(schema.conversations).values({ sessionId: row.sessionId, leadId: row.id }).returning();
     await env.db.insert(schema.messages).values({ conversationId: conversation.id, sender: "admin", body: "Existing chat", clientMessageId: randomUUID() });
     const [submission] = await env.db.insert(schema.taskSubmissions).values({ sessionId: row.sessionId, idempotencyKey: randomUUID() }).returning();
     await env.db.insert(schema.scheduledMessages).values({ submissionId: submission.id, conversationId: conversation.id, scheduledFor: now });
-    const load = async () => ({
-      leads: await env.db.select().from(schema.leads), conversations: await env.db.select().from(schema.conversations),
-      messages: await env.db.select().from(schema.messages), scheduled: await env.db.select().from(schema.scheduledMessages),
-    });
+    const load = async () => ({ leads: await env.db.select().from(schema.leads), conversations: await env.db.select().from(schema.conversations), messages: await env.db.select().from(schema.messages), scheduled: await env.db.select().from(schema.scheduledMessages) });
     const before = await load();
-    await save(row.id, { qualification: "suitable", closure: "data_received", comment: "PRIVATE_RESULT_CONTEXT", responsibleAdminId: staff.id });
+    await save(row.id, { comment: "PRIVATE_RESULT_CONTEXT", responsibleAdminId: staff.id });
     expect(await load()).toEqual(before);
+    expect((await getLeadResult(row.id)).result).toMatchObject({ qualification: "unsuitable", closedAt: null });
     expect(env.queued).toEqual([]);
     expect(env.blobs.size).toBe(0);
   });
 
-  it("bounds the visible audit to the latest ten edits while retaining every earlier immutable snapshot", async () => {
+  it("retains immutable history and account deletion semantics", async () => {
     const row = await lead();
-    const first = await save(row.id, { qualification: "suitable", comment: "Initial review" });
-    for (let version = 1; version < 12; version++) {
-      await save(row.id, { qualification: "suitable", comment: `Review ${version + 1}`, expectedVersion: version });
-    }
+    const first = await save(row.id, { comment: "Initial", responsibleAdminId: staff.id });
+    for (let version = 1; version < 12; version++) await save(row.id, { comment: `Review ${version}`, expectedVersion: version, responsibleAdminId: staff.id });
     const detail = await getLeadResult(row.id);
     expect(detail.result.version).toBe(12);
-    expect(detail.history.map(entry => entry.next.version)).toEqual([12, 11, 10, 9, 8, 7, 6, 5, 4, 3]);
+    expect(detail.history.map(entry => entry.next.version)).toEqual([12,11,10,9,8,7,6,5,4,3]);
     const stored = await env.db.select().from(schema.leadResultHistory).where(eq(schema.leadResultHistory.leadId, row.id));
     expect(stored).toHaveLength(12);
     expect(stored.find(entry => entry.version === 1)).toMatchObject({ previous: first.history[0].previous, next: first.result });
-  });
-
-  it("retains decisions and snapshots when an operator is deleted, and cascades private history with the lead", async () => {
-    const row = await lead();
-    const original = await save(row.id, { qualification: "suitable", closure: "signal_working", responsibleAdminId: staff.id });
     await env.db.delete(schema.adminUsers).where(eq(schema.adminUsers.id, staff.id));
-    expect((await getLeadResult(row.id)).result).toMatchObject({ responsibleAdminId: null, qualification: "suitable", closure: "signal_working", version: 1 });
     await env.db.delete(schema.adminUsers).where(eq(schema.adminUsers.id, owner.id));
-    const retained = await getLeadResult(row.id);
-    expect(retained.result).toMatchObject({ updatedById: null, responsibleAdminId: null, version: 1 });
-    expect(retained.history[0]).toMatchObject({ actor: null, previous: original.history[0].previous, next: original.result });
+    expect((await getLeadResult(row.id)).result).toMatchObject({ updatedById: null, responsibleAdminId: null, version: 12 });
+    expect((await getLeadResult(row.id)).history[0].actor).toBeNull();
     await env.db.delete(schema.leads).where(eq(schema.leads.id, row.id));
-    expect(await env.db.select().from(schema.leadResults)).toEqual([]);
     expect(await env.db.select().from(schema.leadResultHistory)).toEqual([]);
   });
 });
+
+// Report fixtures go through the same canonical writer that list/card status controls use.
+async function seed(leadId: number, changes: Partial<LeadResultUpdate & Pick<LeadResultState, "qualification" | "closure">>, at = now) {
+  const current = await getLeadResult(leadId);
+  if (changes.qualification === "suitable" && current.result.qualification !== "suitable") await updateLeadStatus(leadId, { status: "suitable" }, owner.id, at);
+  const status = changes.closure === "not_suitable" || changes.qualification === "unsuitable" ? "rejected"
+    : changes.closure && changes.closure !== "open" ? changes.closure : changes.qualification === "suitable" ? "suitable" : "new";
+  await updateLeadStatus(leadId, { status }, owner.id, at);
+  const updated = await getLeadResult(leadId);
+  return save(leadId, { reason: changes.reason ?? null, comment: changes.comment ?? "", responsibleAdminId: changes.responsibleAdminId ?? null, expectedVersion: updated.result.version }, at);
+}
 
 describe("lead-created Warsaw result cohorts", () => {
   it("counts received data separately without closing the lead, inflating success or adding a loss reason", async () => {
@@ -171,11 +165,11 @@ describe("lead-created Warsaw result cohorts", () => {
     const received = await lead();
     const success = await lead();
     const declined = await lead();
-    await save(received.id, { closure: "data_received", reason: "other" });
-    await save(success.id, { closure: "signal_working" });
-    await save(declined.id, { closure: "candidate_declined", reason: "candidate_choice" });
+    await seed(received.id, { closure: "data_received", reason: "other" });
+    await seed(success.id, { closure: "signal_working" });
+    await seed(declined.id, { closure: "candidate_declined", reason: "candidate_choice" });
     const report = await getLeadResults(cohort, now);
-    expect(report.closures).toEqual({ open: 1, data_received: 1, signal_working: 1, not_suitable: 0, candidate_declined: 1, no_contact: 0 });
+    expect(report.closures).toEqual({ open: 1, data_received: 1, signal_working: 1, not_suitable: 0, candidate_declined: 1, no_contact: 0, completed: 0 });
     expect(report.totals).toMatchObject({ leads: 4, closed: 2, success: 1 });
     expect(report.totals.leads - report.totals.closed).toBe(2);
     expect(report.lossReasons).toEqual([{ reason: "candidate_choice", leads: 1 }]);
@@ -184,7 +178,7 @@ describe("lead-created Warsaw result cohorts", () => {
     expect((await getLeadResultsSuccesses(cohort, now)).leads.items.map(item => item.id)).toEqual([success.id]);
   });
 
-  it("uses lead creation and current private results for totals, denominators, sources and responsible filters without join multiplication", async () => {
+  it("uses lead creation and current canonical statuses for totals, denominators, sources and responsible filters without join multiplication", async () => {
     const a = await lead("2026-09-30T22:00:00Z", "2026-09-01T12:00:00Z");
     const b = await lead("2026-10-02T12:00:00Z", "2026-10-20T12:00:00Z");
     const c = await lead();
@@ -195,19 +189,19 @@ describe("lead-created Warsaw result cohorts", () => {
     await source(d.sessionId, { consentAll: false, utmSource: "PRIVATE_LEGACY_SOURCE", utmCampaign: "PRIVATE_LEGACY_CAMPAIGN", referrerHost: "private.example" });
     await source(e.sessionId, { consentAll: true });
     await source(f.sessionId, { consentAll: true, referrerHost: "jobs.example" });
-    await save(a.id, { qualification: "suitable", closure: "signal_working", responsibleAdminId: staff.id });
-    await save(a.id, { qualification: "suitable", closure: "signal_working", responsibleAdminId: staff.id, comment: "More audit rows must not multiply leads", expectedVersion: 1 });
-    await save(b.id, { qualification: "unsuitable", closure: "not_suitable", reason: "task", responsibleAdminId: staff.id });
-    await save(d.id, { qualification: "suitable" });
-    await save(e.id, { qualification: "suitable", closure: "candidate_declined", reason: "candidate_choice", responsibleAdminId: owner.id });
-    await save(f.id, { closure: "no_contact", reason: "communication" });
+    await seed(a.id, { qualification: "suitable", closure: "signal_working", responsibleAdminId: staff.id });
+    await seed(a.id, { qualification: "suitable", closure: "signal_working", responsibleAdminId: staff.id, comment: "More audit rows must not multiply leads", expectedVersion: 1 });
+    await seed(b.id, { qualification: "unsuitable", closure: "not_suitable", reason: "task", responsibleAdminId: staff.id });
+    await seed(d.id, { qualification: "suitable" });
+    await seed(e.id, { qualification: "suitable", closure: "candidate_declined", reason: "candidate_choice", responsibleAdminId: owner.id });
+    await seed(f.id, { closure: "no_contact", reason: "communication" });
     await env.db.insert(schema.visitorContacts).values({ sessionId: a.sessionId, name: "Cohort candidate", phone: "+48600123456" });
     const [conversation] = await env.db.insert(schema.conversations).values({ sessionId: a.sessionId, leadId: a.id }).returning();
     await env.db.insert(schema.messages).values(Array.from({ length: 3 }, (_, i) => ({ conversationId: conversation.id, sender: "admin" as const, body: `Message ${i}`, clientMessageId: randomUUID() })));
     await env.db.insert(schema.files).values(Array.from({ length: 2 }, (_, i) => ({ sessionId: a.sessionId, purpose: "chat" as const, uploadedBy: "visitor" as const, storageKey: randomUUID(), originalName: `${i}.png`, mimeType: "image/png", sizeBytes: 100 })));
     for (const instant of ["2026-09-30T21:59:59.999Z", "2026-10-07T22:00:00Z"]) {
       const outside = await lead(instant, "2026-10-03T12:00:00Z");
-      await save(outside.id, { qualification: "suitable", closure: "signal_working" });
+      await seed(outside.id, { qualification: "suitable", closure: "signal_working" });
     }
     await env.db.insert(schema.visitorSessions).values({ tokenHash: randomUUID(), createdAt: new Date("2026-10-03T12:00:00Z") });
 
@@ -217,7 +211,7 @@ describe("lead-created Warsaw result cohorts", () => {
     expect(report.rates.suitableOfReviewed).toBeCloseTo(3 / 4);
     expect(report.rates.successOfAll).toBeCloseTo(1 / 6);
     expect(report.qualifications).toEqual({ unreviewed: 2, suitable: 3, unsuitable: 1 });
-    expect(report.closures).toEqual({ open: 2, data_received: 0, signal_working: 1, not_suitable: 1, candidate_declined: 1, no_contact: 1 });
+    expect(report.closures).toEqual({ open: 2, data_received: 0, signal_working: 1, not_suitable: 1, candidate_declined: 1, no_contact: 1, completed: 0 });
     expect(report.sources).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "utm", source: "google", medium: "cpc", campaign: "hire", leads: 2, reviewed: 2, suitable: 1, success: 1 }),
       expect.objectContaining({ kind: "unknown", source: null, medium: null, campaign: null, leads: 2, reviewed: 1, suitable: 1, success: 0 }),
@@ -290,7 +284,7 @@ describe("lead-created Warsaw result cohorts", () => {
     for (let i = 0; i < 35; i++) {
       const row = await lead();
       await source(row.sessionId, { consentAll: true, utmSource: `source-${i}` });
-      await save(row.id, { qualification: "suitable", closure: i === 0 ? "signal_working" : "open", responsibleAdminId: admins[i].id });
+      await seed(row.id, { qualification: "suitable", closure: i === 0 ? "signal_working" : "open", responsibleAdminId: admins[i].id });
     }
     const report = await getLeadResults(cohort, now);
     expect(report.sources).toHaveLength(30);

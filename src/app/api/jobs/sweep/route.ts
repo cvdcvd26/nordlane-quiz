@@ -3,6 +3,7 @@ import { deliverOverdue } from "@/server/services/delivery";
 import { log } from "@/server/log";
 import { purgeDeletedMessageFiles } from "@/server/services/message-management";
 import { purgeTerminalRevisionFiles } from "@/server/services/task-revisions";
+import { recoverCandidateEmails } from "@/server/services/candidate-email-notifications";
 
 /**
  * Safety net run by Vercel Cron (vercel.json): delivers scheduled messages that are overdue,
@@ -14,6 +15,7 @@ export async function GET(req: Request) {
   const results = await deliverOverdue({ limit: 100 });
   const attachments = await purgeDeletedMessageFiles();
   const revisionAttachments = await purgeTerminalRevisionFiles();
+  const candidateEmails = await recoverCandidateEmails();
   log.info("scheduler", "sweep finished", { count: Object.keys(results).length });
-  return json({ results, attachments, revisionAttachments });
+  return json({ results, attachments, revisionAttachments, candidateEmails });
 }

@@ -13,6 +13,10 @@ export const metadata: Metadata = {
 
 const entries = [
   ["nl_visitor", "Cookie", "Rozpoznaje Twoją sesję, przywraca postęp zgłoszenia oraz umożliwia dostęp do Twojego czatu i załączników.", "180 dni od utworzenia sesji"],
+  ["nl_candidate", "Cookie", "Po zalogowaniu kodem e-mail utrzymuje dostęp do Twojego zgłoszenia na danym urządzeniu. Zawiera losowy token, bez adresu e-mail.", "30 dni; usuwany przy wylogowaniu"],
+  ["nl_email_challenge", "Cookie", "Wiąże jednorazowy kod e-mail z przeglądarką, w której poproszono o logowanie. Nie zawiera kodu ani adresu e-mail.", "10 minut; usuwany po zalogowaniu lub wylogowaniu"],
+  ["ab_candidate_identity_generation", "localStorage", "Losowy znacznik zmiany konta pozwala odświeżyć inne otwarte karty po zalogowaniu lub wylogowaniu i zapobiega pomieszaniu zgłoszeń. Nie zawiera danych konta.", "Zastępowany przy zmianie konta; do usunięcia danych przeglądarki"],
+  ["ab_candidate_identity_seen", "sessionStorage", "Pomaga wykryć zmianę konta po wznowieniu uśpionej karty. Zawiera tylko losowy znacznik.", "Do zamknięcia karty"],
   ["ab_cookie_consent", "Cookie", "Zapamiętuje wybór dotyczący cookies i dodatkowych preferencji. Nie zawiera danych kontaktowych ani identyfikatora zgłoszenia.", "180 dni od zapisania wyboru"],
   ["nl_admin", "Cookie", "Utrzymuje sesję zalogowanego administratora. Jest ustawiany dopiero po zalogowaniu do panelu.", "12 godzin; usuwany przy wylogowaniu"],
   ["nl_review_draft", "sessionStorage", "Zachowuje roboczy tekst odpowiedzi do zadania w bieżącej karcie.", "Do zamknięcia karty lub poprawnego wysłania zadania"],
@@ -71,7 +75,13 @@ export default function CookiePolicyPage() {
               ))}</tbody>
             </table>
           </div>
-          <p className="mt-3 text-sm leading-relaxed text-ink-soft">Wygaśnięcie sesji lub usunięcie cookies nie usuwa automatycznie zgłoszenia i wiadomości z bazy. Może natomiast uniemożliwić ich ponowne otwarcie w tej przeglądarce.</p>
+          <p className="mt-3 text-sm leading-relaxed text-ink-soft">Wygaśnięcie sesji lub usunięcie cookies nie usuwa automatycznie zgłoszenia i wiadomości z bazy. Jeśli potwierdzono adres e-mail, można odzyskać dostęp kodem wysłanym na ten sam adres. Zgłoszenie bez potwierdzonego e-maila może przestać być dostępne w tej przeglądarce.</p>
+        </section>
+
+        <section className="mt-9 space-y-3" aria-labelledby="email-access">
+          <h2 id="email-access" className="text-xl font-semibold">Logowanie i powiadomienia e-mail</h2>
+          <p className="leading-relaxed text-ink-soft">Gdy logowanie e-mailem jest dostępne, adres wykorzystujemy do potwierdzenia dostępu jednorazowym kodem oraz powiadomień dotyczących zgłoszenia. Wiadomości wysyłamy za pośrednictwem Brevo, któremu przekazujemy adres odbiorcy i treść technicznego e-maila. Nie dołączamy treści rozmowy, odpowiedzi na zadanie ani plików.</p>
+          <p className="leading-relaxed text-ink-soft">Aby nie wysyłać zbędnych powiadomień, zapisujemy, do którego miejsca odczytano rozmowę. Powiadomienia o nowych wiadomościach od HR są częścią obsługi zgłoszenia. Łączymy je i wysyłamy po 30 minutach bez odczytu, nie częściej niż raz na 3 godziny. Nie są to wiadomości reklamowe.</p>
         </section>
 
         <section className="mt-9 space-y-3" aria-labelledby="cookies-choice">

@@ -4,6 +4,7 @@ import { content } from "@/config/content";
 import { ContactFields, type ContactDraft, type ContactErrors } from "./ContactFields";
 import { PixelHeading } from "../visual/PixelHeading";
 import { TestimonialStrip } from "../testimonials/TestimonialStrip";
+import type { ReactNode } from "react";
 
 type Props = {
   contact: ContactDraft;
@@ -12,12 +13,14 @@ type Props = {
   saving: boolean;
   error: string | null;
   onContinue: () => void;
+  emailAccess?: ReactNode;
+  emailRequired?: boolean;
 };
 
 const delay = (i: number) => ({ "--i": i }) as React.CSSProperties;
 
 /** Step 1: hero + contact details. */
-export function StepContact({ contact, errors, onChange, saving, error, onContinue }: Props) {
+export function StepContact({ contact, errors, onChange, saving, error, onContinue, emailAccess, emailRequired = false }: Props) {
   const q = content.quiz;
   return (
     <section aria-labelledby="contact-title">
@@ -40,6 +43,8 @@ export function StepContact({ contact, errors, onChange, saving, error, onContin
 
       <TestimonialStrip className="reveal mt-10" />
 
+      {emailAccess && <div className="mt-8">{emailAccess}</div>}
+
       <form
         noValidate
         className="glass reveal mt-10 rounded-(--radius-tile) p-5 sm:p-7"
@@ -49,13 +54,16 @@ export function StepContact({ contact, errors, onChange, saving, error, onContin
           onContinue();
         }}
       >
-        <ContactFields value={contact} errors={errors} onChange={onChange} />
+        <fieldset disabled={emailRequired || saving}>
+          <ContactFields value={contact} errors={errors} onChange={onChange} />
+        </fieldset>
+        {emailRequired && <p className="mt-2 text-sm text-cyan">Najpierw potwierdź adres e-mail powyżej, aby kontynuować.</p>}
         <p className="mt-5 flex max-w-[65ch] items-start gap-2.5 text-sm leading-relaxed text-ink-soft">
           <LockKeyhole className="mt-0.5 size-4 shrink-0 text-cyan" aria-hidden />
           <span>{q.contact.privacy}</span>
         </p>
         <div className="mt-5 flex flex-wrap items-center gap-4">
-          <button type="submit" className="btn btn-primary min-w-40" disabled={saving} aria-busy={saving}>
+          <button type="submit" className="btn btn-primary min-w-40" disabled={saving || emailRequired} aria-busy={saving}>
             {q.continue} <span aria-hidden className="arrow">→</span>
           </button>
           <span className="text-sm text-danger" role="alert">

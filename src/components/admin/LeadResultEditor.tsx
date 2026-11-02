@@ -1,21 +1,22 @@
 "use client";
 
+import Link from "next/link";
+import type { LeadStatus } from "@/config/content";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { Check, Clock3, History, LockKeyhole, Save, ShieldCheck } from "lucide-react";
-import { leadQualifications, leadResultReasons, leadResultsConfig, type LeadClosure, type LeadQualification, type LeadResultDetail, type LeadResultState, type LeadResultUpdate } from "@/config/lead-results";
+import { leadResultReasons, leadResultsConfig, type LeadResultDetail, type LeadResultState, type LeadResultUpdate } from "@/config/lead-results";
 import { leadResultsCopy } from "@/config/lead-results-copy";
 import { useAdminDraftGuard } from "@/lib/admin-draft-guard";
 import { api, ApiError } from "@/lib/api";
 import { useAdminI18n } from "./i18n";
-import { ErrorState } from "./ui";
+import { ErrorState, StatusBadge } from "./ui";
 import "./lead-results.css";
 
 type Draft = Omit<LeadResultUpdate, "expectedVersion">;
-const draftFrom = (result: LeadResultState): Draft => ({ qualification: result.qualification, closure: result.closure, reason: result.reason, comment: result.comment, responsibleAdminId: result.responsibleAdminId });
-const equalDraft = (a: Draft, b: Draft) => a.qualification === b.qualification && a.closure === b.closure && a.reason === b.reason && a.comment.trim() === b.comment.trim() && a.responsibleAdminId === b.responsibleAdminId;
-const CLOSURE_CHOICES: LeadClosure[] = ["open", "data_received", "signal_working", "not_suitable", "candidate_declined", "no_contact"];
+const draftFrom = (result: LeadResultState): Draft => ({ reason: result.reason, comment: result.comment, responsibleAdminId: result.responsibleAdminId });
+const equalDraft = (a: Draft, b: Draft) => a.reason === b.reason && a.comment.trim() === b.comment.trim() && a.responsibleAdminId === b.responsibleAdminId;
 
-export default function LeadResultEditor({ leadId, onSaved, onDirtyChange, standalone = true }: { leadId: string; onSaved?: () => void; onDirtyChange?: (dirty: boolean) => void; standalone?: boolean }) {
+export default function LeadResultEditor({ leadId, currentStatus, refreshRevision = 0, onSaved, onDirtyChange, standalone = true }: { leadId: string; currentStatus?: LeadStatus; refreshRevision?: number; onSaved?: () => void; onDirtyChange?: (dirty: boolean) => void; standalone?: boolean }) {
   const { lang, t } = useAdminI18n();
   const copy = leadResultsCopy[lang];
   const id = useId();
@@ -33,37 +34,33 @@ export default function LeadResultEditor({ leadId, onSaved, onDirtyChange, stand
   useAdminDraftGuard(`lead-result:${leadId}`, dirty || saving);
   useEffect(() => { onDirtyChange?.(dirty || saving); }, [dirty, saving, onDirtyChange]);
   useEffect(() => () => { onDirtyChange?.(false); }, [onDirtyChange]);
+  useEffect(() => () => { saveController.current?.abort(); }, [leadId]);
 
   useEffect(() => {
     const controller = new AbortController();
     void api<LeadResultDetail>(`/api/admin/leads/${encodeURIComponent(leadId)}/result`, { signal: controller.signal })
       .then(detail => {
         if (controller.signal.aborted) return;
-        setLoaded({ leadId, detail, draft: draftFrom(detail.result) });
+        // Refresh a changed status without discarding an owner's unsaved notes.
+        // Keep the old metadata version while dirty: a concurrent edit must still
+        // fail optimistically instead of silently overwriting another owner tab.
+        setLoaded(current => current?.leadId === leadId && !equalDraft(current.draft, draftFrom(current.detail.result))
+          ? { ...current, detail: { ...current.detail, status: detail.status } }
+          : { leadId, detail, draft: draftFrom(detail.result) });
         setFailure(null);
-        setSaveError(null);
-        setSaved(false);
-        setSaving(false);
       })
-      .catch(error => { if (!controller.signal.aborted) setFailure({ leadId, forbidden: error instanceof ApiError && [401, 403].includes(error.status) }); });
-    return () => { controller.abort(); saveController.current?.abort(); };
-  }, [leadId, revision]);
+      .catch(error => {
+        if (controller.signal.aborted) return;
+        const forbidden = error instanceof ApiError && [401, 403].includes(error.status);
+        if (forbidden) { saveController.current?.abort(); setLoaded(null); setSaving(false); }
+        setFailure({ leadId, forbidden });
+      });
+    return () => controller.abort();
+  }, [leadId, revision, currentStatus, refreshRevision]);
 
   const change = (patch: Partial<Draft>) => {
     setSaved(false);
     setLoaded(current => current?.leadId === leadId ? { ...current, draft: { ...current.draft, ...patch } } : current);
-  };
-  const qualificationChange = (qualification: LeadQualification) => {
-    if (!draft) return;
-    const closure = qualification === "unsuitable" ? "not_suitable"
-      : draft.closure === "not_suitable" || (qualification === "unreviewed" && draft.closure === "signal_working") ? "open" : draft.closure;
-    change({ qualification, closure });
-  };
-  const closureChange = (closure: LeadClosure) => {
-    if (!draft) return;
-    const qualification = closure === "signal_working" ? "suitable" : closure === "not_suitable" ? "unsuitable"
-      : draft.qualification === "unsuitable" ? "unreviewed" : draft.qualification;
-    change({ qualification, closure });
   };
   const reloadLatest = () => {
     if ((dirty || saving) && !window.confirm(copy.discardWarning)) return;
@@ -107,8 +104,10 @@ export default function LeadResultEditor({ leadId, onSaved, onDirtyChange, stand
   const formatDate = (value: string) => new Date(value).toLocaleString(t.locale, { timeZone: "Europe/Warsaw", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const responsibleLabel = (value: string | null) => value === null ? copy.unassigned : detail?.responsibleAdmins.find(admin => admin.id === value)?.email ?? copy.unknownAccount;
   const historyState = (state: LeadResultState) => <>
-    <p><span className={`lres-badge lres-q-${state.qualification}`}>{copy.qualifications[state.qualification]}</span></p>
-    <p className="mt-1.5 text-[12px] font-semibold">{copy.closures[state.closure]}</p>
+    {state.status ? <StatusBadge status={state.status} /> : <>
+      <p><span className={`lres-badge lres-q-${state.qualification}`}>{copy.qualifications[state.qualification]}</span></p>
+      <p className="mt-1.5 text-[12px] font-semibold">{copy.closures[state.closure]}</p>
+    </>}
     <p className="mt-1 text-[12px] text-adm-ink-2">{copy.reason}: {state.reason ? copy.reasonLabels[state.reason] : copy.noReason}</p>
     <p className="mt-1 break-all text-[12px] text-adm-ink-2">{copy.responsible}: {responsibleLabel(state.responsibleAdminId)}</p>
     <p className="mt-2 whitespace-pre-wrap break-words text-[12px] text-adm-ink-2">{copy.comment}: {state.comment || "—"}</p>
@@ -128,27 +127,12 @@ export default function LeadResultEditor({ leadId, onSaved, onDirtyChange, stand
       : <>
         {!detail.hasSavedResult ? <p className="mt-4 flex items-start gap-2 text-[12px] leading-relaxed text-adm-ink-2"><Clock3 aria-hidden className="mt-0.5 size-3.5 shrink-0" />{copy.noSavedResult}</p> : null}
         <form className="mt-5 space-y-5" onSubmit={event => void save(event)} aria-busy={saving}>
-          <fieldset disabled={saving}>
-            <legend className="mb-2.5 text-[13px] font-bold">01 <span className="ml-1.5">{copy.qualification}</span></legend>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {leadQualifications.map(qualification => <label key={qualification} className={`lres-choice lres-q-${qualification} ${draft.qualification === qualification ? "is-selected" : ""}`}>
-                <input className="sr-only" type="radio" name={`${id}-qualification`} value={qualification} checked={draft.qualification === qualification} onChange={() => qualificationChange(qualification)} />
-                <span className="lres-choice-dot" aria-hidden>{draft.qualification === qualification ? <Check className="size-3" strokeWidth={3} /> : null}</span>
-                <span>{copy.qualifications[qualification]}</span>
-              </label>)}
-            </div>
-          </fieldset>
-          <fieldset disabled={saving}>
-            <legend className="mb-2.5 text-[13px] font-bold">02 <span className="ml-1.5">{copy.closure}</span></legend>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {CLOSURE_CHOICES.map(closure => <label key={closure} className={`lres-choice lres-c-${closure} ${closure === "signal_working" ? "sm:col-span-2" : ""} ${draft.closure === closure ? "is-selected" : ""}`}>
-                <input className="sr-only" type="radio" name={`${id}-closure`} value={closure} checked={draft.closure === closure} onChange={() => closureChange(closure)} />
-                <span className="lres-choice-dot" aria-hidden>{draft.closure === closure ? <Check className="size-3" strokeWidth={3} /> : null}</span>
-                <span className="flex-1">{copy.closures[closure]}</span>
-              </label>)}
-            </div>
-            <p className="mt-2 text-[11.5px] leading-relaxed text-adm-ink-3">{copy.signalRule} {copy.unsuitableRule}</p>
-          </fieldset>
+          <div className="rounded-xl border border-adm-line bg-adm-subtle/40 p-4">
+            <p className="mb-2 text-[12px] font-semibold">{copy.status}</p>
+            <StatusBadge status={currentStatus ?? detail.status} />
+            <p className="mt-2 text-[12px] leading-relaxed text-adm-ink-3">{copy.statusHint}</p>
+            {currentStatus === undefined ? <Link href={`/admin/leads/${leadId}`} className="mt-3 inline-block text-[12px] font-semibold text-adm-accent underline underline-offset-4">{copy.changeStatus}</Link> : null}
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="grid content-start gap-1.5 text-[12px] font-semibold" htmlFor={`${id}-reason`}><span>{copy.reason} <span className="font-normal text-adm-ink-3">({copy.optional})</span></span>
               <select id={`${id}-reason`} className="adm-input" disabled={saving} value={draft.reason ?? ""} onChange={event => change({ reason: event.target.value as Draft["reason"] || null })}>

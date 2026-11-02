@@ -18,11 +18,13 @@ import { relations, sql } from "drizzle-orm";
 import type { LeadResultState } from "@/config/lead-results";
 import type { RichTextDocument } from "@/lib/rich-text";
 
+export * from "./candidate-notifications";
+
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
 
-export const leadStatus = pgEnum("lead_status", ["new", "in_progress", "awaiting_reply", "data_received", "signal_working", "completed", "rejected"]);
+export const leadStatus = pgEnum("lead_status", ["new", "in_progress", "awaiting_reply", "suitable", "data_received", "signal_working", "completed", "rejected", "candidate_declined", "no_contact"]);
 export const messageSender = pgEnum("message_sender", ["visitor", "admin", "system"]);
 export const scheduledStatus = pgEnum("scheduled_status", ["pending", "sending", "sent", "failed", "cancelled"]);
 export const fileOwner = pgEnum("file_owner", ["visitor", "admin"]);
@@ -60,6 +62,49 @@ export const visitorSessions = pgTable("visitor_sessions", {
   createdAt: createdAt(),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/* ---------- Verified candidate email access ---------- */
+/** A permanent identity points at the existing application; no answers/files are moved. */
+export const candidateAccounts = pgTable("candidate_accounts", {
+  id: id(),
+  sessionId: uuid("session_id").notNull().unique().references(() => visitorSessions.id, { onDelete: "cascade" }),
+  email: text("email").notNull().unique(),
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, t => [
+  check("candidate_accounts_email_ck", sql`${t.email} = lower(btrim(${t.email})) and length(${t.email}) between 3 and 254`),
+]);
+
+/** Only HMACs of short-lived codes and hashes of browser nonces are persisted. */
+export const candidateEmailChallenges = pgTable("candidate_email_challenges", {
+  id: id(),
+  sessionId: uuid("session_id").notNull().references(() => visitorSessions.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  browserHash: text("browser_hash").notNull(),
+  codeHash: text("code_hash").notNull(),
+  status: text("status").notNull().default("sending"),
+  attempts: integer("attempts").notNull().default(0),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  createdAt: createdAt(),
+}, t => [
+  index("candidate_email_challenges_expiry_idx").on(t.expiresAt),
+  check("candidate_email_challenges_status_ck", sql`${t.status} in ('sending', 'ready', 'failed', 'consumed')`),
+  check("candidate_email_challenges_attempts_ck", sql`${t.attempts} between 0 and 5`),
+]);
+
+/** Independent credentials let the same candidate use several devices safely. */
+export const candidateDeviceSessions = pgTable("candidate_device_sessions", {
+  id: id(),
+  accountId: uuid("account_id").notNull().references(() => candidateAccounts.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: createdAt(),
+}, t => [
+  index("candidate_device_sessions_account_idx").on(t.accountId),
+  index("candidate_device_sessions_expiry_idx").on(t.expiresAt),
+]);
 
 /** Optional source fields require analytics consent; taskViewedAt is operational progress. */
 export const visitorAttribution = pgTable("visitor_attribution", {
@@ -144,6 +189,8 @@ export const leads = pgTable(
     // The database chooses once when the lead is inserted, including concurrent requests.
     managerId: text("manager_id").notNull().default(sql`pick_lead_manager()`).references(() => managers.id),
     status: leadStatus("status").notNull().default("new"),
+    /** Null for legacy status dates that cannot be recovered reliably. */
+    statusChangedAt: timestamp("status_changed_at", { withTimezone: true }),
     /** Public only after an administrator explicitly publishes the result. */
     candidateResultBody: text("candidate_result_body"),
     candidateResultPublishedAt: timestamp("candidate_result_published_at", { withTimezone: true }),
@@ -164,7 +211,7 @@ export const leads = pgTable(
   ],
 );
 
-/** Private owner reporting. Separate from the public/chat lead status and candidate result. */
+/** Private metadata and audit snapshot. Current qualification/closure are derived from leads.status. */
 export const leadResults = pgTable("lead_results", {
   leadId: bigint("lead_id", { mode: "number" }).primaryKey().references(() => leads.id, { onDelete: "cascade" }),
   qualification: text("qualification").notNull().default("unreviewed"),
@@ -180,13 +227,22 @@ export const leadResults = pgTable("lead_results", {
   index("lead_results_responsible_idx").on(t.responsibleAdminId),
   index("lead_results_closure_idx").on(t.closure),
   check("lead_results_qualification_ck", sql`${t.qualification} in ('unreviewed', 'suitable', 'unsuitable')`),
-  check("lead_results_closure_ck", sql`${t.closure} in ('open', 'data_received', 'signal_working', 'not_suitable', 'candidate_declined', 'no_contact')`),
+  check("lead_results_closure_ck", sql`${t.closure} in ('open', 'data_received', 'signal_working', 'not_suitable', 'candidate_declined', 'no_contact', 'completed')`),
   check("lead_results_consistency_ck", sql`(${t.closure} = 'not_suitable') = (${t.qualification} = 'unsuitable') and (${t.closure} <> 'signal_working' or ${t.qualification} = 'suitable')`),
   check("lead_results_reason_ck", sql`${t.reason} is null or ${t.reason} in ('task', 'skills', 'conditions', 'schedule', 'communication', 'candidate_choice', 'other')`),
   check("lead_results_comment_ck", sql`length(${t.comment}) <= 2000`),
   check("lead_results_version_ck", sql`${t.version} >= 1`),
-  check("lead_results_closed_at_ck", sql`(${t.closure} in ('open', 'data_received')) = (${t.closedAt} is null)`),
+  check("lead_results_closed_at_ck", sql`${t.closure} not in ('open', 'data_received') or ${t.closedAt} is null`),
 ]);
+
+/** One-time reconciliation before-images; removed with the lead under normal retention/deletion. */
+export const leadStatusMigrationArchive = pgTable("lead_status_migration_archive", {
+  leadId: bigint("lead_id", { mode: "number" }).primaryKey().references(() => leads.id, { onDelete: "cascade" }),
+  previousStatus: text("previous_status").notNull(),
+  nextStatus: text("next_status").notNull(),
+  previousResult: jsonb("previous_result"),
+  archivedAt: createdAt(),
+});
 
 /** Append-only service audit; lead deletion cascades its private history. */
 export const leadResultHistory = pgTable("lead_result_history", {

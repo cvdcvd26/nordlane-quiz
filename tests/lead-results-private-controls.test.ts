@@ -17,7 +17,7 @@ describe("private lead result controls", () => {
   });
   it("renders the collapsed owner control without mounting its private editor", () => {
     const markup = renderToStaticMarkup(createElement(OwnerAdminContext.Provider, { value: true }, createElement(OwnerLeadResultPanel, { leadId: "1" })));
-    expect(markup).toContain("Результат по лиду");
+    expect(markup).toContain("Внутренние заметки");
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).not.toContain("private editor");
   });

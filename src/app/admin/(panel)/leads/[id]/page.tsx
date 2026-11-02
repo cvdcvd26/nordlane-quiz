@@ -405,7 +405,7 @@ function Lead({ id }: { id: string }) {
             {sendError && <p className="mt-2 text-[13px] text-adm-red">{sendError}</p>}
           </div>
         </section>
-        <OwnerLeadResultPanel leadId={id} />
+        <OwnerLeadResultPanel leadId={id} currentStatus={d.lead.status} />
         {d.submission && <LeadRevisionManager leadId={Number(id)} onChange={load} />}
         <LeadReminders leadId={Number(id)} />
         </div>

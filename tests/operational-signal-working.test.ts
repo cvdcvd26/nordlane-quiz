@@ -8,12 +8,12 @@ import { SignJWT } from "jose";
 import { schema } from "@/db";
 import { GET as listGET } from "@/app/api/admin/leads/route";
 import { PATCH } from "@/app/api/admin/leads/[id]/route";
-import { GET as privateResultGET } from "@/app/api/admin/leads/[id]/result/route";
+import { GET as privateResultGET, PATCH as privateResultPATCH } from "@/app/api/admin/leads/[id]/result/route";
 import { saveContact } from "@/server/services/contact";
 import { getVisitorState, saveAnswer } from "@/server/services/quiz";
 import { getLeadDetails, listLeads, updateLeadStatus } from "@/server/services/admin";
 import { getVisitorChat, postVisitorMessage } from "@/server/services/chat";
-import { updateLeadResult } from "@/server/services/lead-results";
+import { getLeadResult, getLeadResults, getLeadResultsSuccesses, updateLeadResult } from "@/server/services/lead-results";
 import { uploadFile } from "@/server/services/uploads";
 import { submitTask } from "@/server/services/submission";
 import { newSession, PNG, setupTestEnv } from "./helpers";
@@ -75,8 +75,11 @@ describe("ordinary Signal success status", () => {
     }
     expect((await PATCH(request(lead.id, "unknown"), context(lead.id))).status).toBe(400);
     expect((await getVisitorState(sid)).outcome).toBeNull();
-    expect(await env.db.select().from(schema.leadResults)).toEqual([]);
-    expect(await env.db.select().from(schema.leadResultHistory)).toEqual([]);
+    expect((await getLeadResult(lead.id)).result).toMatchObject({ qualification: "suitable", closure: "signal_working" });
+    const report = await getLeadResults({ period: "7d" });
+    expect(report.totals).toMatchObject({ leads: 1, success: 1, suitable: 1, reviewed: 1 });
+    expect(report.daily.reduce((sum, day) => sum + day.success, 0)).toBe(1);
+    expect((await getLeadResultsSuccesses({ period: "7d" })).leads.items.map(item => item.id)).toEqual([lead.id]);
   });
 
   it("removes successful leads from unfinished counts and badges while preserving replies and chat", async () => {
@@ -98,7 +101,7 @@ describe("ordinary Signal success status", () => {
     expect((await listLeads({ queue: "unfinished", inactiveMinutes: "0" })).items.map(item => item.id)).toEqual([lead.id]);
   });
 
-  it("does not change a submitted task, instant acknowledgement, candidate result, or owner-only decision", async () => {
+  it("updates results through the shared selector while protecting private notes, task, acknowledgement and candidate outcome", async () => {
     const { sid, lead } = await candidate();
     const file = await uploadFile({ sessionId: sid, purpose: "submission", uploadedBy: "visitor", file: { name: "shot.png", type: "image/png", buffer: PNG } });
     await submitTask(sid, { idempotencyKey: randomUUID(), fileIds: [file.id], review: "Opis wykonanego zadania testowego." });
@@ -107,7 +110,7 @@ describe("ordinary Signal success status", () => {
     const jobs = await env.db.select().from(schema.scheduledMessages);
     const owner = await authenticate(false);
     await updateLeadResult(lead.id, owner.id, {
-      qualification: "unreviewed", closure: "open", reason: null, comment: "PRIVATE_OWNER_REVIEW",
+      reason: null, comment: "PRIVATE_OWNER_REVIEW",
       responsibleAdminId: owner.id, expectedVersion: 0,
     });
     const privateBefore = await env.db.select().from(schema.leadResults);
@@ -118,14 +121,64 @@ describe("ordinary Signal success status", () => {
     expect(await response.text()).not.toContain("PRIVATE_OWNER_REVIEW");
     expect((await privateResultGET(new Request(`https://example.com/api/admin/leads/${lead.id}/result`), context(lead.id))).status).toBe(403);
     expect(JSON.stringify(await listLeads({ status: "signal_working" }))).not.toContain("PRIVATE_OWNER_REVIEW");
-    expect(await env.db.select().from(schema.leadResults)).toEqual(privateBefore);
-    expect(await env.db.select().from(schema.leadResultHistory)).toEqual(historyBefore);
+    const privateAfter = await getLeadResult(lead.id);
+    expect(privateAfter.result).toMatchObject({ comment: privateBefore[0].comment,
+      reason: privateBefore[0].reason, responsibleAdminId: privateBefore[0].responsibleAdminId,
+      qualification: "suitable", closure: "signal_working" });
+    expect(privateAfter.history.length).toBe(historyBefore.length + 1);
     const after = await getVisitorState(sid);
     expect(after.submission).toEqual(before.submission);
     expect(after.outcome).toBeNull();
     expect((await getVisitorChat(sid)).messages).toEqual(messages);
     expect(await env.db.select().from(schema.scheduledMessages)).toEqual(jobs);
     expect((await listLeads({ queue: "submitted", status: "signal_working" })).items[0]).toMatchObject({ id: lead.id, stage: "submitted" });
+  });
+
+  it("recalculates both lists and all report totals after reopening; repeated saves never duplicate a success", async () => {
+    const { lead } = await candidate();
+    await authenticate(true);
+    for (let i = 0; i < 3; i++) expect((await PATCH(request(lead.id), context(lead.id))).status).toBe(200);
+    const closed = await getLeadResult(lead.id);
+    expect((await getLeadResults({ period: "7d" })).totals.success).toBe(1);
+    expect((await getLeadResultsSuccesses({ period: "7d" })).leads.total).toBe(1);
+    expect((await PATCH(request(lead.id, "in_progress"), context(lead.id))).status).toBe(200);
+    expect((await listLeads({ status: "signal_working" })).items).toEqual([]);
+    const reopened = await getLeadResults({ period: "7d" });
+    expect(reopened.totals).toMatchObject({ leads: 1, success: 0, closed: 0 });
+    expect(reopened.closures.signal_working).toBe(0);
+    expect(reopened.sources.every(source => source.success === 0)).toBe(true);
+    expect(reopened.daily.every(day => day.success === 0)).toBe(true);
+    expect((await getLeadResultsSuccesses({ period: "7d" })).leads.total).toBe(0);
+    expect((await getLeadResult(lead.id)).result.version).toBe(closed.result.version + 1);
+  });
+
+  it("rejects old hidden outcome fields and stale private notes instead of overwriting the shared status", async () => {
+    const { lead } = await candidate();
+    const owner = await authenticate(false);
+    const old = await getLeadResult(lead.id);
+    await PATCH(request(lead.id), context(lead.id));
+    const oldPayload = { expectedVersion: old.result.version, qualification: "unreviewed", closure: "open",
+      comment: "Stale tab", reason: null, responsibleAdminId: null };
+    const response = await privateResultPATCH(new Request(`https://example.com/api/admin/leads/${lead.id}/result`, {
+      method: "PATCH", headers: { host: "example.com", origin: "https://example.com", "content-type": "application/json" },
+      body: JSON.stringify(oldPayload),
+    }), context(lead.id));
+    expect(response.status).toBe(400);
+    await expect(updateLeadResult(lead.id, owner.id, {
+      expectedVersion: old.result.version, comment: "Stale notes", reason: null, responsibleAdminId: null,
+    })).rejects.toMatchObject({ status: 409 });
+    expect((await getLeadDetails(lead.id)).lead.status).toBe("signal_working");
+    expect((await getLeadResults({ period: "7d" })).totals.success).toBe(1);
+  });
+
+  it.each(["completed", "candidate_declined", "no_contact"])("keeps %s out of unfinished queue without counting it as success", async status => {
+    const { lead } = await candidate();
+    await authenticate(true);
+    expect((await PATCH(request(lead.id, status), context(lead.id))).status).toBe(200);
+    expect((await listLeads({ queue: "unfinished", inactiveMinutes: "0" })).items).toEqual([]);
+    const report = await getLeadResults({ period: "7d" });
+    expect(report.totals).toMatchObject({ leads: 1, success: 0, closed: 1 });
+    expect((await getLeadResultsSuccesses({ period: "7d" })).leads.items).toEqual([]);
   });
 
   it("adds the PostgreSQL enum value without changing existing statuses or lead rows", async () => {

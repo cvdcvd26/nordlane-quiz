@@ -125,6 +125,29 @@ describe("consented Meta quiz funnel", () => {
     expect(calls.mock.calls.filter(([m]) => m === "trackSingleCustom")).toHaveLength(1);
   });
 
+  it("keeps PageViews on email account restoration without replaying completed conversions", async () => {
+    consent.writeCookieConsent(true, true);
+    browser.history.replaceState({}, "", paths[3]);
+    tracker.updateMetaQuizStage({ scope, step: 3, progress: { contactSaved: true, questionsComplete: true, submitted: true }, restoredThrough: 3 });
+    const calls = sdkReady(); await flush();
+    expect(calls).toHaveBeenCalledWith("trackSingle", "1823278402432437", "PageView");
+    expect(calls.mock.calls.filter(([m]) => m === "trackSingleCustom")).toHaveLength(0);
+    expect(browser.localStorage.length).toBe(0);
+  });
+
+  it("counts a newly submitted task after email login restored only the questions", async () => {
+    consent.writeCookieConsent(true, true);
+    browser.history.replaceState({}, "", paths[2]);
+    tracker.updateMetaQuizStage({ scope, step: 2, progress: { contactSaved: true, questionsComplete: true, submitted: false }, restoredThrough: 2 });
+    const calls = sdkReady(); await flush();
+    browser.history.replaceState({}, "", paths[3]);
+    tracker.updateMetaQuizStage({ scope, step: 3, progress: { contactSaved: true, questionsComplete: true, submitted: true }, restoredThrough: 2 });
+    await flush();
+    expect(calls.mock.calls.filter(([m]) => m === "trackSingleCustom")).toEqual([
+      ["trackSingleCustom", "1823278402432437", "TaskSubmitted", { step: 4 }],
+    ]);
+  });
+
   it("does not save a marker on script failure and can retry on a later visit", async () => {
     consent.writeCookieConsent(true, true); enter(2);
     script().dispatchEvent(new browser.Event("error")); await flush();

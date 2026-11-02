@@ -11,6 +11,7 @@ const visitorScopes = new Set([
   "session", "contact", "quiz.answer", "submit", "uploads", "uploads.delete",
   "chat.get", "chat.post", "testimonials.list", "files.get",
   "visitor.activity", "visitor.attribution", "revisions.get", "revisions.post", "revisions.upload",
+  "candidate.email.request", "candidate.email.verify", "candidate.email.session", "candidate.email.logout", "candidate.read",
 ]);
 
 export const json = (data: unknown, status = 200) =>

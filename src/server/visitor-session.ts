@@ -5,6 +5,7 @@ import { and, eq, gt } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { unauthorized } from "./errors";
 import { content } from "@/config/content";
+import { getCandidateAuthenticatedSessionId } from "./candidate-email-auth";
 
 const COOKIE = "nl_visitor";
 const MAX_AGE = 60 * 60 * 24 * 180; // 180 days
@@ -26,6 +27,8 @@ async function findByToken(token: string | undefined) {
  * 256-bit token in an httpOnly cookie; the server maps its hash to the session.
  */
 export async function getVisitorSessionId(): Promise<string | null> {
+  const candidateSession = await getCandidateAuthenticatedSessionId();
+  if (candidateSession) return candidateSession;
   const jar = await cookies();
   return findByToken(jar.get(COOKIE)?.value);
 }
@@ -38,7 +41,7 @@ export async function requireVisitorSessionId(): Promise<string> {
 
 export async function getOrCreateVisitorSessionId(ip = "unknown"): Promise<string> {
   const jar = await cookies();
-  const existing = await findByToken(jar.get(COOKIE)?.value);
+  const existing = await getCandidateAuthenticatedSessionId() ?? await findByToken(jar.get(COOKIE)?.value);
   if (existing) {
     await db()
       .update(schema.visitorSessions)

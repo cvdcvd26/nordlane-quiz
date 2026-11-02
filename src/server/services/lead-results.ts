@@ -3,16 +3,16 @@ import { z, ZodError } from "zod";
 import { unstable_rethrow } from "next/navigation";
 import { db, schema } from "@/db";
 import {
-  leadClosures, leadQualifications, leadResultReasons, leadResultsConfig,
+  leadResultReasons, leadResultsConfig,
   type LeadResultDetail, type LeadResultState, type LeadResultsReport, type LeadResultsSource, type LeadResultsSuccessList,
 } from "@/config/lead-results";
 import { parseAnalyticsRange } from "./analytics";
 import { AppError, badRequest, conflict, notFound } from "../errors";
+import { lockVisitor } from "../session-lock";
+import { effectiveLeadResult, resultQualificationSql, resultClosureSql, resultClosedAtSql, saveResultSnapshot } from "./lead-status";
 
 const updateSchema = z.object({
   expectedVersion: z.number().int().min(0).max(2_147_483_646),
-  qualification: z.enum(leadQualifications),
-  closure: z.enum(leadClosures),
   reason: z.enum(leadResultReasons).nullable(),
   comment: z.string().trim().max(leadResultsConfig.commentLimit),
   responsibleAdminId: z.uuid().nullable(),
@@ -27,27 +27,15 @@ const reportSchema = z.object({
   pageSize: positiveString.refine(n => n <= leadResultsConfig.maxPageSize).default(leadResultsConfig.pageSize),
 }).strict();
 
-const defaultState = (): LeadResultState => ({
-  qualification: "unreviewed", closure: "open", reason: null, comment: "", responsibleAdminId: null,
-  updatedById: null, version: 0, updatedAt: null, closedAt: null,
-});
-type ResultRow = typeof schema.leadResults.$inferSelect;
-function state(row: ResultRow | undefined): LeadResultState {
-  if (!row) return defaultState();
-  return {
-    qualification: row.qualification as LeadResultState["qualification"], closure: row.closure as LeadResultState["closure"],
-    reason: row.reason as LeadResultState["reason"], comment: row.comment, responsibleAdminId: row.responsibleAdminId,
-    updatedById: row.updatedBy, version: row.version, updatedAt: row.updatedAt.toISOString(), closedAt: row.closedAt?.toISOString() ?? null,
-  };
-}
 function validLeadId(leadId: number) {
   if (!Number.isSafeInteger(leadId) || leadId <= 0) throw notFound();
 }
-/** Fixed SQL aliases only. Defaults describe an unreviewed record, never a legacy status inference. */
+/** One canonical business status for list, detail, totals and graphs. */
 const resultJson = sql`jsonb_build_object(
-  'qualification', coalesce(r.qualification, 'unreviewed'), 'closure', coalesce(r.closure, 'open'),
+  'status', l.status,
+  'qualification', ${resultQualificationSql}, 'closure', ${resultClosureSql},
   'reason', r.reason, 'comment', coalesce(r.comment, ''), 'responsibleAdminId', r.responsible_admin_id,
-  'updatedById', r.updated_by, 'version', coalesce(r.version, 0), 'updatedAt', r.updated_at, 'closedAt', r.closed_at
+  'updatedById', r.updated_by, 'version', coalesce(r.version, 0), 'updatedAt', r.updated_at, 'closedAt', ${resultClosedAtSql}
 )`;
 const adminsJson = sql`(select coalesce(jsonb_agg(jsonb_build_object('id', au.id, 'email', au.email) order by au.email, au.id), '[]'::jsonb) from admin_users au)`;
 function canonicalState(value: LeadResultState): LeadResultState {
@@ -63,7 +51,7 @@ async function getLeadResultImpl(leadId: number): Promise<LeadResultDetail> {
   validLeadId(leadId);
   // A single statement keeps current version and recent history on the same snapshot.
   const response = await db().execute(sql`
-    select l.id as "leadId", r.lead_id is not null as "hasSavedResult", ${resultJson} as result,
+    select l.id as "leadId", l.status, r.lead_id is not null as "hasSavedResult", ${resultJson} as result,
       (select coalesce(jsonb_agg(jsonb_build_object('id', h.id, 'previous', h.previous, 'next', h.next,
         'actor', case when au.id is null then null else jsonb_build_object('id', au.id, 'email', au.email) end,
         'createdAt', h.created_at) order by h.version desc), '[]'::jsonb)
@@ -81,35 +69,23 @@ async function updateLeadResultImpl(leadId: number, adminId: string, input: unkn
   validLeadId(leadId);
   const parsed = updateSchema.parse(input);
   if (!z.uuid().safeParse(adminId).success) throw badRequest("Invalid administrator.");
-  // Closing outcome is authoritative, and an unsuitable lead always has its matching closure.
-  let qualification = parsed.qualification;
-  let closure = parsed.closure;
-  if (closure === "signal_working") qualification = "suitable";
-  else if (closure === "not_suitable") qualification = "unsuitable";
-  if (qualification === "unsuitable") closure = "not_suitable";
+  const [initial] = await db().select({ sessionId: schema.leads.sessionId }).from(schema.leads).where(eq(schema.leads.id, leadId));
+  if (!initial) throw notFound();
   await db().transaction(async tx => {
-    // Serialize even first saves (there may not yet be a result row to lock), and deletion.
-    const [lead] = await tx.select({ id: schema.leads.id }).from(schema.leads).where(eq(schema.leads.id, leadId)).for("update");
+    await lockVisitor(tx, initial.sessionId);
+    const [lead] = await tx.select().from(schema.leads).where(eq(schema.leads.id, leadId)).for("update");
     if (!lead) throw notFound();
     const [current] = await tx.select().from(schema.leadResults).where(eq(schema.leadResults.leadId, leadId));
-    const previous = state(current);
+    const previous = effectiveLeadResult(lead, current);
     if (previous.version !== parsed.expectedVersion) throw conflict("This result changed. Reload before saving.", "lead_result_changed");
     if (parsed.responsibleAdminId) {
-      // Temporary accesses represent actual operators too; manager avatars are never staff assignments.
       const [admin] = await tx.select({ id: schema.adminUsers.id }).from(schema.adminUsers)
         .where(eq(schema.adminUsers.id, parsed.responsibleAdminId)).for("key share");
       if (!admin) throw badRequest("Choose an existing administrator.", "lead_result_responsible");
     }
-    if (previous.qualification === qualification && previous.closure === closure && previous.reason === parsed.reason &&
-      previous.comment === parsed.comment && previous.responsibleAdminId === parsed.responsibleAdminId) return;
-    const closedAt = closure === "open" || closure === "data_received" ? null
-      : previous.closure === closure && previous.closedAt ? new Date(previous.closedAt) : now;
-    const values = { qualification, closure, reason: parsed.reason, comment: parsed.comment,
-      responsibleAdminId: parsed.responsibleAdminId, updatedBy: adminId, version: previous.version + 1, updatedAt: now, closedAt };
-    const [saved] = current
-      ? await tx.update(schema.leadResults).set(values).where(eq(schema.leadResults.leadId, leadId)).returning()
-      : await tx.insert(schema.leadResults).values({ leadId, ...values }).returning();
-    await tx.insert(schema.leadResultHistory).values({ leadId, previous, next: state(saved), actorId: adminId, version: saved.version, createdAt: now });
+    if (previous.reason === parsed.reason && previous.comment === parsed.comment && previous.responsibleAdminId === parsed.responsibleAdminId) return;
+    await saveResultSnapshot(tx, leadId, previous, { ...previous, reason: parsed.reason, comment: parsed.comment,
+      responsibleAdminId: parsed.responsibleAdminId }, adminId, now);
   });
   return getLeadResultImpl(leadId);
 }
@@ -141,7 +117,7 @@ async function getLeadResultsImpl(input: Record<string, string | undefined>, now
     with base as (
       select l.id, vc.name, vc.phone, l.status, l.created_at as "createdAt",
         to_char(l.created_at at time zone 'Europe/Warsaw', 'YYYY-MM-DD') as day,
-        coalesce(r.qualification, 'unreviewed') as qualification, coalesce(r.closure, 'open') as closure,
+        ${resultQualificationSql} as qualification, ${resultClosureSql} as closure,
         r.reason, ${resultJson} as result, r.lead_id is not null as "hasSavedResult",
         r.responsible_admin_id as responsible_id, au.email as responsible_email,
         coalesce(a.consent_all, false) as attributed,
@@ -194,7 +170,8 @@ async function getLeadResultsImpl(input: Record<string, string | undefined>, now
       (select jsonb_build_object('open', count(*) filter(where closure = 'open')::int,
         'data_received', count(*) filter(where closure = 'data_received')::int,
         'signal_working', count(*) filter(where closure = 'signal_working')::int, 'not_suitable', count(*) filter(where closure = 'not_suitable')::int,
-        'candidate_declined', count(*) filter(where closure = 'candidate_declined')::int, 'no_contact', count(*) filter(where closure = 'no_contact')::int) from cohort) as closures,
+        'candidate_declined', count(*) filter(where closure = 'candidate_declined')::int, 'no_contact', count(*) filter(where closure = 'no_contact')::int,
+        'completed', count(*) filter(where closure = 'completed')::int) from cohort) as closures,
       (select coalesce(jsonb_agg(to_jsonb(daily) order by date), '[]'::jsonb) from daily) as daily,
       (select coalesce(jsonb_agg(to_jsonb(sources) order by (kind = 'other'), leads desc, kind, source, medium, campaign), '[]'::jsonb) from sources) as sources,
       (select coalesce(jsonb_agg(to_jsonb(source_options) order by kind, source, medium, campaign), '[]'::jsonb) from source_options) as "sourceOptions",

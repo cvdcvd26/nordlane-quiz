@@ -1,5 +1,6 @@
 "use client";
 
+import type { LeadStatus } from "@/config/content";
 import { useState } from "react";
 import { ChevronDown, Target } from "lucide-react";
 import { useAdminI18n } from "./i18n";
@@ -8,13 +9,13 @@ import LeadResultEditor from "./LeadResultEditor";
 import { leadResultsCopy } from "@/config/lead-results-copy";
 
 const copy = {
-  ru: { title: "Результат по лиду", hint: "Внутренняя оценка и закрытие · только главный администратор" },
-  pl: { title: "Wynik leada", hint: "Wewnętrzna ocena i zamknięcie · tylko główny administrator" },
-  en: { title: "Lead result", hint: "Internal qualification and closure · main administrator only" },
+  ru: { title: "Внутренние заметки", hint: "Причина, комментарий и история · только главный администратор" },
+  pl: { title: "Notatki wewnętrzne", hint: "Przyczyna, komentarz i historia · tylko główny administrator" },
+  en: { title: "Internal notes", hint: "Reason, comment and history · main administrator only" },
 };
 
 /** Additional administrators do not mount the editor or request any result data. */
-export default function OwnerLeadResultPanel({ leadId }: { leadId: string }) {
+export default function OwnerLeadResultPanel({ leadId, currentStatus }: { leadId: string; currentStatus?: LeadStatus }) {
   const owner = useOwnerAdmin();
   const { lang } = useAdminI18n();
   const [open, setOpen] = useState(false);
@@ -31,6 +32,6 @@ export default function OwnerLeadResultPanel({ leadId }: { leadId: string }) {
       <span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold text-adm-ink">{c.title}</span><span className="block text-[11px] text-adm-ink-3">{c.hint}</span></span>
       <ChevronDown aria-hidden className={`size-4 shrink-0 text-adm-ink-3 transition-transform ${open ? "rotate-180" : ""}`} />
     </button>
-    <div id={target} hidden={!open} className="border-t border-adm-line p-4">{open && <LeadResultEditor leadId={leadId} standalone={false} onDirtyChange={setDirty} />}</div>
+    <div id={target} hidden={!open} className="border-t border-adm-line p-4">{open && <LeadResultEditor leadId={leadId} currentStatus={currentStatus} standalone={false} onDirtyChange={setDirty} />}</div>
   </section>;
 }

@@ -1,4 +1,5 @@
 import { lockVisitor } from "../session-lock";
+import { changeLeadStatus } from "./lead-status";
 import { isDeepStrictEqual } from "node:util";
 import { and, asc, desc, eq, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -15,6 +16,7 @@ import { getManager } from "./managers";
 import { candidateOutcomeConfig } from "@/config/candidate-outcome";
 import { toCandidateOutcome } from "./candidate-outcome";
 import { getReplyQueueState, replyQueueFields } from "./reply-queue";
+import { recordAdminMessageEmail, enqueueCandidateEmail } from "./candidate-email-notifications";
 
 const listSchema = z.object({
   q: z.string().trim().max(200).optional().default(""),
@@ -47,7 +49,7 @@ export async function listLeads(input: Record<string, string | undefined>) {
   const answerCount = sql<number>`(select count(*)::int from quiz_answers qa where qa.session_id = ${leadSession} and qa.question_key in ${QUESTION_KEYS})`;
   const lastSeenAt = sql<Date>`(select vs.last_seen_at from visitor_sessions vs where vs.id = ${leadSession})`.mapWith(value => new Date(value));
   const now = new Date();
-  const unfinished = sql`not (${submitted}) and ${L.status} not in ('signal_working', 'completed', 'rejected')`;
+  const unfinished = sql`not (${submitted}) and ${L.status} not in ('signal_working', 'completed', 'rejected', 'candidate_declined', 'no_contact')`;
   const defaultInactive = sql`${lastSeenAt} <= ${new Date(now.getTime() - 30 * 60_000)}`;
   const isUnfinished = sql<boolean>`(${unfinished}) and (${defaultInactive})`;
 
@@ -226,17 +228,9 @@ export async function getLeadDetails(leadId: number, changesAfter?: string) {
   };
 }
 
-export async function updateLeadStatus(leadId: number, input: unknown) {
-  const { status } = z.object({ status: z.enum(LEAD_STATUSES as [string, ...string[]]) }).parse(input);
-  const lead = await findLead(leadId);
-  await db().transaction(async (tx) => {
-    await lockVisitor(tx, lead.sessionId);
-    await tx.update(schema.leads).set({
-      status: status as (typeof LEAD_STATUSES)[number],
-      ...(status !== "rejected" ? { candidateResultBody: null, candidateResultPublishedAt: null } : {}),
-      updatedAt: new Date(),
-    }).where(eq(schema.leads.id, leadId));
-  });
+export async function updateLeadStatus(leadId: number, input: unknown, actorId: string | null = null, now = new Date()) {
+  const { status } = z.object({ status: z.enum(LEAD_STATUSES as [string, ...string[]]) }).strict().parse(input);
+  await changeLeadStatus(leadId, status as (typeof LEAD_STATUSES)[number], actorId, now);
 }
 
 export const candidateOutcomeActionSchema = z.discriminatedUnion("action", [
@@ -297,7 +291,7 @@ export async function postAdminMessage(leadId: number, input: unknown) {
   const conv = await ensureConversation(db(), lead.sessionId);
 
   const now = new Date();
-  await db().transaction(async (tx) => {
+  const emailJobId = await db().transaction(async (tx) => {
     await lockVisitor(tx, lead.sessionId);
     const [inserted] = await tx
       .insert(schema.messages)
@@ -310,11 +304,15 @@ export async function postAdminMessage(leadId: number, input: unknown) {
       if (existing?.deletedAt || (existing?.changeRevision ?? 0) > 0) return;
       if (!existing || existing.sender !== "admin" || existing.body !== text || !isDeepStrictEqual(existing.bodyRich, formatted))
         throw conflict("This message ID was already used for different content.", "message_changed");
-      return;
+      return recordAdminMessageEmail(tx, lead.sessionId, existing.id, now);
     }
     await attachFiles(tx, { fileIds, sessionId: lead.sessionId, messageId: inserted.id, uploadedBy: "admin" });
     await touchConversation(tx, conv.id, now);
+    return recordAdminMessageEmail(tx, lead.sessionId, inserted.id, now);
   });
+  // Delivery failures never turn a saved chat reply into a failed send. The
+  // durable outbox retains the notification for queue recovery.
+  if (emailJobId) await enqueueCandidateEmail(emailJobId).catch(() => console.warn("candidate_email.enqueue_pending"));
   return loadMessages(conv.id);
 }
 

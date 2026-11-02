@@ -22,6 +22,8 @@ export function MessageList({
   manager,
   actions,
   messageExtension,
+  onReadThrough,
+  readTrackingActive = false,
 }: {
   messages: LocalMessage[];
   viewer: "visitor" | "admin";
@@ -35,6 +37,9 @@ export function MessageList({
   actions?: (message: ChatMessage) => ReactNode;
   /** Private administrator-only additions, never rendered in the visitor feed. */
   messageExtension?: (message: ChatMessage) => ReactNode;
+  /** Visitor-only read receipt, emitted after reaching the visible end of the feed. */
+  onReadThrough?: (sequence: string) => void;
+  readTrackingActive?: boolean;
 }) {
   const adm = appearance === "admin";
   const operator = manager ?? defaultManager;
@@ -43,6 +48,34 @@ export function MessageList({
   const lastMessageId = messages.at(-1)?.id;
   const lastSequence = messages.at(-1)?.sequence;
   const previousSequence = useRef<string | undefined>(undefined);
+  const lastAdminSequence = messages.findLast(message => message.sender === "admin" && !message.local)?.sequence;
+  useEffect(() => {
+    if (viewer !== "visitor" || !readTrackingActive || !onReadThrough || !lastAdminSequence || !end.current || typeof IntersectionObserver === "undefined") return;
+    let visible = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = () => {
+      clearTimeout(timer);
+      if (!visible || document.visibilityState !== "visible") return;
+      timer = setTimeout(() => {
+        if (visible && document.visibilityState === "visible") onReadThrough(lastAdminSequence);
+      }, 1000);
+    };
+    // The viewport root also respects the chat's scrolling/clipping ancestors.
+    // Merely polling or expanding a chat below the viewport does not count as reading.
+    const observer = new IntersectionObserver(entries => {
+      visible = entries.some(entry => entry.isIntersecting && entry.intersectionRatio >= 1);
+      check();
+    }, { threshold: 1 });
+    observer.observe(end.current);
+    const retry = setInterval(check, 30_000);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(retry);
+      observer.disconnect();
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [lastAdminSequence, onReadThrough, readTrackingActive, viewer]);
   useEffect(() => {
     const previous = previousSequence.current;
     previousSequence.current = lastSequence;
@@ -166,7 +199,7 @@ export function MessageList({
           </li>
         );
       })}
-      <li ref={end} aria-hidden />
+      <li ref={end} className="h-px" aria-hidden />
     </ol>
   );
 }

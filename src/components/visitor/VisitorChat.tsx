@@ -19,12 +19,13 @@ type ChatResponse = MessagePage & { attachmentsEnabled: boolean; manager: Manage
  * Built-in chat. New messages arrive by polling every few seconds (paused while the tab is hidden).
  * Sending is idempotent: a retry after a network error reuses the same clientMessageId.
  */
-export function VisitorChat({ onOutcome, acknowledgement = null, closed = false, collapsible = false, active = true }: {
+export function VisitorChat({ onOutcome, acknowledgement = null, closed = false, collapsible = false, active = true, emailReadTracking = false }: {
   onOutcome?: (outcome: CandidateOutcome | null) => void;
   acknowledgement?: ChatMessage | null;
   closed?: boolean;
   collapsible?: boolean;
   active?: boolean;
+  emailReadTracking?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [unread, setUnread] = useState(0);
@@ -65,6 +66,28 @@ export function VisitorChat({ onOutcome, acknowledgement = null, closed = false,
   const known = useRef<Set<string> | null>(null);
   const acknowledged = useRef(new Set<string>());
   const soundOn = useRef(true);
+  const readThrough = useRef(BigInt(0));
+  const readInFlight = useRef(false);
+  const readWanted = useRef(BigInt(0));
+  const markRead = useCallback(async (sequence: string) => {
+    if (!/^[1-9]\d*$/.test(sequence)) return;
+    const next = BigInt(sequence);
+    if (next > readWanted.current) readWanted.current = next;
+    if (readInFlight.current || readWanted.current <= readThrough.current) return;
+    readInFlight.current = true;
+    try {
+      while (readWanted.current > readThrough.current) {
+        const target = readWanted.current;
+        await api("/api/candidate/read", { method: "POST", json: { sequence: target.toString() } });
+        readThrough.current = target;
+      }
+    } catch {
+      // The next visible-feed observation can retry. Failed receipts must never
+      // mark messages as read locally or interfere with the conversation.
+    } finally {
+      readInFlight.current = false;
+    }
+  }, []);
 
   const notify = useCallback((incoming: ChatMessage[], silent = false) => {
     if (known.current === null) {
@@ -282,7 +305,8 @@ export function VisitorChat({ onOutcome, acknowledgement = null, closed = false,
         {before && <button type="button" className="btn btn-ghost mb-4" disabled={loadingEarlier} onClick={() => void loadEarlier()}>{content.chat.loadEarlier}</button>}
         {historyError && <p role="alert" className="mb-3 text-sm text-danger">{historyError}</p>}
         {loaded || acknowledgement ? (
-          <MessageList messages={all} viewer="visitor" manager={manager} onRetry={(m) => void deliver(m)} emptyText={collapsible ? content.taskChat.waiting : content.chat.waiting} />
+          <MessageList messages={all} viewer="visitor" manager={manager} onRetry={(m) => void deliver(m)} emptyText={collapsible ? content.taskChat.waiting : content.chat.waiting}
+            readTrackingActive={emailReadTracking && active && open && !closed} onReadThrough={markRead} />
         ) : (
           <div className="space-y-3" aria-hidden>
             <div className="skeleton h-12 w-2/3 rounded-2xl" />

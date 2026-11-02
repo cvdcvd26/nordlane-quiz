@@ -5,7 +5,8 @@ import { content, QUESTION_KEYS } from "@/config/content";
 import { reviewConfig } from "@/config/settings";
 import type { CandidateOutcome } from "@/config/candidate-outcome";
 import { api, newId, type ChatMessage, type PublicFile } from "@/lib/api";
-import { QUIZ_HISTORY_STEP, QUIZ_STEP_PATHS, resolveQuizStep, type QuizProgress } from "@/lib/quiz-steps";
+import { QUIZ_HISTORY_STEP, QUIZ_STEP_PATHS, resolveQuizStep, latestQuizStep, type QuizProgress } from "@/lib/quiz-steps";
+import { observeCandidateIdentity } from "@/lib/candidate-identity";
 import { Lane, type Step } from "./Lane";
 import { Backdrop } from "../visual/Backdrop";
 import { HalloweenSeason } from "../visual/HalloweenSeason";
@@ -21,9 +22,11 @@ import { VisitorTelemetry } from "./VisitorTelemetry";
 import { MetaQuizPixel } from "./MetaQuizPixel";
 import { TaskRevisionNotice, TaskRevisionPanel } from "./TaskRevisionPanel";
 import type { TaskRevision } from "@/config/task-revisions";
+import { CandidateEmailAccess, type CandidateEmailState } from "./CandidateEmailAccess";
 
 type SessionState = {
   marketingScope: string;
+  candidateEmail?: CandidateEmailState;
   answers: Record<string, string>;
   contact: { name: string; phone: string; telegram: string | null } | null;
   submission: { id: string; submittedAt: string } | null;
@@ -64,6 +67,10 @@ export function QuizApp() {
   const [submissionAcknowledgement, setSubmissionAcknowledgement] = useState<ChatMessage | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [step, setStep] = useState<Step>(0);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [restoredThrough, setRestoredThrough] = useState(-1);
+  const restoredProgressCaptured = useRef(false);
+  const accountButton = useRef<HTMLButtonElement>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const answersRef = useRef<Record<string, string>>({});
   const answerSaving = useRef(false);
@@ -129,6 +136,7 @@ export function QuizApp() {
       api<SessionState>("/api/session")
         .then((s) => {
           setState(s);
+          if (s.candidateEmail?.enabled && new URLSearchParams(window.location.search).get("account") === "1") setAccountOpen(true);
           setChatUnlocked(Boolean(s.submission || (s.contact && allAnswered(s.answers))));
           setOutcome(s.outcome);
           setAnswers(s.answers);
@@ -137,6 +145,10 @@ export function QuizApp() {
             setContact({ name: s.contact.name, phone: displayPhone(s.contact.phone), telegram: s.contact.telegram ?? "" });
           setItems(s.files.map(fromServer));
           progress.current = { contactSaved: Boolean(s.contact), questionsComplete: allAnswered(s.answers), submitted: Boolean(s.submission) };
+          if (!restoredProgressCaptured.current) {
+            restoredProgressCaptured.current = true;
+            if (s.candidateEmail?.verified) setRestoredThrough(latestQuizStep(progress.current));
+          }
           const requested = resolveQuizStep(window.location.pathname, progress.current, window.history.state?.[QUIZ_HISTORY_STEP]);
           goTo(requested, "replace", false);
         })
@@ -150,7 +162,9 @@ export function QuizApp() {
   };
 
   useEffect(() => {
-    void fetchSession();
+    const identity = observeCandidateIdentity(() => window.location.replace("/"));
+    if (identity.isCurrent()) void fetchSession();
+    return () => identity.dispose();
   }, [fetchSession]);
 
   useEffect(() => {
@@ -201,6 +215,10 @@ export function QuizApp() {
   /** Step 1 "Dalej": validate, save the contact on the server, then show the questions. */
   const saveContact = async () => {
     setContactError(null);
+    if (state?.candidateEmail?.enabled && !state.candidateEmail.verified && !state.contact) {
+      document.getElementById("candidate-email-access")?.focus();
+      return setContactError("Najpierw potwierdź adres e-mail, aby kontynuować.");
+    }
     const errors = validateContact(contact);
     setContactErrors(errors);
     const firstBad = (Object.keys(errors) as (keyof ContactDraft)[]).find((k) => errors[k]);
@@ -262,10 +280,26 @@ export function QuizApp() {
     }
   };
 
+  const emailRequired = Boolean(state?.candidateEmail?.enabled && !state.candidateEmail.verified && !state.contact);
+  const emailAccess = state?.candidateEmail?.enabled ? <CandidateEmailAccess
+    state={state.candidateEmail}
+    existingApplication={Boolean(state.contact)}
+    onAccessChanged={() => window.location.replace("/")}
+  /> : null;
+
+  const openAccount = () => {
+    setAccountOpen(true);
+    requestAnimationFrame(() => {
+      const account = document.getElementById("candidate-email-access");
+      account?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+      account?.focus({ preventScroll: true });
+    });
+  };
+
   return (
     <>
     <VisitorTelemetry ready={Boolean(state)} step={step} />
-    <MetaQuizPixel scope={state?.marketingScope ?? null} step={step} contactSaved={Boolean(state?.contact)} questionsComplete={chatUnlocked} submitted={Boolean(state?.submission)} />
+    <MetaQuizPixel scope={state?.marketingScope ?? null} step={step} contactSaved={Boolean(state?.contact)} questionsComplete={chatUnlocked} submitted={Boolean(state?.submission)} restoredThrough={restoredThrough} />
     <div className="min-h-dvh overflow-x-clip" data-outcome={outcome?.status}>
       <Backdrop />
       {/* Top bar */}
@@ -275,6 +309,7 @@ export function QuizApp() {
             <LogoMark className="grid size-10 shrink-0 place-items-center rounded-xl border border-paint/30 bg-gradient-to-br from-[#133a2b] to-surface-2 shadow-[0_0_20px_#2ee6a014]" />
             <span className="display relative z-10 text-[1.05rem] font-bold">{content.brand.name}</span>
           </p>
+          {state?.candidateEmail?.enabled && <button ref={accountButton} type="button" onClick={openAccount} className="min-h-10 rounded-full border border-paint/30 bg-paint/5 px-3 text-xs font-semibold text-cyan transition-colors hover:bg-paint/10 sm:px-4 sm:text-sm" aria-controls="candidate-email-access" aria-expanded={step === 0 || accountOpen}>Moje zgłoszenie</button>}
         </div>
         {/* Mobile progress */}
         <div className="mx-auto max-w-6xl px-4 pb-4 sm:px-6 md:hidden">
@@ -317,8 +352,15 @@ export function QuizApp() {
               saving={contactSaving}
               error={contactError}
               onContinue={() => void saveContact()}
+              emailAccess={emailAccess}
+              emailRequired={emailRequired}
             />
           )}
+
+          {state && step > 0 && accountOpen && emailAccess && <div className="mb-8">
+            {emailAccess}
+            <button type="button" className="mt-3 min-h-10 text-sm font-semibold text-ink-soft" onClick={() => { setAccountOpen(false); accountButton.current?.focus(); }}>Zamknij ustawienia konta</button>
+          </div>}
 
           {state && step === 1 && (
             <StepQuestions
@@ -352,7 +394,7 @@ export function QuizApp() {
             </section>
           )}
           {state && chatUnlocked && <div hidden={step < 2 || Boolean(outcome)} className="mt-6">
-            <VisitorChat onOutcome={setOutcome} acknowledgement={submissionAcknowledgement} closed={Boolean(outcome)} collapsible={step !== 3} active={step >= 2} />
+            <VisitorChat onOutcome={setOutcome} acknowledgement={submissionAcknowledgement} closed={Boolean(outcome)} collapsible={step !== 3} active={step >= 2} emailReadTracking={Boolean(state.candidateEmail?.enabled && state.candidateEmail.verified)} />
           </div>}
           {state && step === 2 && <StepTaskSubmission
             items={items}

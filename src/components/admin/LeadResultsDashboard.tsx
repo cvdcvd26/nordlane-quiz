@@ -8,7 +8,7 @@ import { type LeadResultsReport, type LeadResultsSource } from "@/config/lead-re
 import { leadResultsCopy } from "@/config/lead-results-copy";
 import { api, ApiError } from "@/lib/api";
 import { useAdminI18n } from "./i18n";
-import { ErrorState, PageHeader } from "./ui";
+import { ErrorState, PageHeader, StatusBadge } from "./ui";
 import LeadResultEditor from "./LeadResultEditor";
 import { DailyResultChart, LeadOutcomeDonut } from "./LeadResultsCharts";
 import LeadSuccessDialog, { type LeadSuccessSelection } from "./LeadSuccessDialog";
@@ -22,7 +22,7 @@ function PanelHeading({ title, hint, accessory, id }: { title: string; hint?: st
   return <div className="lres-panel-heading"><div className="min-w-0"><h2 id={id} className="text-[14px] font-bold">{title}</h2>{hint ? <p className="mt-1 text-[11.5px] leading-relaxed text-adm-ink-3">{hint}</p> : null}</div>{accessory}</div>;
 }
 
-function ResultDialog({ leadId, name, onClose, onSaved }: { leadId: string; name: string; onClose: () => void; onSaved: () => void }) {
+function ResultDialog({ leadId, name, refreshRevision, onClose, onSaved }: { leadId: string; name: string; refreshRevision: number; onClose: () => void; onSaved: () => void }) {
   const { lang } = useAdminI18n();
   const copy = leadResultsCopy[lang];
   const ref = useRef<HTMLDialogElement>(null);
@@ -50,7 +50,7 @@ function ResultDialog({ leadId, name, onClose, onSaved }: { leadId: string; name
     if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) close();
   }}>
     <div className="lres-dialog-header"><div className="min-w-0"><p className="text-[10px] font-bold tracking-[0.12em] text-adm-ink-3">#{leadId}</p><h2 id={`${id}-title`} className="mt-1 truncate text-[17px] font-bold">{name}</h2></div><button className="adm-btn size-8 shrink-0 px-0" type="button" onClick={close} aria-label={copy.close} autoFocus><X aria-hidden className="size-4" /></button></div>
-    <div className="p-4 sm:p-6"><LeadResultEditor leadId={leadId} standalone={false} onSaved={onSaved} onDirtyChange={setDirty} /></div>
+    <div className="p-4 sm:p-6"><LeadResultEditor leadId={leadId} refreshRevision={refreshRevision} standalone={false} onSaved={onSaved} onDirtyChange={setDirty} /></div>
   </dialog>;
 }
 
@@ -96,12 +96,29 @@ export default function LeadResultsDashboard() {
       .catch(reason => {
         if (controller.signal.aborted) return;
         const forbidden = reason instanceof ApiError && [401, 403].includes(reason.status);
-        if (forbidden) { setAdmins([]); setSourceOptions([]); setEditor(null); setSuccessSelection(null); }
+        if (forbidden) { setReport(null); setAdmins([]); setSourceOptions([]); setEditor(null); setSuccessSelection(null); }
         setError(forbidden ? "forbidden" : reason instanceof ApiError && reason.code === "analytics_range" ? "range" : "load");
       })
       .finally(() => { if (!controller.signal.aborted && !redirected) setLoading(false); });
     return () => controller.abort();
   }, [query, reload]);
+
+  useEffect(() => {
+    // Returning from a lead card refreshes the report without unmounting an
+    // open notes dialog or replacing its draft.
+    let lastRefresh = 0;
+    const refreshOnFocus = () => {
+      if (document.visibilityState !== "visible" || Date.now() - lastRefresh < 500) return;
+      lastRefresh = Date.now();
+      setReload(value => value + 1);
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnFocus);
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnFocus);
+    };
+  }, []);
 
   const numberFormat = useMemo(() => new Intl.NumberFormat(t.locale), [t.locale]);
   const rateFormat = useMemo(() => new Intl.NumberFormat(t.locale, { style: "percent", maximumFractionDigits: 1 }), [t.locale]);
@@ -232,11 +249,10 @@ export default function LeadResultsDashboard() {
         </div>
         <section className="adm-panel lres-card" aria-labelledby={`${id}-list`}>
           <PanelHeading id={`${id}-list`} title={copy.list} accessory={<span className="lres-count-chip">{number(report.leads.total)}</span>} />
-          <div className="lres-table-scroll"><table className="adm-table lres-table lres-lead-table"><thead><tr>{[copy.candidate, copy.qualification, copy.closure, copy.responsible, copy.source, copy.created].map(label => <th key={label} scope="col">{label}</th>)}<th scope="col"><span className="sr-only">{copy.edit}</span></th></tr></thead>
+          <div className="lres-table-scroll"><table className="adm-table lres-table lres-lead-table"><thead><tr>{[copy.candidate, copy.status, copy.responsible, copy.source, copy.created].map(label => <th key={label} scope="col">{label}</th>)}<th scope="col"><span className="sr-only">{copy.edit}</span></th></tr></thead>
             <tbody>{report.leads.items.map(lead => <tr key={lead.id}>
               <th scope="row" className="min-w-40"><Link href={`/admin/leads/${lead.id}`} className="lres-lead-link" title={copy.viewLead}>{lead.name || copy.unnamed}<ArrowUpRight aria-hidden className="size-3 shrink-0" /></Link><p className="mt-1 text-[10.5px] font-normal text-adm-ink-3">#{lead.id}{lead.phone ? ` · ${lead.phone}` : ""}</p></th>
-              <td><span className={`lres-badge lres-q-${lead.result.qualification}`}>{copy.qualifications[lead.result.qualification]}</span></td>
-              <td className="min-w-40 max-w-60"><span className={`lres-badge lres-c-${lead.result.closure}`}><span className="lres-dot bg-current" aria-hidden />{copy.closures[lead.result.closure]}</span></td>
+              <td className="min-w-40 max-w-60"><StatusBadge status={lead.status} /></td>
               <td className="max-w-44 break-all text-adm-ink-2">{lead.responsible?.email ?? copy.unassigned}</td>
               <td className="max-w-40 break-words text-adm-ink-3">{sourceName(lead.source)}{lead.source.campaign ? <p className="mt-1 text-[10.5px]">{lead.source.campaign}</p> : null}</td>
               <td className="whitespace-nowrap text-adm-ink-3"><time dateTime={lead.createdAt}>{new Date(lead.createdAt).toLocaleDateString(t.locale, { day: "numeric", month: "short", year: "numeric", timeZone: "Europe/Warsaw" })}</time></td>
@@ -248,7 +264,7 @@ export default function LeadResultsDashboard() {
       </> : null}
       <p className="lres-internal-hint flex items-start gap-2"><LockKeyhole aria-hidden className="mt-0.5 size-3.5 shrink-0" /><span>{copy.internalHint}</span></p>
     </div> : null}
-    {editor ? <ResultDialog leadId={editor.id} name={editor.name} onClose={() => setEditor(null)} onSaved={refresh} /> : null}
+    {editor ? <ResultDialog leadId={editor.id} name={editor.name} refreshRevision={reload} onClose={() => setEditor(null)} onSaved={refresh} /> : null}
     {successSelection ? <LeadSuccessDialog key={JSON.stringify([successSelection.from, successSelection.to, successSelection.source, successSelection.responsible])} selection={successSelection} onClose={() => setSuccessSelection(null)} /> : null}
   </div>;
 }

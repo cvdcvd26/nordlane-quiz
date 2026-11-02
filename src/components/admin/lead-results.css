@@ -6,6 +6,7 @@
   --lres-unsuitable: #de8291;
   --lres-declined: #cfa14a;
   --lres-no-contact: #a58bd4;
+  --lres-completed: #8b99a8;
   --lres-chart-leads: #698ed2;
   min-width: 0;
 }
@@ -374,3 +375,7 @@
   .lres .lres-choice, .lres .lres-periods button { transition: none; }
   .lres .animate-spin { animation: none; }
 }
+
+.lres .lres-fill-completed { fill: var(--lres-completed); background: var(--lres-completed); }
+.lres .lres-stroke-completed { stroke: var(--lres-completed); }
+.lres .lres-c-completed { --lres-choice-color: var(--color-adm-ink-2); --lres-choice-bg: var(--color-adm-subtle); }

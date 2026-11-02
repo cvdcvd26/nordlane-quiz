@@ -2,6 +2,7 @@
 import { content } from "@/config/content";
 import { maintenanceEvent } from "@/config/maintenance";
 import type { RichTextDocument } from "@/lib/rich-text";
+import { candidateIdentityIsCurrent } from "@/lib/candidate-identity";
 
 function notifyMaintenance(status: number, code?: string) {
   if (status === 503 && code === "maintenance" && typeof window !== "undefined") window.dispatchEvent(new Event(maintenanceEvent));
@@ -17,8 +18,21 @@ export class ApiError extends Error {
   }
 }
 
+function assertCurrentCandidateIdentity(url: string) {
+  // Admin requests use separate credentials and must not be interrupted by a
+  // candidate logging in elsewhere in the same browser. Auth calls deliberately
+  // change cookies; their successful completion broadcasts the new generation.
+  const path = url.split("?")[0];
+  const visitor = /^\/api\/(?:session|contact|submit|chat|uploads|quiz|visitor|task-revisions)(?:\/|$)/.test(path)
+    || path === "/api/candidate/read";
+  if (visitor && !candidateIdentityIsCurrent()) {
+    throw new ApiError("Konto zmieniło się w innej karcie. Odświeżamy Twoje zgłoszenie.", 401, "candidate_identity_changed");
+  }
+}
+
 /** fetch wrapper: JSON in/out, readable errors, network failures → ApiError(status 0). */
 export async function api<T>(url: string, init?: RequestInit & { json?: unknown }): Promise<T> {
+  assertCurrentCandidateIdentity(url);
   let res: Response;
   try {
     res = await fetch(url, {
@@ -31,6 +45,7 @@ export async function api<T>(url: string, init?: RequestInit & { json?: unknown 
     throw new ApiError(content.errors.network, 0, "network");
   }
   const data = await res.json().catch(() => ({}));
+  assertCurrentCandidateIdentity(url);
   if (!res.ok) {
     notifyMaintenance(res.status, data.code);
     throw new ApiError(data.error ?? content.errors.generic, res.status, data.code);
@@ -44,12 +59,16 @@ export function uploadWithProgress<T>(
   form: FormData,
   onProgress: (fraction: number) => void,
 ): { promise: Promise<T>; abort: () => void } {
+  try { assertCurrentCandidateIdentity(url); }
+  catch (error) { return { promise: Promise.reject(error), abort: () => {} }; }
   const xhr = new XMLHttpRequest();
   const promise = new Promise<T>((resolve, reject) => {
     xhr.open("POST", url);
     xhr.responseType = "json";
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
     xhr.onload = () => {
+      try { assertCurrentCandidateIdentity(url); }
+      catch (error) { reject(error); return; }
       const data = xhr.response ?? {};
       if (xhr.status >= 200 && xhr.status < 300) resolve(data as T);
       else {

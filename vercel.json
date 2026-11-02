@@ -5,6 +5,10 @@
     "src/app/api/jobs/queue-deliver/route.ts": {
       "maxDuration": 60,
       "experimentalTriggers": [{ "type": "queue/v2beta", "topic": "alleybiz-auto-replies" }]
+    },
+    "src/app/api/jobs/candidate-email-queue/route.ts": {
+      "maxDuration": 60,
+      "experimentalTriggers": [{ "type": "queue/v2beta", "topic": "alleybiz-candidate-emails" }]
     }
   }
 }
