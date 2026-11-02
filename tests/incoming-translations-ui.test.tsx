@@ -39,9 +39,33 @@ beforeEach(() => {
   mocks.api.mockImplementation((url: string, init?: { json?: { messageIds: string[] } }) => url === "/api/admin/translation"
     ? Promise.resolve(enabled) : Promise.resolve(response(init?.json?.messageIds ?? [])));
 });
-afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("private incoming chat translations", () => {
+  it("picks up a translation claimed by the task-response pane using cache-only reads", async () => {
+    vi.useFakeTimers();
+    let cacheReads = 0;
+    mocks.api.mockImplementation((url: string, init?: { json?: { messageIds: string[]; cacheOnly?: boolean } }) => {
+      if (url === "/api/admin/translation") return Promise.resolve(enabled);
+      const ids = init?.json?.messageIds ?? [];
+      if (init?.json?.cacheOnly) return Promise.resolve(++cacheReads === 1
+        ? { translations: [], failures: ids.map(messageId => ({ messageId, code: "translation_limit_reached" })) }
+        : response(ids));
+      return Promise.resolve(ids.includes("visitor-1")
+        ? { translations: [], failures: [{ messageId: "visitor-1", code: "translation_busy" }] }
+        : response(ids, "Следующий ответ"));
+    });
+    await render();
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(host.textContent).not.toContain(T.incomingLimit);
+    await act(async () => vi.advanceTimersByTimeAsync(2000));
+    expect(host.textContent).toContain("Добрый день");
+    expect(translationCalls().map(([, init]) => init.json.cacheOnly === true)).toEqual([false, true, true]);
+    await render([message(), message("visitor-2", "Następna odpowiedź")]);
+    expect(translationCalls().at(-1)![1].json.cacheOnly).toBeUndefined();
+    expect(host.textContent).toContain("Следующий ответ");
+  });
+
   it("keeps the Polish original and adds a separate Russian translation only to visitor text", async () => {
     const fileOnly = { ...message("visitor-4", ""), files: [{ id: "pdf", name: "private.pdf", mime: "application/pdf", size: 12, url: "/api/files/pdf" }] };
     await render([message(), message("admin-2", "Dziękujemy", "admin"), message("system-3", "Received", "system"), fileOnly]);

@@ -4,6 +4,7 @@ import { Languages } from "lucide-react";
 import { MessageList } from "@/components/chat/MessageList";
 import { translationCopy, type IncomingTranslationResponse, type TranslationStatus } from "@/config/chat-translation";
 import { api, type ChatMessage } from "@/lib/api";
+import { waitForCachedTranslation } from "@/lib/admin-translation-cache";
 import { useAdminI18n } from "./i18n";
 
 type Props = Omit<ComponentProps<typeof MessageList>, "viewer" | "appearance" | "messageExtension"> & { leadId: string };
@@ -72,6 +73,29 @@ export function AdminTranslatedMessageList({ leadId, messages, ...props }: Props
           try {
             const result = await api<IncomingTranslationResponse>(`/api/admin/leads/${leadId}/translations`, {
               method: "POST", signal: controller.signal, json: { kind: "incoming", messageIds: batch.map(source => source.id), ...(readCacheOnly ? { cacheOnly: true } : {}) },
+            });
+            if (controller.signal.aborted) return;
+            const busyIds = new Set(result.failures.filter(item => item.code === "translation_busy").map(item => item.messageId));
+            if (busyIds.size) await waitForCachedTranslation(async () => {
+              const cached = await api<IncomingTranslationResponse>(`/api/admin/leads/${leadId}/translations`, {
+                method: "POST", signal: controller.signal, json: { kind: "incoming", messageIds: [...busyIds], cacheOnly: true },
+              });
+              for (const translated of cached.translations) {
+                result.translations.push(translated);
+                result.failures = result.failures.filter(item => item.messageId !== translated.messageId);
+                busyIds.delete(translated.messageId);
+              }
+              for (const failed of cached.failures) {
+                // A miss while another pane is working is not a new budget failure.
+                if (["translation_busy", "translation_limit_reached"].includes(failed.code)) continue;
+                result.failures = result.failures.map(item => item.messageId === failed.messageId ? failed : item);
+                busyIds.delete(failed.messageId);
+              }
+              return busyIds.size ? null : true;
+            }, controller.signal).catch(error => {
+              if (controller.signal.aborted) return;
+              const code = error && typeof error === "object" && "code" in error ? String(error.code) : "translation_failed";
+              result.failures = result.failures.map(item => busyIds.has(item.messageId) ? { ...item, code } : item);
             });
             if (controller.signal.aborted) return;
             for (const source of batch) {

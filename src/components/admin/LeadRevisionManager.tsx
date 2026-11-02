@@ -5,14 +5,16 @@ import { revisionConfig, revisionCopy, type TaskRevision } from "@/config/task-r
 import { api, ApiError, newId, type PublicFile } from "@/lib/api";
 import { useAdminDraftGuard } from "@/lib/admin-draft-guard";
 import { useAdminI18n } from "./i18n";
+import { AdminTaskTranslation } from "./AdminTaskTranslation";
 
 type RevisionHistory = {
   hasSubmission: boolean;
   closed: boolean;
-  revisions: (TaskRevision & { response: { body: string; files: PublicFile[] } | null })[];
+  revisions: (TaskRevision & { response: { id: string; body: string; files: PublicFile[] } | null })[];
 };
 
-export function RevisionHistoryCard({ revision, copy: T, time, busy, onCancel }: {
+export function RevisionHistoryCard({ leadId, revision, copy: T, time, busy, onCancel }: {
+  leadId: number;
   revision: RevisionHistory["revisions"][number];
   copy: typeof revisionCopy.pl;
   time: (iso: string) => string;
@@ -53,6 +55,7 @@ export function RevisionHistoryCard({ revision, copy: T, time, busy, onCancel }:
           {revision.submittedAt && <time className="text-[11px] tabular-nums text-adm-ink-3" dateTime={revision.submittedAt}>{time(revision.submittedAt)}</time>}
         </div>
         {revision.response.body && <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-adm-ink [overflow-wrap:anywhere]">{revision.response.body}</p>}
+        {revision.response.body && <AdminTaskTranslation leadId={leadId} sourceId={revision.response.id} kind="incoming" body={revision.response.body} />}
         {revision.response.files.length > 0 && <ul aria-label={T.attachments} className="mt-3 flex min-w-0 flex-wrap gap-2">
           {revision.response.files.map(file => <li key={file.id} className="min-w-0 max-w-full">
             <a className="inline-flex max-w-full items-start gap-1.5 rounded-md border border-adm-green/25 bg-adm-surface/70 px-2.5 py-1.5 text-[12px] font-medium text-adm-green underline decoration-current/40 underline-offset-2 hover:decoration-current" href={file.url} target="_blank" rel="noopener noreferrer">
@@ -146,7 +149,7 @@ export default function LeadRevisionManager({ leadId, onChange }: { leadId: numb
         {history && <div className="space-y-3">
           <h3 className="adm-label">{T.history}</h3>
           {history.revisions.length === 0 && <p className="adm-help">{T.empty}</p>}
-          {history.revisions.map(revision => <RevisionHistoryCard key={revision.id} revision={revision} copy={T} time={time} busy={busy} onCancel={revisionId => void cancel(revisionId)} />)}
+          {history.revisions.map(revision => <RevisionHistoryCard key={revision.id} leadId={leadId} revision={revision} copy={T} time={time} busy={busy} onCancel={revisionId => void cancel(revisionId)} />)}
         </div>}
         {error && <p className="text-[13px] text-adm-red" role="alert">{error}</p>}
         <button type="button" className="adm-btn adm-btn-sm" disabled={busy} onClick={() => setReload(value => value + 1)}>{T.reload}</button>

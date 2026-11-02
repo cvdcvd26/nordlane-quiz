@@ -77,14 +77,18 @@ async function claimTranslation(input: {
   });
 }
 
-async function translatedContent(leadId: number, source: TextContent, target: "pl" | "ru", messageId?: string, cacheOnly = false): Promise<TextContent> {
+async function translatedContent(leadId: number, source: TextContent, target: "pl" | "ru", options: {
+  messageId?: string;
+  cacheOnly?: boolean;
+  sourceKey?: `task-review:${string}`;
+} = {}): Promise<TextContent> {
   requireConfigured();
   // Already Polish templates and attachment-only messages do not incur a paid request.
   if (!source.body || (target === "pl" && !/\p{Script=Cyrillic}/u.test(source.body)) ||
     (target === "ru" && !/\p{Script=Latin}/u.test(source.body))) return source;
   const hash = sourceHash(source);
-  const key = createHash("sha256").update(JSON.stringify([leadId, messageId ?? "draft", hash, target, TRANSLATION_POLICY])).digest("hex");
-  if (cacheOnly) {
+  const key = createHash("sha256").update(JSON.stringify([leadId, options.sourceKey ?? options.messageId ?? "draft", hash, target, TRANSLATION_POLICY])).digest("hex");
+  if (options.cacheOnly) {
     // A budget-limited UI can still show translations already paid for. It must
     // never initiate a new provider request, even across a monthly reset.
     const [cached] = await db().select().from(schema.messageTranslations)
@@ -93,7 +97,7 @@ async function translatedContent(leadId: number, source: TextContent, target: "p
     if (cached?.body !== null && cached?.body !== undefined) return { body: cached.body, bodyRich: cached.bodyRich };
     throw limitReached();
   }
-  const claimed = await claimTranslation({ key, leadId, messageId, sourceHash: hash, target });
+  const claimed = await claimTranslation({ key, leadId, messageId: options.messageId, sourceHash: hash, target });
   if (claimed.cached) return claimed.cached;
   const usageId = claimed.usageId!;
   try {
@@ -136,6 +140,33 @@ export async function translateDraft(leadId: number, body: string, bodyRich?: un
   }
 }
 
+/** Task answers use the same private cache, provider and monthly budget as chat.
+ * The browser supplies only an ID; the source is always read from this lead's submission. */
+export async function translateTaskReview(leadId: number, submissionId: string, options: { cacheOnly?: boolean } = {}) {
+  try {
+    const id = z.string().uuid().parse(submissionId);
+    const sessionId = await getLeadSessionId(leadId);
+    const load = async () => {
+      const [submission] = await db().select({ review: schema.taskSubmissions.review }).from(schema.taskSubmissions)
+        .where(and(eq(schema.taskSubmissions.id, id), eq(schema.taskSubmissions.sessionId, sessionId)));
+      return submission?.review?.trim() ? normalizeRichTextContent(submission.review, null, 4000) : null;
+    };
+    const missing = () => new AppError(404, "task_review_unavailable", "This task answer is no longer available.");
+    const source = await load();
+    if (!source) throw missing();
+    const translated = await translatedContent(leadId, source, "ru", {
+      sourceKey: `task-review:${id}`, cacheOnly: options.cacheOnly === true,
+    });
+    // Do not expose an old translation if the answer changed or disappeared in flight.
+    const current = await load();
+    if (!current || sourceHash(current) !== sourceHash(source)) throw missing();
+    return { body: translated.body, sourceHash: sourceHash(source) };
+  } catch (error) {
+    if (error instanceof z.ZodError) throw error;
+    throw safeError(error);
+  }
+}
+
 export async function translateIncoming(leadId: number, messageIds: string[], options: { cacheOnly?: boolean } = {}) {
   try {
     const ids = [...new Set(inputIds.parse(messageIds))];
@@ -155,7 +186,7 @@ export async function translateIncoming(leadId: number, messageIds: string[], op
         if (!message || !message.body.trim()) { failures.push({ messageId: id, code: "message_unavailable" }); continue; }
         try {
           const source = normalizeRichTextContent(message.body, message.bodyRich, 4000);
-          const translated = await translatedContent(leadId, source, "ru", id, options.cacheOnly === true);
+          const translated = await translatedContent(leadId, source, "ru", { messageId: id, cacheOnly: options.cacheOnly === true });
           // An edit or deletion that races the network request must not return the old text.
           const [current] = await db().select().from(schema.messages).where(and(eq(schema.messages.id, id),
             eq(schema.messages.conversationId, message.conversationId), isNull(schema.messages.deletedAt)));

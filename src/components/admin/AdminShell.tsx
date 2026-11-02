@@ -146,7 +146,7 @@ export function AdminShell({ children, canManageDocuments = false }: { children:
       </header>
 
       <main className="min-w-0 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
-        <div className={`mx-auto ${path.startsWith("/admin/leads/") ? "max-w-[1600px]" : "max-w-[1180px]"}`}>
+        <div className={`mx-auto ${path.startsWith("/admin/leads/") || path === "/admin/results" ? "max-w-[1600px]" : "max-w-[1180px]"}`}>
           {email ? (
             children
           ) : (

@@ -229,27 +229,25 @@ export default function LeadResultsDashboard() {
         </section>
       </div>
       {total > 0 ? <>
-        <div className="lres-performance-grid">
-          <section className="adm-panel lres-card lres-sources-card" aria-labelledby={`${id}-sources`}>
-            <PanelHeading id={`${id}-sources`} title={copy.sources} hint={copy.sourceHint} accessory={<span className="lres-section-icon"><Globe2 aria-hidden className="size-4" /></span>} />
-            <div className="lres-table-scroll"><table className="adm-table lres-table lres-source-table"><thead><tr><th scope="col">{copy.source}</th><th scope="col">{copy.leads}</th>{ACTIVE_LEAD_STATUSES.map(status => <th key={status} scope="col"><span style={{ color: STATUS_TONE[status].color }}>{t.ui.statuses[status]}</span></th>)}{hasLegacyStatuses ? <th scope="col">{copy.legacyStatuses}</th> : null}<th scope="col">{copy.conversion}</th></tr></thead>
-              <tbody>{report.sources.map((row, index) => <tr key={row.key ?? `other-${index}`}>
-                <th scope="row"><div className="lres-source-name"><span className="lres-source-avatar"><Globe2 aria-hidden className="size-4" /></span><div><strong>{sourceName(row)}</strong>{row.medium || row.campaign ? <div className="lres-source-tags">{row.medium ? <span title={copy.medium}>{row.medium}</span> : null}{row.campaign ? <span title={copy.campaign}>{row.campaign}</span> : null}</div> : null}</div></div></th>
-                <td>{number(row.leads)}</td>{ACTIVE_LEAD_STATUSES.map(status => <td key={status} data-lead-source-status={status} className={status === "signal_working" ? "lres-source-success" : undefined}>{number(row.statuses[status])}</td>)}
-                {hasLegacyStatuses ? <td data-lead-source-status="legacy">{number(LEGACY_STATUSES.reduce((sum, status) => sum + row.statuses[status], 0))}</td> : null}
-                <td><div className="lres-source-conversion"><strong>{percent(row.success, row.leads)}</strong><div aria-hidden><span style={{ width: `${row.leads ? row.success / row.leads * 100 : 0}%` }} /></div></div></td>
-              </tr>)}</tbody>
-            </table></div>
-          </section>
-          <section className="adm-panel lres-card lres-reasons-card" aria-labelledby={`${id}-reasons`}>
-            <PanelHeading id={`${id}-reasons`} title={copy.reasons} hint={copy.reasonsHint} />
-            {lost === 0 ? <div className="lres-no-losses"><span><CheckCircle2 aria-hidden className="size-6" /></span><p>{copy.noLosses}</p></div> : <>
-              <div className="lres-loss-summary"><strong>{number(lost)}</strong><div><b>{percent(lost, total)}</b><span>{copy.lossRate}</span></div></div>
-              <div className="lres-loss-stack" aria-hidden>{report.lossReasons.map(row => <span key={row.reason ?? "none"} className={`lres-reason-${row.reason ?? "none"}`} style={{ width: `${row.leads / lost * 100}%` }} />)}</div>
-              <ul className="lres-loss-list">{report.lossReasons.map(row => <li key={row.reason ?? "none"} className={`lres-reason-${row.reason ?? "none"}`}><div><span className="lres-reason-dot" aria-hidden /><span className="lres-reason-name">{row.reason ? copy.reasonLabels[row.reason] : copy.noReason}</span><strong>{number(row.leads)}</strong><span className="lres-reason-share">{percent(row.leads, lost)}</span></div><div className="lres-loss-track" aria-hidden><span style={{ width: `${row.leads / lost * 100}%` }} /></div></li>)}</ul>
-            </>}
-          </section>
-        </div>
+        <section className="adm-panel lres-card lres-sources-card" aria-labelledby={`${id}-sources`}>
+          <PanelHeading id={`${id}-sources`} title={copy.sources} hint={copy.sourceHint} accessory={<span className="lres-section-icon"><Globe2 aria-hidden className="size-4" /></span>} />
+          <div className="lres-table-scroll" tabIndex={0} role="region" aria-labelledby={`${id}-sources`}><table className="adm-table lres-table lres-source-table"><thead><tr><th scope="col">{copy.source}</th><th scope="col">{copy.leads}</th>{ACTIVE_LEAD_STATUSES.map(status => <th key={status} scope="col"><span style={{ color: STATUS_TONE[status].color }}>{t.ui.statuses[status]}</span></th>)}{hasLegacyStatuses ? <th scope="col">{copy.legacyStatuses}</th> : null}<th scope="col">{copy.conversion}</th></tr></thead>
+            <tbody>{report.sources.map((row, index) => <tr key={row.key ?? `other-${index}`}>
+              <th scope="row"><div className="lres-source-name"><span className="lres-source-avatar"><Globe2 aria-hidden className="size-4" /></span><div><strong>{sourceName(row)}</strong>{row.medium || row.campaign ? <div className="lres-source-tags">{row.medium ? <span title={copy.medium}>{row.medium}</span> : null}{row.campaign ? <span title={copy.campaign}>{row.campaign}</span> : null}</div> : null}</div></div></th>
+              <td>{number(row.leads)}</td>{ACTIVE_LEAD_STATUSES.map(status => <td key={status} data-lead-source-status={status} className={status === "signal_working" ? "lres-source-success" : undefined}>{number(row.statuses[status])}</td>)}
+              {hasLegacyStatuses ? <td data-lead-source-status="legacy">{number(LEGACY_STATUSES.reduce((sum, status) => sum + row.statuses[status], 0))}</td> : null}
+              <td><div className="lres-source-conversion"><strong>{percent(row.success, row.leads)}</strong><div aria-hidden><span style={{ width: `${row.leads ? row.success / row.leads * 100 : 0}%` }} /></div></div></td>
+            </tr>)}</tbody>
+          </table></div>
+        </section>
+        <section className="adm-panel lres-card lres-reasons-card" aria-labelledby={`${id}-reasons`}>
+          <PanelHeading id={`${id}-reasons`} title={copy.reasons} hint={copy.reasonsHint} />
+          {lost === 0 ? <div className="lres-no-losses"><span><CheckCircle2 aria-hidden className="size-6" /></span><p>{copy.noLosses}</p></div> : <>
+            <div className="lres-loss-summary"><strong>{number(lost)}</strong><div><b>{percent(lost, total)}</b><span>{copy.lossRate}</span></div></div>
+            <div className="lres-loss-stack" aria-hidden>{report.lossReasons.map(row => <span key={row.reason ?? "none"} className={`lres-reason-${row.reason ?? "none"}`} style={{ width: `${row.leads / lost * 100}%` }} />)}</div>
+            <ul className="lres-loss-list">{report.lossReasons.map(row => <li key={row.reason ?? "none"} className={`lres-reason-${row.reason ?? "none"}`}><div><span className="lres-reason-dot" aria-hidden /><span className="lres-reason-name">{row.reason ? copy.reasonLabels[row.reason] : copy.noReason}</span><strong>{number(row.leads)}</strong><span className="lres-reason-share">{percent(row.leads, lost)}</span></div><div className="lres-loss-track" aria-hidden><span style={{ width: `${row.leads / lost * 100}%` }} /></div></li>)}</ul>
+          </>}
+        </section>
         <section className="adm-panel lres-card" aria-labelledby={`${id}-list`}>
           <PanelHeading id={`${id}-list`} title={copy.list} accessory={<span className="lres-count-chip">{number(report.leads.total)}</span>} />
           <div className="lres-table-scroll"><table className="adm-table lres-table lres-lead-table"><thead><tr>{[copy.candidate, copy.status, copy.responsible, copy.source, copy.created].map(label => <th key={label} scope="col">{label}</th>)}<th scope="col"><span className="sr-only">{copy.edit}</span></th></tr></thead>

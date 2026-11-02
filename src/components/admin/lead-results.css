@@ -81,7 +81,7 @@
 .lres .lres-metric-track span { display: block; height: 100%; border-radius: 4px; background: var(--lres-metric-tint); }
 .lres .lres-cohort { display: flex; align-items: flex-start; gap: 10px; border: 1px solid color-mix(in srgb, var(--color-adm-accent) 10%, var(--color-adm-line)); border-radius: 12px; background: color-mix(in srgb, var(--color-adm-accent-soft) 42%, var(--color-adm-surface)); padding: 13px 16px; color: var(--color-adm-ink-2); font-size: 11px; line-height: 1.7; }
 .lres .lres-cohort svg { margin-top: 2px; color: var(--color-adm-accent); }
-.lres .lres-chart-grid, .lres .lres-performance-grid { display: grid; min-width: 0; gap: 20px; align-items: stretch; }
+.lres .lres-chart-grid { display: grid; min-width: 0; gap: 20px; align-items: stretch; }
 .lres .lres-card { min-width: 0; overflow: hidden; border-radius: 18px; background: var(--color-adm-surface); box-shadow: 0 5px 18px -17px #173c2c30; }
 .lres .lres-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 21px 22px 17px; }
 .lres .lres-panel-heading h2 { font-size: 15px; letter-spacing: -.025em; }
@@ -146,24 +146,28 @@
 .lres .lres-table tbody tr:last-child td, .lres .lres-table tbody tr:last-child th { border-bottom: 0; }
 .lres .lres-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--color-adm-subtle) 23%, transparent); }
 .lres .lres-table tbody tr:hover { background: color-mix(in srgb, var(--color-adm-accent-soft) 42%, transparent); }
-.lres .lres-source-table { min-width: 1040px; }
-.lres .lres-source-table thead th { white-space: normal; min-width: 84px; font-size: 10px; line-height: 1.5; vertical-align: bottom; }
+.lres .lres-sources-card .lres-panel-heading { padding: 25px 26px 21px; }
+.lres .lres-sources-card .lres-panel-heading h2 { font-size: 18px; }
+.lres .lres-sources-card .lres-panel-heading p { max-width: 900px; font-size: 12px; }
+.lres .lres-sources-card .lres-table-scroll:focus-visible { outline: 2px solid var(--color-adm-accent); outline-offset: -2px; }
+.lres .lres-source-table { min-width: 1120px; font-size: 14px; }
+.lres .lres-source-table thead th { white-space: normal; min-width: 84px; font-size: 11.5px; line-height: 1.6; vertical-align: bottom; }
 .lres .lres-source-table thead th:not(:first-child) { text-align: right; }
-.lres .lres-source-table thead th:nth-child(5), .lres .lres-source-table thead th:nth-child(7) { min-width: 145px; }
-.lres .lres-source-table td, .lres .lres-source-table th { padding: 14px 11px; }
+.lres .lres-source-table thead th:nth-child(5), .lres .lres-source-table thead th:nth-child(7) { min-width: 155px; }
+.lres .lres-source-table tbody td, .lres .lres-source-table tbody th, .lres .lres-source-table thead th { padding: 19px 14px; }
 .lres .lres-source-table td { text-align: right; }
-.lres .lres-source-table td:last-child, .lres .lres-source-table th:last-child { padding-right: 20px; }
-.lres .lres-source-table th:first-child { padding-left: 20px; }
-.lres .lres-source-name { display: flex; min-width: 150px; max-width: 260px; align-items: flex-start; gap: 9px; }
+.lres .lres-source-table td:last-child, .lres .lres-source-table th:last-child { padding-right: 26px; }
+.lres .lres-source-table th:first-child { padding-left: 26px; }
+.lres .lres-source-name { display: flex; min-width: 175px; max-width: 300px; align-items: flex-start; gap: 11px; }
 .lres .lres-source-name > div { min-width: 0; }
-.lres .lres-source-name strong { display: block; overflow-wrap: anywhere; color: var(--color-adm-ink); font-size: 11.5px; font-weight: 600; }
+.lres .lres-source-name strong { display: block; overflow-wrap: anywhere; color: var(--color-adm-ink); font-size: 14px; font-weight: 600; }
 .lres .lres-source-avatar { display: grid; width: 30px; height: 30px; flex-shrink: 0; place-items: center; border: 1px solid var(--color-adm-line); border-radius: 9px; background: color-mix(in srgb, var(--color-adm-subtle) 60%, transparent); color: var(--color-adm-ink-3); }
 .lres .lres-source-tags { display: flex; flex-wrap: wrap; gap: 3px 6px; margin-top: 4px; }
-.lres .lres-source-tags span { max-width: 100%; overflow-wrap: anywhere; color: var(--color-adm-ink-3); font-size: 9px; font-weight: 400; line-height: 1.5; }
+.lres .lres-source-tags span { max-width: 100%; overflow-wrap: anywhere; color: var(--color-adm-ink-3); font-size: 11px; font-weight: 400; line-height: 1.6; }
 .lres .lres-source-tags span + span::before { content: "·"; padding-right: 6px; }
 .lres .lres-source-success { color: var(--color-adm-accent); font-weight: 700; }
-.lres .lres-source-conversion { width: 76px; margin-left: auto; text-align: right; }
-.lres .lres-source-conversion strong { color: var(--color-adm-accent); font-size: 11px; font-weight: 600; }
+.lres .lres-source-conversion { width: 90px; margin-left: auto; text-align: right; }
+.lres .lres-source-conversion strong { color: var(--color-adm-accent); font-size: 14px; font-weight: 600; }
 .lres .lres-source-conversion > div { height: 4px; overflow: hidden; border-radius: 4px; background: var(--color-adm-subtle); margin-top: 6px; }
 .lres .lres-source-conversion > div span { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #8fc5af, var(--lres-success)); }
 .lres .lres-loss-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 22px 14px; }
@@ -324,7 +328,6 @@
 }
 @media (min-width: 1200px) {
   .lres .lres-chart-grid { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
-  .lres .lres-performance-grid { grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr); }
 }
 @media (min-width: 640px) and (max-width: 1199px) {
   .lres .lres-outcomes { flex-direction: row; align-items: center; gap: 28px; padding-top: 4px; }
@@ -355,7 +358,8 @@
   .lres .lres-metric-hint { font-size: 9px; }
   .lres .lres-metric-track { margin-top: 10px; }
   .lres .lres-cohort { border-radius: 11px; padding: 12px; font-size: 10px; }
-  .lres .lres-chart-grid, .lres .lres-performance-grid { gap: 16px; }
+  .lres .lres-chart-grid { gap: 16px; }
+  .lres .lres-sources-card .lres-panel-heading { padding: 20px 18px 17px; }
   .lres .lres-panel-heading { padding: 19px 18px 15px; }
   .lres .lres-panel-heading h2 { font-size: 14px; }
   .lres .lres-panel-heading p { font-size: 10.5px; }

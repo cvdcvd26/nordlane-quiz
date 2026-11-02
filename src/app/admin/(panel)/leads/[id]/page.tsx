@@ -7,6 +7,7 @@ import { ACTIVE_LEAD_STATUSES, QUESTION_KEYS, type LeadStatus } from "@/config/c
 import { api, formatBytes, newId, type ChatMessage, type PublicFile, type MessagePage, type MessageChanges, type MessageChange } from "@/lib/api";
 import { mergeMessages, reconcileMessageChanges, rememberMessageChanges } from "@/lib/chat";
 import { AdminTranslatedMessageList } from "@/components/admin/AdminTranslatedMessageList";
+import { AdminTaskTranslation, AdminTaskTranslationProvider } from "@/components/admin/AdminTaskTranslation";
 import { ManagerAvatar } from "@/components/chat/ManagerAvatar";
 import type { ManagerProfile } from "@/config/managers";
 import { AdminChatComposer } from "@/components/admin/AdminChatComposer";
@@ -62,7 +63,7 @@ function LeadRoute() {
   // A route change must discard the previous lead's draft, history and request state.
   return <div className="grid items-start gap-4 xl:grid-cols-[224px_minmax(0,1fr)]">
     <LeadInboxSidebar key={`${id}?${params.toString()}`} selectedId={id} />
-    <div className="min-w-0"><Lead key={id} id={id} /></div>
+    <div className="min-w-0"><AdminTaskTranslationProvider key={id}><Lead id={id} /></AdminTaskTranslationProvider></div>
   </div>;
 }
 
@@ -451,7 +452,10 @@ function Lead({ id }: { id: string }) {
 
           <Section title={T.review} id="review-title">
             {d.submission?.review ? (
-              <blockquote className="border-l-2 border-adm-accent pl-3 text-[13.5px] leading-relaxed whitespace-pre-wrap">{d.submission.review}</blockquote>
+              <>
+                <blockquote className="border-l-2 border-adm-accent pl-3 text-[13.5px] leading-relaxed whitespace-pre-wrap">{d.submission.review}</blockquote>
+                <AdminTaskTranslation leadId={id} sourceId={d.submission.id} body={d.submission.review} />
+              </>
             ) : (
               <p className="text-[13px] text-adm-ink-3">{d.submission ? T.noReview : T.noSubmissionYet}</p>
             )}

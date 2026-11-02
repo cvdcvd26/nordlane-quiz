@@ -11,6 +11,7 @@ import { AdmStars, EmptyState, ErrorState, PageHeader, StatusBadge, TestimonialB
 import { toast } from "@/components/admin/toast";
 import { useAdminI18n } from "@/components/admin/i18n";
 import { TestimonialEditor } from "@/components/admin/TestimonialEditor";
+import { AdminTaskTranslation, AdminTaskTranslationProvider } from "@/components/admin/AdminTaskTranslation";
 
 type Review = { id: string; review: string; submittedAt: string; leadId: number; status: LeadStatus; name: string | null; phone: string | null };
 type ReviewsResponse = { items: Review[]; total: number; page: number; pageSize: number };
@@ -58,7 +59,7 @@ function Reviews() {
           </button>
         ))}
       </div>
-      {tab === "site" ? <SiteReviews /> : <TaskReviews />}
+      {tab === "site" ? <SiteReviews /> : <AdminTaskTranslationProvider><TaskReviews /></AdminTaskTranslationProvider>}
     </div>
   );
 }
@@ -172,6 +173,7 @@ function TaskReviews() {
                         {expanded ? R.showLess : R.showMore}
                       </button>
                     )}
+                    <AdminTaskTranslation leadId={r.leadId} sourceId={r.id} body={r.review} />
                   </div>
                   <div className="flex items-center gap-3 md:flex-col md:items-end">
                     <StatusBadge status={r.status} />

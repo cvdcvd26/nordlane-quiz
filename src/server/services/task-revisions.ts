@@ -137,6 +137,7 @@ async function getLeadRevisionsImpl(leadId: number) {
   return {
     hasSubmission: Boolean(original), closed: Boolean(toCandidateOutcome(lead)),
     revisions: rows.map(row => ({ ...publicRevision(row), response: row.responseMessageId ? {
+      id: row.responseMessageId,
       body: messages.find(message => message.id === row.responseMessageId)?.body ?? "",
       files: files.filter(file => file.messageId === row.responseMessageId).map(toPublicFile),
     } : null })),
