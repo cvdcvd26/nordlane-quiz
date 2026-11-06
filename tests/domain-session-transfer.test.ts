@@ -55,6 +55,7 @@ async function grant(source: Map<string, string>, destination = "/step-4-confirm
 }
 beforeAll(async () => { env = await setupTestEnv(); });
 beforeEach(async () => {
+  vi.stubEnv("LEGACY_SITE_RETIRED", "false");
   vi.stubEnv("APP_URL", siteDomains.canonical);
   vi.stubEnv("SITE_DOMAIN_MIGRATION_ENABLED", "true");
   vi.stubEnv("CANDIDATE_EMAIL_ENABLED", "false");
@@ -244,6 +245,30 @@ it("requires activation on the exact canonical origin and rejects preview/attack
   vi.stubEnv("SITE_DOMAIN_MIGRATION_ENABLED", "true"); vi.stubEnv("APP_URL", siteDomains.legacy);
   await expect(startDomainSessionTransfer(newUrl, "/", "ip")).rejects.toMatchObject({ status: 404 });
   expect(await env.db.select().from(schema.domainSessionTransfers)).toHaveLength(0);
+});
+
+it("refuses all session recovery after retirement and preserves existing leads and conversation data", async () => {
+  const source = await guest();
+  for (const q of content.quiz.questions) await saveAnswer(source.id, q.key, q.options[0].value);
+  await postVisitorMessage(source.id, { clientMessageId: randomUUID(), body: "Preserved conversation", fileIds: [] });
+  const input = await grant(source.cookie);
+  const leads = await env.db.select().from(schema.leads);
+  const messages = await env.db.select().from(schema.messages);
+  const transfers = await env.db.select().from(schema.domainSessionTransfers);
+  const sessions = await env.db.select().from(schema.visitorSessions);
+  vi.stubEnv("LEGACY_SITE_RETIRED", "true");
+  for (const action of [
+    () => startDomainSessionTransfer(newUrl, "/", "ip"),
+    () => authorizeDomainSessionTransfer(oldUrl, input.state, "ip"),
+    () => completeDomainSessionTransfer(completeUrl, { state: input.state, code: input.code }, "ip"),
+  ]) await expect(action()).rejects.toMatchObject({ status: 404 });
+  expect((await finishRoute(new Request(`${siteDomains.canonical}/session-transfer/complete`))).status).toBe(404);
+  expect((await skipRoute(new Request(`${siteDomains.canonical}/session-transfer/skip`))).status).toBe(404);
+  expect(await env.db.select().from(schema.leads)).toEqual(leads);
+  expect(await env.db.select().from(schema.messages)).toEqual(messages);
+  expect(await env.db.select().from(schema.visitorSessions)).toEqual(sessions);
+  expect(await env.db.select().from(schema.domainSessionTransfers)).toEqual(transfers);
+  expect(await env.db.select().from(schema.visitorDeviceSessions)).toHaveLength(0);
 });
 
 it("rejects missing/cross-site origins and grants only a matching browser's same-origin POST", async () => {

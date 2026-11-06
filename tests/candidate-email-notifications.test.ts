@@ -15,7 +15,7 @@ let sessionId: string;
 let conversationId: string;
 const start = new Date("2026-11-01T12:00:00Z");
 const at = (minutes: number) => new Date(start.getTime() + minutes * 60_000);
-const sent: { email: string; subject: string; text: string; id: string }[] = [];
+const sent: { email: string; subject: string; text: string; html?: string; id: string }[] = [];
 const scheduled: { id: string; at: Date }[] = [];
 
 async function hr(minutes: number, body = "Confidential test body") {
@@ -60,6 +60,8 @@ describe("grouped candidate email outbox", () => {
     expect(await deliverCandidateEmail(first.jobId, at(30))).toBe("sent");
     expect(sent).toHaveLength(1);
     expect(sent[0].text).not.toContain("Confidential");
+    expect(sent[0].html).not.toContain("Confidential");
+    expect(sent[0].html).toContain("Przejdź do rozmowy");
     expect(sent[0].text).toContain("https://example.com");
     expect(await deliverCandidateEmail(first.jobId, at(31))).toBe("done");
     expect(sent).toHaveLength(1);
@@ -356,13 +358,17 @@ describe("grouped candidate email outbox", () => {
 });
 
 describe("Brevo boundary", () => {
-  it("uses only plain text, no chat excerpts or tracking consent; errors do not leak response data", async () => {
+  it("uses self-contained HTML and plain text, with no recipient identity, attachments or tracking consent", async () => {
     setCandidateEmailTransport(null);
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ messageId: "test-id" }), { status: 201 }));
     vi.stubGlobal("fetch", fetch);
     await sendCandidateCode("candidate@example.com", "123456", randomUUID());
     const payload = JSON.parse(fetch.mock.calls[0][1].body);
-    expect(payload.htmlContent).toBeUndefined();
+    expect(payload.htmlContent).toContain('<html lang="pl">');
+    expect(payload.htmlContent).toContain("123456");
+    expect(payload.htmlContent).not.toContain("candidate@example.com");
+    expect(payload.textContent).not.toContain("candidate@example.com");
+    expect(payload.htmlContent).not.toMatch(/<(?:img|script|svg|iframe|link|form)\b/i);
     expect(payload.attachment).toBeUndefined();
     expect(payload.to).toEqual([{ email: "candidate@example.com", contactPixelTrackingConsent: false }]);
     expect(payload.textContent).toContain("123456");

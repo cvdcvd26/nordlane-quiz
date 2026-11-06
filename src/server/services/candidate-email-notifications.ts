@@ -6,7 +6,7 @@ import { lockVisitor, type Transaction } from "@/server/session-lock";
 import { candidateEmailConfigured, candidateSiteUrl, CandidateEmailError, sendCandidateEmail } from "@/server/brevo";
 import { candidateEmailQueue } from "@/server/candidate-email-queue";
 import { badRequest } from "@/server/errors";
-import { brand } from "@/config/brand";
+import { buildCandidateEmailTemplate } from "@/server/candidate-email-templates";
 
 export const CHAT_EMAIL_WAIT_MS = 30 * 60_000;
 export const CHAT_EMAIL_COOLDOWN_MS = 3 * 60 * 60_000;
@@ -241,13 +241,9 @@ export async function deliverCandidateEmail(id: string, now = new Date()): Promi
   if (claim.outcome === "done" && claim.nextJobId) await enqueueCandidateEmail(claim.nextJobId);
   if (claim.outcome !== "send") return claim.outcome;
   const { job, sessionId } = claim;
-  const site = candidateSiteUrl();
-  const title = job.kind === "welcome" ? `${brand.name} — Twoje konto jest gotowe` : `${brand.name} — czekają na Ciebie nowe wiadomości`;
-  const text = job.kind === "welcome"
-    ? `Witaj w ${brand.name}!\n\nTwój adres e-mail został potwierdzony. Aktualna strona Twojego zgłoszenia:\n${site}\n\nAby wrócić do zgłoszenia, otwórz stronę, wybierz „Moje zgłoszenie” i wpisz ten adres e-mail. Na nowym urządzeniu potwierdź wejście jednorazowym kodem otrzymanym pocztą. W zapisanej sesji zgłoszenie otworzy się automatycznie.\n\nW swoim zgłoszeniu znajdziesz zadanie, status i rozmowę z HR.\n\nZespół ${brand.name}`
-    : `W Twoim czacie ${brand.name} czekają nowe, nieprzeczytane wiadomości od HR.\n\nOtwórz swoje zgłoszenie:\n${site}\n\nJeśli pojawi się ekran logowania, wybierz „Moje zgłoszenie” i użyj tego adresu e-mail.\n\nPowiadomienia o wiadomościach łączymy i wysyłamy nie częściej niż raz na 3 godziny.\n\nZespół ${brand.name}`;
+  const template = buildCandidateEmailTemplate({ kind: job.kind as "welcome" | "chat", site: candidateSiteUrl() });
   try {
-    await sendCandidateEmail(job.kind as "welcome" | "chat", claim.email, title, text, `candidate-${job.id}`, now);
+    await sendCandidateEmail(job.kind as "welcome" | "chat", claim.email, template.subject, template.text, `candidate-${job.id}`, now, template.html);
   } catch (error) {
     const code = error instanceof CandidateEmailError ? error.code : "temporary";
     const retry = code === "temporary" || code === "quota";

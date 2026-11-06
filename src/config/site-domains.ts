@@ -7,6 +7,16 @@ export const siteDomains = {
 
 export const quizOrigins: readonly string[] = [siteDomains.canonical, siteDomains.legacy];
 
+/** Previous production aliases are closed together; arbitrary previews are unaffected. */
+export const legacySiteHosts: readonly string[] = [
+  "alleybiz.vercel.app",
+  "nordlane-quiz.vercel.app",
+  "nordlane-quiz-alley9.vercel.app",
+  "nordlane-quiz-git-main-alley9.vercel.app",
+];
+
+export const legacySiteRetired = () => process.env.LEGACY_SITE_RETIRED === "true";
+
 export const MIGRATION_CHECKED_COOKIE = "nl_domain_checked";
 // __Host- prevents another subdomain from injecting a Domain-scoped nonce.
 export const MIGRATION_NONCE_COOKIE = "__Host-nl_domain_nonce";
@@ -32,6 +42,8 @@ export function migrationDestination(input: string | null): string {
 export const isMigrationQuizPath = (pathname: string) => transferPaths.has(pathname);
 
 export function domainMigrationEnabled() {
+  // Retirement explicitly forbids redirects and cross-domain session recovery.
+  if (legacySiteRetired()) return false;
   try {
     const configured = new URL(process.env.APP_URL ?? "");
     return process.env.SITE_DOMAIN_MIGRATION_ENABLED === "true" && configured.origin === siteDomains.canonical &&

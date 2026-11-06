@@ -8,6 +8,7 @@ import { collectVisitorAttribution } from "@/lib/visitor-attribution";
 const enabled = vi.hoisted(() => vi.fn());
 vi.mock("@/server/maintenance", () => ({ isMaintenanceEnabled: enabled }));
 beforeEach(() => {
+  vi.stubEnv("LEGACY_SITE_RETIRED", "false");
   vi.stubEnv("APP_URL", siteDomains.canonical); vi.stubEnv("SITE_DOMAIN_MIGRATION_ENABLED", "true");
   enabled.mockReset(); enabled.mockResolvedValue(false);
 });
@@ -38,7 +39,7 @@ it("does not transfer administrator access and keeps old file/queue APIs reachab
   const response = await proxy(new NextRequest(`${siteDomains.legacy}/admin/leads/4`, { headers: { cookie: "nl_admin=secret" } }));
   expect(getRedirectUrl(response)).toBe(`${siteDomains.canonical}/admin/login`);
   for (const path of ["/api/files/test", "/api/jobs/deliver", "/api/jobs/candidate-email", "/api/session-transfer/complete", "/_next/static/app.js", "/it-solution-mark.svg"]) {
-    expect(unstable_doesMiddlewareMatch({ config, nextConfig: {}, url: `${siteDomains.legacy}${path}` })).toBe(false);
+    expect(unstable_doesMiddlewareMatch({ config, nextConfig: {}, url: `${siteDomains.legacy}${path}` })).toBe(true);
     expect(getRedirectUrl(await proxy(new NextRequest(`${siteDomains.legacy}${path}`)))).toBeNull();
   }
 });

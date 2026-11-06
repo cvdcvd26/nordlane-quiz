@@ -4,6 +4,7 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 import { db, schema } from "@/db";
 import { brand } from "@/config/brand";
+import { buildCandidateEmailTemplate } from "./candidate-email-templates";
 
 const DAY_MS = 86_400_000;
 // Brevo keeps an idempotency key for 30 minutes. Never retry an ambiguous
@@ -61,7 +62,7 @@ async function reserveSend(id: string, kind: CandidateEmailKind, now: Date) {
 }
 
 export type CandidateEmailTransport = (payload: {
-  email: string; subject: string; text: string; id: string;
+  email: string; subject: string; text: string; html?: string; id: string;
 }) => Promise<string>;
 let override: CandidateEmailTransport | null = null;
 /** Test hook; transport is the only network boundary. */
@@ -80,7 +81,7 @@ function brevoIdempotencyKey(id: string) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-async function brevoTransport(p: { email: string; subject: string; text: string; id: string }) {
+async function brevoTransport(p: { email: string; subject: string; text: string; html?: string; id: string }) {
   let response: Response;
   try {
     response = await fetch("https://api.brevo.com/v3/smtp/email", {
@@ -90,9 +91,10 @@ async function brevoTransport(p: { email: string; subject: string; text: string;
         sender: { name: brand.name, email: process.env.BREVO_SENDER_EMAIL },
         to: [{ email: p.email, contactPixelTrackingConsent: false }],
         subject: p.subject,
-        // Plain-text only: no embedded images, tracking pixels, chat excerpts,
-        // candidate names, documents or one-click authentication links.
+        // Self-contained HTML plus a full plain-text fallback. No embedded images,
+        // tracking pixels, chat excerpts, names, documents or authentication links.
         textContent: p.text,
+        ...(p.html ? { htmlContent: p.html } : {}),
         headers: { idempotencyKey: brevoIdempotencyKey(p.id) },
       }),
     });
@@ -107,12 +109,12 @@ async function brevoTransport(p: { email: string; subject: string; text: string;
   return payload.messageId;
 }
 
-export async function sendCandidateEmail(kind: CandidateEmailKind, email: string, subject: string, text: string, id: string, now = new Date()) {
+export async function sendCandidateEmail(kind: CandidateEmailKind, email: string, subject: string, text: string, id: string, now = new Date(), html?: string) {
   if (!candidateEmailConfigured()) throw new CandidateEmailError("disabled");
   const reservation = await reserveSend(id, kind, now);
   if (reservation.status === "accepted") return reservation.providerId ?? "accepted";
   try {
-    const providerId = await (override ?? brevoTransport)({ email, subject, text, id });
+    const providerId = await (override ?? brevoTransport)({ email, subject, text, html, id });
     await db().update(schema.candidateEmailSends).set({ status: "accepted", providerId })
       .where(eq(schema.candidateEmailSends.id, id));
     return providerId;
@@ -127,7 +129,6 @@ export async function sendCandidateEmail(kind: CandidateEmailKind, email: string
 
 export async function sendCandidateCode(email: string, code: string, challengeId: string) {
   if (!/^\d{6}$/.test(code)) throw new CandidateEmailError("rejected");
-  await sendCandidateEmail("otp", email, `${brand.name} — Twój kod logowania`,
-    `Twój jednorazowy kod do ${brand.name}: ${code}\n\nKod jest ważny przez 10 minut. Wpisz go w otwartej stronie ${candidateSiteUrl()}. Nie udostępniaj go innym osobom.\n\nJeśli nie proszono o ten kod, zignoruj tę wiadomość.`,
-    `otp-${challengeId}`);
+  const template = buildCandidateEmailTemplate({ kind: "otp", site: candidateSiteUrl(), code });
+  await sendCandidateEmail("otp", email, template.subject, template.text, `otp-${challengeId}`, new Date(), template.html);
 }

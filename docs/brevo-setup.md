@@ -45,8 +45,9 @@ database. Use a separate database and sender/test recipients for previews.
 - Automatic acknowledgements, edits and private administrator status changes do
   not create chat emails. Deleted messages and published results that close the
   chat are checked again before sending.
-- Emails contain plain text and a website link, never chat text, attachments or
-  recruitment documents. Brevo receives the recipient address and technical email.
+- Emails contain self-contained HTML and a complete plain-text fallback with a
+  website link, never chat text, attachments or recruitment documents. Brevo
+  receives the recipient address and technical email.
 - Notifications use a separate durable Vercel Queue topic (QStash on non-Vercel
   hosts). The daily maintenance sweep is recovery only, not the primary timer.
 

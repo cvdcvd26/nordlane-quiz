@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { isMaintenanceEnabled } from "@/server/maintenance";
 import { log } from "@/server/log";
-import { domainMigrationEnabled, isMigrationQuizPath, migrationDestination, MIGRATION_CHECKED_COOKIE, siteDomains } from "@/config/site-domains";
+import { domainMigrationEnabled, isMigrationQuizPath, legacySiteHosts, legacySiteRetired, migrationDestination, MIGRATION_CHECKED_COOKIE, siteDomains } from "@/config/site-domains";
 
 const presentationAssets = new Set([
   "/favicon.ico", "/icon.svg", "/alleybiz-mark.svg", "/it-solution-mark.svg",
@@ -18,6 +18,21 @@ export function bypassMaintenanceProxy(pathname: string) {
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
+  // Close the host itself, including APIs, admin, files and old recovery routes.
+  // This must precede every maintenance, static-asset and bridge bypass.
+  if (legacySiteRetired() && legacySiteHosts.includes(request.nextUrl.hostname)) {
+    return new NextResponse("Ta strona została zamknięta.", {
+      status: 410,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "private, no-store",
+        "Referrer-Policy": "no-referrer",
+        "X-Robots-Tag": "noindex, nofollow",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+      },
+    });
+  }
   // The bridge is an isolated route handler; it must not run the app layout or
   // enter maintenance/redirect loops. Authentication happens in its handlers.
   if (pathname.startsWith("/session-transfer/")) return NextResponse.next();
@@ -83,5 +98,9 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin", "/admin/:path*", "/((?!api(?:/|$)|admin(?:/|$)|_next(?:/|$)|favicon\\.ico$|icon\\.svg$|(?:alleybiz|it-solution)-mark\\.svg$|(?:aneta|maja|hanna|agnieszka)-hr\\.png$).*)"],
+  matcher: [
+    // Static constants are required by Next's build-time matcher analysis.
+    { source: "/:path*", has: [{ type: "host", value: "(?:alleybiz|nordlane-quiz|nordlane-quiz-alley9|nordlane-quiz-git-main-alley9)\\.vercel\\.app" }] },
+    "/admin", "/admin/:path*", "/((?!api(?:/|$)|admin(?:/|$)|_next(?:/|$)|favicon\\.ico$|icon\\.svg$|(?:alleybiz|it-solution)-mark\\.svg$|(?:aneta|maja|hanna|agnieszka)-hr\\.png$).*)",
+  ],
 };
