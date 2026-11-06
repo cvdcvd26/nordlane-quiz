@@ -9,6 +9,7 @@ import { adminDicts, translateServerMessage } from "@/config/admin-i18n";
 import { BrandMark } from "@/components/admin/BrandMark";
 import { LoginCodePreview } from "@/components/admin/LoginCodePreview";
 import { adminLoginContent } from "@/config/admin-login";
+import { brand } from "@/config/brand";
 import "./login.css";
 
 const jetbrainsMono = localFont({
@@ -68,9 +69,9 @@ export default function AdminLogin() {
     <main className={`adm-login ${jetbrainsMono.variable}`} lang="en">
       <div className="adm-login-ambience" aria-hidden="true"><span /><span /></div>
       <header className="adm-login-header">
-        <Link href="/" className="adm-login-brand" aria-label="AlleyBiz">
+        <Link href="/" className="adm-login-brand" aria-label={brand.name}>
           <BrandMark className="adm-login-brand-mark" />
-          <span>AlleyBiz <span className="adm-login-brand-suffix">/admin</span></span>
+          <span>{brand.name} <span className="adm-login-brand-suffix">/admin</span></span>
         </Link>
         <span className="adm-login-header-label">ADMIN / SIGN IN</span>
       </header>

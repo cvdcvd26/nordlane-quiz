@@ -27,6 +27,7 @@ import { CandidateEmailAccess, type CandidateEmailState } from "./CandidateEmail
 type SessionState = {
   marketingScope: string;
   candidateEmail?: CandidateEmailState;
+  restoredSession?: boolean;
   answers: Record<string, string>;
   contact: { name: string; phone: string; telegram: string | null } | null;
   submission: { id: string; submittedAt: string } | null;
@@ -148,7 +149,7 @@ export function QuizApp() {
       api<SessionState>("/api/session")
         .then((s) => {
           setState(s);
-          if (s.candidateEmail?.enabled && new URLSearchParams(window.location.search).get("account") === "1") setAccountOpen(true);
+          if ((s.candidateEmail?.enabled || s.candidateEmail?.verified) && new URLSearchParams(window.location.search).get("account") === "1") setAccountOpen(true);
           setChatUnlocked(Boolean(s.submission || (s.contact && allAnswered(s.answers))));
           handleOutcome(s.outcome);
           setAnswers(s.answers);
@@ -159,7 +160,7 @@ export function QuizApp() {
           progress.current = { contactSaved: Boolean(s.contact), questionsComplete: allAnswered(s.answers), submitted: Boolean(s.submission) };
           if (!restoredProgressCaptured.current) {
             restoredProgressCaptured.current = true;
-            if (s.candidateEmail?.verified) setRestoredThrough(latestQuizStep(progress.current));
+            if (s.candidateEmail?.verified || s.restoredSession) setRestoredThrough(latestQuizStep(progress.current));
           }
           const requested = resolveQuizStep(window.location.pathname, progress.current, window.history.state?.[QUIZ_HISTORY_STEP]);
           goTo(requested, "replace", false);
@@ -339,7 +340,8 @@ export function QuizApp() {
   };
 
   const emailRequired = Boolean(state?.candidateEmail?.enabled && !state.candidateEmail.verified && !state.contact);
-  const emailAccess = state?.candidateEmail?.enabled ? <CandidateEmailAccess
+  const accountAvailable = Boolean(state?.candidateEmail?.enabled || state?.candidateEmail?.verified);
+  const emailAccess = accountAvailable && state?.candidateEmail ? <CandidateEmailAccess
     state={state.candidateEmail}
     existingApplication={Boolean(state.contact)}
     onAccessChanged={() => window.location.replace("/")}
@@ -367,7 +369,7 @@ export function QuizApp() {
             <LogoMark className="grid size-10 shrink-0 place-items-center rounded-xl border border-paint/30 bg-gradient-to-br from-[#133a2b] to-surface-2 shadow-[0_0_20px_#2ee6a014]" />
             <span className="display relative z-10 text-[1.05rem] font-bold">{content.brand.name}</span>
           </p>
-          {state?.candidateEmail?.enabled && <button ref={accountButton} type="button" onClick={openAccount} className="min-h-10 rounded-full border border-paint/30 bg-paint/5 px-3 text-xs font-semibold text-cyan transition-colors hover:bg-paint/10 sm:px-4 sm:text-sm" aria-controls="candidate-email-access" aria-expanded={step === 0 || accountOpen}>Moje zgłoszenie</button>}
+          {accountAvailable && <button ref={accountButton} type="button" onClick={openAccount} className="min-h-10 rounded-full border border-paint/30 bg-paint/5 px-3 text-xs font-semibold text-cyan transition-colors hover:bg-paint/10 sm:px-4 sm:text-sm" aria-controls="candidate-email-access" aria-expanded={step === 0 || accountOpen}>Moje zgłoszenie</button>}
         </div>
         {/* Mobile progress */}
         <div className="mx-auto max-w-6xl px-4 pb-4 sm:px-6 md:hidden">

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs><linearGradient id="it-metal" x1="10" y1="12" x2="53" y2="52" gradientUnits="userSpaceOnUse"><stop stop-color="#b3ffe5"/><stop offset=".43" stop-color="#28e8a3"/><stop offset="1" stop-color="#079268"/></linearGradient></defs>
+  <path fill="url(#it-metal)" d="M10 14h10v36H10zM27 14h29v10H46v26H36V24h-9z"/>
+  <path fill="#e0fff3" opacity=".4" d="M10 14h10v2H10zM27 14h29v2H27z"/>
+</svg>

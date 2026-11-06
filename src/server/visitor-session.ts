@@ -1,25 +1,20 @@
 import { rateLimit } from "./rate-limit";
 import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
-import { and, eq, gt } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { unauthorized } from "./errors";
 import { content } from "@/config/content";
 import { getCandidateAuthenticatedSessionId } from "./candidate-email-auth";
+import { findGuestCredential, VISITOR_MAX_AGE } from "./visitor-credentials";
 
 const COOKIE = "nl_visitor";
-const MAX_AGE = 60 * 60 * 24 * 180; // 180 days
+const MAX_AGE = VISITOR_MAX_AGE;
 
 const hash = (token: string) => createHash("sha256").update(token).digest("hex");
 
 async function findByToken(token: string | undefined) {
-  if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
-  const rows = await db()
-    .select({ id: schema.visitorSessions.id })
-    .from(schema.visitorSessions)
-    .where(and(eq(schema.visitorSessions.tokenHash, hash(token)), gt(schema.visitorSessions.createdAt, new Date(Date.now() - MAX_AGE * 1000))))
-    .limit(1);
-  return rows[0]?.id ?? null;
+  return (await findGuestCredential(token))?.sessionId ?? null;
 }
 
 /**

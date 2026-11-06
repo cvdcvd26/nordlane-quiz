@@ -162,12 +162,14 @@ export async function getLeadDetails(leadId: number, changesAfter?: string) {
     .from(schema.visitorContacts)
     .where(eq(schema.visitorContacts.sessionId, lead.sessionId))
     .limit(1);
-  const [answers, [submission], [conversation], notes, replyState] = await Promise.all([
+  const [answers, [submission], [conversation], notes, replyState, [candidateAccount]] = await Promise.all([
     db().select().from(schema.quizAnswers).where(eq(schema.quizAnswers.sessionId, lead.sessionId)),
     db().select().from(schema.taskSubmissions).where(eq(schema.taskSubmissions.sessionId, lead.sessionId)).limit(1),
     db().select().from(schema.conversations).where(eq(schema.conversations.sessionId, lead.sessionId)).limit(1),
     db().select().from(schema.leadNotes).where(eq(schema.leadNotes.leadId, leadId)).orderBy(desc(schema.leadNotes.createdAt)),
     getReplyQueueState(leadId),
+    db().select({ email: schema.candidateAccounts.email, verifiedAt: schema.candidateAccounts.emailVerifiedAt })
+      .from(schema.candidateAccounts).where(eq(schema.candidateAccounts.sessionId, lead.sessionId)).limit(1),
   ]);
   const submissionFiles = submission
     ? await db().select().from(schema.files).where(eq(schema.files.submissionId, submission.id)).orderBy(asc(schema.files.createdAt))
@@ -192,6 +194,9 @@ export async function getLeadDetails(leadId: number, changesAfter?: string) {
       answered: answers.filter((a) => QUESTION_KEYS.includes(a.questionKey)).length,
     },
     contact: contact ?? null,
+    verifiedEmail: candidateAccount
+      ? { address: candidateAccount.email, verifiedAt: candidateAccount.verifiedAt.toISOString() }
+      : null,
     answers: content.quiz.questions.map((q) => {
       const a = answers.find((x) => x.questionKey === q.key);
       return {

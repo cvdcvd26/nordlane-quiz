@@ -6,6 +6,7 @@ import { lockVisitor, type Transaction } from "@/server/session-lock";
 import { candidateEmailConfigured, candidateSiteUrl, CandidateEmailError, sendCandidateEmail } from "@/server/brevo";
 import { candidateEmailQueue } from "@/server/candidate-email-queue";
 import { badRequest } from "@/server/errors";
+import { brand } from "@/config/brand";
 
 export const CHAT_EMAIL_WAIT_MS = 30 * 60_000;
 export const CHAT_EMAIL_COOLDOWN_MS = 3 * 60 * 60_000;
@@ -31,10 +32,11 @@ async function stateFor(tx: Transaction, sessionId: string) {
   return state;
 }
 
-async function unreadRange(tx: Transaction, sessionId: string, after: bigint) {
+async function unreadRange(tx: Transaction, sessionId: string, after: bigint, through?: bigint) {
   const fields = { sequence: schema.messages.sequence, createdAt: schema.messages.createdAt };
   const conditions = and(eq(schema.conversations.sessionId, sessionId), eq(schema.messages.sender, "admin"),
-    isNull(schema.messages.deletedAt), gt(schema.messages.sequence, after));
+    isNull(schema.messages.deletedAt), gt(schema.messages.sequence, after),
+    through === undefined ? undefined : lte(schema.messages.sequence, through));
   const [first] = await tx.select(fields).from(schema.messages)
     .innerJoin(schema.conversations, eq(schema.conversations.id, schema.messages.conversationId))
     .where(conditions).orderBy(asc(schema.messages.sequence)).limit(1);
@@ -43,6 +45,41 @@ async function unreadRange(tx: Transaction, sessionId: string, after: bigint) {
     .innerJoin(schema.conversations, eq(schema.conversations.id, schema.messages.conversationId))
     .where(conditions).orderBy(desc(schema.messages.sequence)).limit(1);
   return { first, last };
+}
+
+/** A timed-out transport may already have delivered; cancellation cannot undo it. */
+async function holdAttemptedChatCooldown(tx: Transaction, job: typeof j.$inferSelect, sessionId: string, now: Date) {
+  if (job.throughSequence === null) return;
+  const [attempted] = await tx.select({ status: schema.candidateEmailSends.status }).from(schema.candidateEmailSends)
+    .where(eq(schema.candidateEmailSends.id, `candidate-${job.id}`));
+  if (!attempted || attempted.status === "rejected") return;
+  await stateFor(tx, sessionId);
+  await tx.update(s).set({ lastNotifiedSequence: sql`greatest(${s.lastNotifiedSequence}, ${job.throughSequence})`,
+    lastNotifiedAt: now }).where(eq(s.sessionId, sessionId));
+}
+
+/** Keep messages arriving during an attempted send in their own future group. */
+async function ensureRemainingChatEmail(tx: Transaction, accountId: string, sessionId: string, now: Date) {
+  const state = await stateFor(tx, sessionId);
+  const after = state.lastReadSequence > state.lastNotifiedSequence ? state.lastReadSequence : state.lastNotifiedSequence;
+  const range = await unreadRange(tx, sessionId, after);
+  const pendingWhere = and(eq(j.accountId, accountId), eq(j.kind, "chat"), eq(j.status, "pending"));
+  if (!range || await chatClosed(tx, sessionId)) {
+    await tx.update(j).set({ status: "cancelled" }).where(pendingWhere);
+    return null;
+  }
+  const dueAt = new Date(Math.max(range.first.createdAt.getTime() + CHAT_EMAIL_WAIT_MS,
+    state.lastNotifiedAt ? state.lastNotifiedAt.getTime() + CHAT_EMAIL_COOLDOWN_MS : 0, now.getTime()));
+  const [pending] = await tx.select().from(j).where(pendingWhere);
+  if (pending) {
+    if (pending.dueAt.getTime() !== dueAt.getTime()) {
+      await tx.update(j).set({ dueAt, queuedAt: null }).where(eq(j.id, pending.id));
+    }
+    return pending.id;
+  }
+  const id = randomUUID();
+  await tx.insert(j).values({ id, accountId, kind: "chat", dedupeKey: `chat-${id}`, dueAt });
+  return id;
 }
 
 /** Called with the visitor lock inside the same transaction as a new HR message. */
@@ -105,7 +142,7 @@ export async function enqueueCandidateEmail(id: string) {
   throw new Error("candidate_email_queue_unavailable");
 }
 
-export async function markCandidateMessagesRead(sessionId: string, sequence: string) {
+export async function markCandidateMessagesRead(sessionId: string, sequence: string, now = new Date()) {
   if (!candidateEmailConfigured()) return;
   if (!/^[1-9]\d{0,18}$/.test(sequence) || BigInt(sequence) > BigInt("9223372036854775807")) throw badRequest("Nieprawidłowa wiadomość.");
   await db().transaction(async tx => {
@@ -123,14 +160,18 @@ export async function markCandidateMessagesRead(sessionId: string, sequence: str
     const cursor = message.sequence > state.lastReadSequence ? message.sequence : state.lastReadSequence;
     await tx.update(s).set({ lastReadSequence: cursor }).where(eq(s.sessionId, sessionId));
     const range = await unreadRange(tx, sessionId, cursor > state.lastNotifiedSequence ? cursor : state.lastNotifiedSequence);
-    if (!range) await tx.update(j).set({ status: "cancelled" })
-      .where(and(eq(j.accountId, account.id), eq(j.kind, "chat"), eq(j.status, "pending")));
+    if (!range) {
+      const pendingWhere = and(eq(j.accountId, account.id), eq(j.kind, "chat"), eq(j.status, "pending"));
+      const [pending] = await tx.select().from(j).where(pendingWhere);
+      if (pending) await holdAttemptedChatCooldown(tx, pending, sessionId, now);
+      await tx.update(j).set({ status: "cancelled" }).where(pendingWhere);
+    }
   });
 }
 
 type Job = typeof j.$inferSelect;
 type Claim = { outcome: "send"; job: Job; email: string; sessionId: string } |
-  { outcome: "done" | "busy" | "rescheduled" };
+  { outcome: "done"; nextJobId?: string | null } | { outcome: "busy" | "rescheduled" };
 
 async function claimEmail(id: string, now: Date): Promise<Claim> {
   const [target] = await db().select({ sessionId: schema.candidateAccounts.sessionId }).from(j)
@@ -146,6 +187,7 @@ async function claimEmail(id: string, now: Date): Promise<Claim> {
     if (job.dueAt > now) return { outcome: "busy" };
     const account = await accountFor(tx, target.sessionId);
     if (!account || (job.kind === "chat" && await chatClosed(tx, target.sessionId))) {
+      if (account && job.kind === "chat") await holdAttemptedChatCooldown(tx, job, target.sessionId, now);
       await tx.update(j).set({ status: "cancelled", lockedAt: null }).where(eq(j.id, id));
       return { outcome: "done" };
     }
@@ -154,23 +196,37 @@ async function claimEmail(id: string, now: Date): Promise<Claim> {
       const [other] = await tx.select({ id: j.id }).from(j).where(and(eq(j.accountId, account.id),
         eq(j.kind, "chat"), eq(j.status, "sending"), ne(j.id, job.id)));
       if (other) return { outcome: "busy" };
-      const state = await stateFor(tx, target.sessionId);
-      const range = await unreadRange(tx, target.sessionId, state.lastReadSequence > state.lastNotifiedSequence ? state.lastReadSequence : state.lastNotifiedSequence);
-      if (!range) {
-        await tx.update(j).set({ status: "cancelled", lockedAt: null }).where(eq(j.id, id));
-        return { outcome: "done" };
+      const [attempted] = await tx.select({ status: schema.candidateEmailSends.status }).from(schema.candidateEmailSends)
+        .where(eq(schema.candidateEmailSends.id, `candidate-${job.id}`));
+      // Once Brevo may have accepted this logical email, its message range is
+      // immutable. Retrying with a wider range could mark newer messages as
+      // notified even though provider idempotency returns the *old* send.
+      // An accepted ledger entry only needs local finalization (sendCandidateEmail
+      // returns without network). Every other retry still rechecks reading and
+      // deletion inside its original range before attempting the transport.
+      if (attempted?.status !== "accepted" || job.throughSequence === null) {
+        const state = await stateFor(tx, target.sessionId);
+        const range = await unreadRange(tx, target.sessionId,
+          state.lastReadSequence > state.lastNotifiedSequence ? state.lastReadSequence : state.lastNotifiedSequence,
+          attempted && job.throughSequence !== null ? job.throughSequence : undefined);
+        if (!range) {
+          await tx.update(j).set({ status: "cancelled", lockedAt: null }).where(eq(j.id, id));
+          await holdAttemptedChatCooldown(tx, job, target.sessionId, now);
+          const nextJobId = await ensureRemainingChatEmail(tx, account.id, target.sessionId, now);
+          return { outcome: "done", nextJobId };
+        }
+        const due = Math.max(range.first.createdAt.getTime() + CHAT_EMAIL_WAIT_MS,
+          state.lastNotifiedAt ? state.lastNotifiedAt.getTime() + CHAT_EMAIL_COOLDOWN_MS : 0);
+        if (due > now.getTime()) {
+          // A stale sending job may have a newer pending sibling. Merge that
+          // group before returning this job to pending (one pending row/account).
+          await tx.update(j).set({ status: "cancelled" }).where(and(eq(j.accountId, account.id),
+            eq(j.kind, "chat"), eq(j.status, "pending"), ne(j.id, job.id)));
+          await tx.update(j).set({ dueAt: new Date(due), status: "pending", lockedAt: null, queuedAt: null }).where(eq(j.id, id));
+          return { outcome: "rescheduled" };
+        }
+        if (!attempted || job.throughSequence === null) throughSequence = range.last.sequence;
       }
-      const due = Math.max(range.first.createdAt.getTime() + CHAT_EMAIL_WAIT_MS,
-        state.lastNotifiedAt ? state.lastNotifiedAt.getTime() + CHAT_EMAIL_COOLDOWN_MS : 0);
-      if (due > now.getTime()) {
-        // A stale sending job may have a newer pending sibling. Merge that
-        // group before returning this job to pending (one pending row/account).
-        await tx.update(j).set({ status: "cancelled" }).where(and(eq(j.accountId, account.id),
-          eq(j.kind, "chat"), eq(j.status, "pending"), ne(j.id, job.id)));
-        await tx.update(j).set({ dueAt: new Date(due), status: "pending", lockedAt: null, queuedAt: null }).where(eq(j.id, id));
-        return { outcome: "rescheduled" };
-      }
-      throughSequence = range.last.sequence;
     }
     const [claimed] = await tx.update(j).set({ status: "sending", throughSequence, lockedAt: now, attempts: job.attempts + 1 })
       .where(eq(j.id, id)).returning();
@@ -182,23 +238,26 @@ export async function deliverCandidateEmail(id: string, now = new Date()): Promi
   if (!candidateEmailConfigured()) return "disabled";
   const claim = await claimEmail(id, now);
   if (claim.outcome === "rescheduled") { await enqueueCandidateEmail(id); return "rescheduled"; }
+  if (claim.outcome === "done" && claim.nextJobId) await enqueueCandidateEmail(claim.nextJobId);
   if (claim.outcome !== "send") return claim.outcome;
   const { job, sessionId } = claim;
   const site = candidateSiteUrl();
-  const title = job.kind === "welcome" ? "AlleyBiz — Twoje konto jest gotowe" : "AlleyBiz — czekają na Ciebie nowe wiadomości";
+  const title = job.kind === "welcome" ? `${brand.name} — Twoje konto jest gotowe` : `${brand.name} — czekają na Ciebie nowe wiadomości`;
   const text = job.kind === "welcome"
-    ? `Witaj w AlleyBiz!\n\nTwój adres e-mail został potwierdzony. Aktualna strona Twojego zgłoszenia:\n${site}\n\nAby wrócić do zgłoszenia, otwórz stronę, wybierz „Moje zgłoszenie” i wpisz ten adres e-mail. Na nowym urządzeniu potwierdź wejście jednorazowym kodem otrzymanym pocztą. W zapisanej sesji zgłoszenie otworzy się automatycznie.\n\nW swoim zgłoszeniu znajdziesz zadanie, status i rozmowę z HR.\n\nZespół AlleyBiz`
-    : `W Twoim czacie AlleyBiz czekają nowe, nieprzeczytane wiadomości od HR.\n\nOtwórz swoje zgłoszenie:\n${site}\n\nJeśli pojawi się ekran logowania, wybierz „Moje zgłoszenie” i użyj tego adresu e-mail.\n\nPowiadomienia o wiadomościach łączymy i wysyłamy nie częściej niż raz na 3 godziny.\n\nZespół AlleyBiz`;
+    ? `Witaj w ${brand.name}!\n\nTwój adres e-mail został potwierdzony. Aktualna strona Twojego zgłoszenia:\n${site}\n\nAby wrócić do zgłoszenia, otwórz stronę, wybierz „Moje zgłoszenie” i wpisz ten adres e-mail. Na nowym urządzeniu potwierdź wejście jednorazowym kodem otrzymanym pocztą. W zapisanej sesji zgłoszenie otworzy się automatycznie.\n\nW swoim zgłoszeniu znajdziesz zadanie, status i rozmowę z HR.\n\nZespół ${brand.name}`
+    : `W Twoim czacie ${brand.name} czekają nowe, nieprzeczytane wiadomości od HR.\n\nOtwórz swoje zgłoszenie:\n${site}\n\nJeśli pojawi się ekran logowania, wybierz „Moje zgłoszenie” i użyj tego adresu e-mail.\n\nPowiadomienia o wiadomościach łączymy i wysyłamy nie częściej niż raz na 3 godziny.\n\nZespół ${brand.name}`;
   try {
     await sendCandidateEmail(job.kind as "welcome" | "chat", claim.email, title, text, `candidate-${job.id}`, now);
   } catch (error) {
     const code = error instanceof CandidateEmailError ? error.code : "temporary";
     const retry = code === "temporary" || code === "quota";
+    let remaining: string | null = null;
     await db().transaction(async tx => {
       await lockVisitor(tx, sessionId);
       if (retry && job.kind === "chat") {
         // A new group may have been created while the transport was in flight.
-        // Merge its work into this retry; delivery re-reads all unnotified messages.
+        // Merge its work into this retry; any messages beyond the frozen range
+        // get a new group once this provider attempt is resolved.
         await tx.update(j).set({ status: "cancelled" }).where(and(eq(j.accountId, job.accountId), eq(j.kind, "chat"), eq(j.status, "pending"), ne(j.id, job.id)));
       }
       await tx.update(j).set({ status: retry ? "pending" : code === "uncertain" ? "uncertain" : "failed", lockedAt: null,
@@ -209,9 +268,11 @@ export async function deliverCandidateEmail(id: string, now = new Date()): Promi
         await stateFor(tx, sessionId);
         await tx.update(s).set({ lastNotifiedSequence: sql`greatest(${s.lastNotifiedSequence}, ${job.throughSequence})`, lastNotifiedAt: now })
           .where(eq(s.sessionId, sessionId));
+        remaining = await ensureRemainingChatEmail(tx, job.accountId, sessionId, now);
       }
     });
     if (retry) { await enqueueCandidateEmail(id); return "rescheduled"; }
+    if (remaining) await enqueueCandidateEmail(remaining);
     return "done";
   }
   let pending: string | null = null;
@@ -222,9 +283,7 @@ export async function deliverCandidateEmail(id: string, now = new Date()): Promi
       await stateFor(tx, sessionId);
       await tx.update(s).set({ lastNotifiedSequence: sql`greatest(${s.lastNotifiedSequence}, ${job.throughSequence})`, lastNotifiedAt: now })
         .where(eq(s.sessionId, sessionId));
-      const [next] = await tx.update(j).set({ dueAt: sql`greatest(${j.dueAt}, ${new Date(now.getTime() + CHAT_EMAIL_COOLDOWN_MS)})`, queuedAt: null })
-        .where(and(eq(j.accountId, job.accountId), eq(j.kind, "chat"), eq(j.status, "pending"))).returning({ id: j.id });
-      pending = next?.id ?? null;
+      pending = await ensureRemainingChatEmail(tx, job.accountId, sessionId, now);
     }
   });
   if (pending) await enqueueCandidateEmail(pending);

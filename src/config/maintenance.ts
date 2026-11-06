@@ -1,8 +1,10 @@
+import { brand } from "./brand";
+
 export const maintenanceEvent = "alleybiz:maintenance";
 export const maintenancePollIntervalMs = 5000;
 
 export const maintenanceContent = {
-  brand: "AlleyBiz",
+  brand: brand.name,
   kicker: "Przerwa techniczna",
   title: "Pracujemy nad",
   titleAccent: "serwisem.",

@@ -3,6 +3,7 @@ import { z } from "zod";
 export const CONTRACT_LIMITS = {
   fullName: { min: 2, max: 160 },
   address: { min: 5, max: 300 },
+  pesel: { min: 11, max: 11 },
   year: { min: 1900, max: 2100 },
 } as const;
 
@@ -27,6 +28,8 @@ export const contractDataSchema = z.object({
   date: z.string().refine(isCalendarDate, "Enter a valid date between 1900 and 2100."),
   fullName: singleLine(CONTRACT_LIMITS.fullName.min, CONTRACT_LIMITS.fullName.max, "Enter a full name (2–160 characters) without line breaks."),
   address: singleLine(CONTRACT_LIMITS.address.min, CONTRACT_LIMITS.address.max, "Enter an address (5–300 characters) without line breaks."),
+  pesel: z.string().regex(/^\d{11}$/, "Enter the recipient's 11-digit PESEL."),
+  startDate: z.string().refine(isCalendarDate, "Enter a valid start date between 1900 and 2100."),
 }).strict();
 
 export type ContractData = z.infer<typeof contractDataSchema>;

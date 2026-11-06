@@ -4,6 +4,7 @@ import path from "node:path";
 import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { contractDataSchema, type ContractData } from "@/lib/documents";
+import { brand, company } from "@/config/brand";
 import { badRequest } from "@/server/errors";
 import { loadContractTemplate } from "./template";
 
@@ -23,6 +24,7 @@ function loadAssets() {
   if (!assets) assets = Promise.all([
     readFile(path.join(assetsDirectory, "NotoSans-Regular.ttf")),
     readFile(path.join(assetsDirectory, "NotoSans-Bold.ttf")),
+    readFile(path.join(assetsDirectory, "Allura-Regular.ttf")),
   ]).catch(error => { assets = undefined; throw error; });
   return assets;
 }
@@ -50,21 +52,22 @@ function wrap(text: string, font: PDFFont, size: number, width: number): string[
 /** A fresh, typeset document; no text is painted over the original candidate's data. */
 export async function generateContractPdf(input: ContractData): Promise<Uint8Array> {
   const data = contractDataSchema.parse(input);
-  const [[regularBytes, boldBytes], template] = await Promise.all([loadAssets(), loadContractTemplate()]);
+  const [[regularBytes, boldBytes, calligraphicBytes], template] = await Promise.all([loadAssets(), loadContractTemplate()]);
   const document = await PDFDocument.create();
   document.registerFontkit(fontkit);
-  const [regular, bold, signature] = await Promise.all([
+  const [regular, bold, calligraphic] = await Promise.all([
     document.embedFont(regularBytes, { subset: true }),
     document.embedFont(boldBytes, { subset: true }),
-    document.embedPng(template.signature),
+    // Allura uses contextual glyph substitutions; keep the complete font so those glyphs render in PDF readers.
+    document.embedFont(calligraphicBytes, { subset: false }),
   ]);
   const supported = new Set(regular.getCharacterSet());
   if (Array.from(`${data.fullName}${data.address}`).some(character => !supported.has(character.codePointAt(0)!)))
     throw badRequest("The name or address contains characters that this document font cannot display.", "document_characters");
 
   document.setTitle("Umowa o świadczenie usług");
-  document.setAuthor("Alleybizcom Sp. z o.o.");
-  document.setCreator("AlleyBiz document generator");
+  document.setAuthor(company.name);
+  document.setCreator(`${brand.name} document generator`);
   document.setSubject("Umowa o świadczenie usług");
   document.setKeywords([]);
   let page: PDFPage;
@@ -74,7 +77,7 @@ export async function generateContractPdf(input: ContractData): Promise<Uint8Arr
     cursor = A4.height - 52;
     if (document.getPageCount() > 1) {
       page.drawText("UMOWA O ŚWIADCZENIE USŁUG", { x: MARGIN, y: cursor, size: 8, font: bold, color: MUTED });
-      page.drawText("Alleybizcom Sp. z o.o.", { x: A4.width - MARGIN - regular.widthOfTextAtSize("Alleybizcom Sp. z o.o.", 8), y: cursor, size: 8, font: regular, color: MUTED });
+      page.drawText(company.name, { x: A4.width - MARGIN - regular.widthOfTextAtSize(company.name, 8), y: cursor, size: 8, font: regular, color: MUTED });
       page.drawLine({ start: { x: MARGIN, y: cursor - 12 }, end: { x: A4.width - MARGIN, y: cursor - 12 }, thickness: 0.5, color: RULE });
       cursor -= 36;
     }
@@ -97,52 +100,65 @@ export async function generateContractPdf(input: ContractData): Promise<Uint8Arr
   newPage();
   centered("UMOWA O ŚWIADCZENIE USŁUG", 17, bold, 19.2);
   const [year, month, day] = data.date.split("-");
-  centered(`zawarta w dniu ${day}.${month}.${year} r. w Lublinie, pomiędzy:`, 10.2);
-  cursor -= 23;
+  centered(`zawarta w dniu ${day}.${month}.${year} r. w Gdyni, pomiędzy:`, 10.2);
+  centered(`Współpraca B2B • ${company.name}`, 9.2, regular, 14);
+  cursor -= 14;
   const companyLabel = "Zamawiającym: ";
   const companyLabelWidth = bold.widthOfTextAtSize(companyLabel, 10.2);
-  const companyLines = wrap("Alleybizcom Spółka z ograniczoną odpowiedzialnością z siedzibą przy Al. Generała Władysława Sikorskiego 20, 59-300 Lublin", regular, 10.2, WIDTH - companyLabelWidth);
+  const companyLines = wrap(`${company.name} z siedzibą przy ${company.address}`, regular, 10.2, WIDTH - companyLabelWidth);
   page!.drawText(companyLabel, { x: MARGIN, y: cursor, font: bold, size: 10.2, color: INK });
   companyLines.forEach((line, index) => {
     page!.drawText(line, { x: MARGIN + (index === 0 ? companyLabelWidth : 0), y: cursor, font: regular, size: 10.2, color: INK });
     cursor -= 15;
   });
   cursor -= 5;
-  left("NIP: 7123509615  |  KRS: 0001227235  |  REGON: 544149844", 9.2);
-  left("reprezentowaną przez: Ewę Dąbrowską - Prezesa Zarządu", 10.2);
+  left(`NIP: ${company.nip}  |  KRS: ${company.krs}  |  REGON: ${company.regon}`, 9.2);
+  left(`reprezentowaną przez: ${company.representativeAccusative} - ${company.representativeRole}`, 10.2);
   cursor -= 8;
   centered("a", 10.2);
   cursor -= 8;
-  const contractorLabel = "Wykonawcą: ";
-  const contractorLabelWidth = bold.widthOfTextAtSize(contractorLabel, 10.2);
-  const contractorLines = wrap(data.fullName, regular, 10.2, WIDTH - contractorLabelWidth);
-  ensure(contractorLines.length * 15);
-  page!.drawText(contractorLabel, { x: MARGIN, y: cursor, font: bold, size: 10.2, color: INK });
-  for (const line of contractorLines) {
-    page!.drawText(line, { x: MARGIN + contractorLabelWidth, y: cursor, font: regular, size: 10.2, color: INK });
-    cursor -= 15;
+  const [startYear, startMonth, startDay] = data.startDate.split("-");
+  const details = [
+    ["Wykonawcą: ", data.fullName],
+    ["PESEL Wykonawcy: ", data.pesel],
+    ["Adres Wykonawcy: ", data.address],
+    ["Data rozpoczęcia: ", `${startDay}.${startMonth}.${startYear}`],
+  ];
+  const labelWidth = 126;
+  const rowPadding = 7;
+  for (const [label, value] of details) {
+    const lines = wrap(value, regular, 10.2, WIDTH - labelWidth - rowPadding * 2);
+    const rowHeight = Math.max(1, lines.length) * 15 + rowPadding * 2;
+    ensure(rowHeight);
+    page!.drawRectangle({ x: MARGIN + labelWidth, y: cursor - rowHeight + 11, width: WIDTH - labelWidth, height: rowHeight, color: rgb(1, 0.975, 0.89) });
+    page!.drawText(label, { x: MARGIN, y: cursor - rowPadding, font: bold, size: 10.2, color: INK });
+    lines.forEach((line, index) => page!.drawText(line, { x: MARGIN + labelWidth + rowPadding, y: cursor - rowPadding - index * 15, font: regular, size: 10.2, color: INK }));
+    cursor -= rowHeight;
+    page!.drawLine({ start: { x: MARGIN, y: cursor + 11 }, end: { x: A4.width - MARGIN, y: cursor + 11 }, thickness: 0.4, color: RULE });
   }
-  left(data.address, 10.2, regular, 15);
-  cursor -= 12;
-  left("zwanymi dalej łącznie „Stronami”, a każda z osobna „Stroną”.", 10.2);
-  cursor -= 7;
+  cursor -= 10;
+  left(`Umowę zawierają ITSOLUTTIONSPOL Spółka z ograniczoną odpowiedzialnością, KRS ${company.krs}, NIP ${company.nip}, REGON ${company.regon}, z siedzibą przy ul. Morskiej 10, 81-323 Gdynia („Zamawiający”), oraz osoba fizyczna wskazana w tabeli („Wykonawca”). Tabela stanowi część umowy.`, 9.2, regular, 13.5);
+  cursor -= 8;
+  left("Dane potrzebne do rozpoczęcia współpracy wpisujemy w żółte pola. Przy podpisaniu umowy Strony wymieniają adresy e-mail do kontaktu, zgłaszania problemów i doręczania wypowiedzeń.", 9.2, regular, 13.5);
+  cursor -= 2;
 
   for (const block of template.blocks) {
     if (block.type === "heading") {
       ensure(70);
       cursor -= 15;
-      centered(`${block.label}   ${block.text}`, 11.5, bold, 18);
+      centered(`${block.label}   ${block.text}`.trim(), 11.5, bold, 18);
       page!.drawLine({ start: { x: MARGIN, y: cursor + 3 }, end: { x: A4.width - MARGIN, y: cursor + 3 }, thickness: 0.55, color: RULE });
       cursor -= 13;
       continue;
     }
     const sub = block.type === "subclause";
+    const paragraph = block.type === "paragraph";
     const labelX = MARGIN + (sub ? 20 : 0);
-    const textX = labelX + 19;
+    const textX = labelX + (paragraph ? 0 : 19);
     const lines = wrap(block.text.replace(/[–—]/g, "-"), regular, BODY_SIZE, A4.width - MARGIN - textX);
     const height = lines.length * LEADING + (sub ? 4 : 8);
     ensure(height);
-    page!.drawText(block.label, { x: labelX, y: cursor, size: BODY_SIZE, font: regular, color: INK });
+    if (!paragraph) page!.drawText(block.label, { x: labelX, y: cursor, size: BODY_SIZE, font: regular, color: INK });
     for (const line of lines) {
       page!.drawText(line, { x: textX, y: cursor, size: BODY_SIZE, font: regular, color: INK });
       cursor -= LEADING;
@@ -151,13 +167,11 @@ export async function generateContractPdf(input: ContractData): Promise<Uint8Arr
   }
 
   const signatureName = wrap(data.fullName, regular, 10.2, 207);
-  const signatureHeight = 94 + Math.max(signatureName.length, 2) * 15;
+  const signatureHeight = 106 + Math.max(signatureName.length, 3) * 15;
   ensure(signatureHeight + 22);
   cursor -= 22;
   const columns = [MARGIN, A4.width / 2 + 27];
   const columnWidth = A4.width / 2 - MARGIN - 27;
-  const signatureWidth = Math.min(160, columnWidth - 20);
-  page!.drawImage(signature, { x: columns[0] + (columnWidth - signatureWidth) / 2, y: cursor - 42, width: signatureWidth, height: signatureWidth * signature.height / signature.width });
   const lineY = cursor - 48;
   columns.forEach(x => page!.drawLine({ start: { x, y: lineY }, end: { x: x + columnWidth, y: lineY }, thickness: 0.65, color: INK }));
   const signatureText = (text: string, column: number, y: number, font: PDFFont = regular) => {
@@ -165,16 +179,18 @@ export async function generateContractPdf(input: ContractData): Promise<Uint8Arr
   };
   signatureText("Zamawiający", 0, lineY - 20, bold);
   signatureText("Wykonawca", 1, lineY - 20, bold);
-  // Keep the supplied signature image unmodified; the candidate's signing line remains empty.
-  const companyName = wrap("Ewa Dąbrowska - Prezes Zarządu", regular, 10.2, columnWidth);
-  companyName.forEach((line, i) => signatureText(line, 0, lineY - 37 - i * 15));
-  signatureText("Alleybizcom Sp. z o.o.", 0, lineY - 37 - companyName.length * 15);
+  // Decorative typeset name beneath a blank signing line, never an applied handwritten signature.
+  const nameSize = Math.min(23, 23 * (columnWidth - 4) / calligraphic.widthOfTextAtSize(company.representative, 23));
+  page!.drawText(company.representative, { x: columns[0] + (columnWidth - calligraphic.widthOfTextAtSize(company.representative, nameSize)) / 2, y: lineY - 46, size: nameSize, font: calligraphic, color: INK });
+  signatureText(company.representativeRole, 0, lineY - 64);
+  const companyName = wrap(company.name, regular, 10.2, columnWidth);
+  companyName.forEach((line, i) => signatureText(line, 0, lineY - 81 - i * 15));
   signatureName.forEach((line, i) => signatureText(line, 1, lineY - 37 - i * 15));
 
   const pages = document.getPages();
   pages.forEach((current, index) => {
     current.drawLine({ start: { x: MARGIN, y: 40 }, end: { x: A4.width - MARGIN, y: 40 }, thickness: 0.5, color: RULE });
-    current.drawText("Alleybizcom Sp. z o.o.", { x: MARGIN, y: 26, size: 8, font: regular, color: MUTED });
+    current.drawText(company.name, { x: MARGIN, y: 26, size: 8, font: regular, color: MUTED });
     const number = `${index + 1} / ${pages.length}`;
     current.drawText(number, { x: A4.width - MARGIN - regular.widthOfTextAtSize(number, 8), y: 26, size: 8, font: regular, color: MUTED });
   });

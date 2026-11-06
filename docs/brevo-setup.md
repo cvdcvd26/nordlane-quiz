@@ -15,8 +15,8 @@ Existing anonymous applications remain accessible through their existing cookies
 4. Create a dedicated server-side Brevo API key and save it as a secret environment
    variable. Do not paste keys in chat, commit them, or expose them in `NEXT_PUBLIC_*`.
 5. Configure `APP_URL` as the exact public HTTPS origin of this application, e.g.
-   `https://alleybiz.vercel.app`. This is the destination in emails; it is independent
-   of the sender domain. Update it when moving the site to a custom domain.
+   `https://itsolution.fun`. This is the destination in emails; it is independent
+   of the sender domain. Follow `docs/domain-migration.md` when switching origins.
 6. Set `BREVO_SENDER_EMAIL`, `BREVO_API_KEY`, and a new random
    `CANDIDATE_EMAIL_SECRET` of at least 32 characters. Keep the feature disabled
    until database migrations, queue deployment and test delivery are verified.

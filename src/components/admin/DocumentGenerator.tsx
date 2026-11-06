@@ -11,7 +11,7 @@ import { PageHeader } from "./ui";
 
 type GenerationError = keyof (typeof documentAdminContent)["en"]["errors"];
 type DownloadFile = { url: string; filename: string };
-const emptyDetails: ContractData = { date: "", fullName: "", address: "" };
+const emptyDetails: ContractData = { date: "", fullName: "", address: "", pesel: "", startDate: "" };
 
 function startDownload(file: DownloadFile) {
   const anchor = document.createElement("a");
@@ -192,7 +192,7 @@ export default function DocumentGenerator() {
               {T.parse}
               <ArrowRight aria-hidden="true" className="size-3.5" />
             </button>
-            {parsed && <p role="status" className="mt-3 flex items-start gap-1.5 text-[12.5px] text-adm-green"><Check aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />{T.parsed}</p>}
+            {parsed && <p role="status" className="mt-3 flex items-start gap-1.5 text-[12.5px] text-adm-green"><Check aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />{!details.pesel || !details.startDate ? T.parsedIncomplete : T.parsed}</p>}
           </div>
         </section>
 
@@ -210,21 +210,25 @@ export default function DocumentGenerator() {
                 { key: "date", label: T.date, hint: T.dateHint, message: T.invalidDate },
                 { key: "fullName", label: T.fullName, hint: T.nameHint, message: T.invalidName },
                 { key: "address", label: T.address, hint: T.addressHint, message: T.invalidAddress },
+                { key: "pesel", label: T.pesel, hint: T.peselHint, message: T.invalidPesel },
+                { key: "startDate", label: T.startDate, hint: T.startDateHint, message: T.invalidDate },
               ] as const).map(field => {
                 const invalid = attempted && invalidFields.has(field.key);
+                const isDate = field.key === "date" || field.key === "startDate";
                 return (
                   <div key={field.key}>
                     <label htmlFor={`document-${field.key}`} className="adm-label">{field.label}</label>
                     <input
                       id={`document-${field.key}`}
                       name={field.key}
-                      type={field.key === "date" ? "date" : "text"}
-                      className={`adm-input mt-1.5 text-base! sm:text-[13.5px]! ${field.key === "date" ? "max-w-56" : ""}`}
+                      type={isDate ? "date" : "text"}
+                      inputMode={field.key === "pesel" ? "numeric" : undefined}
+                      className={`adm-input mt-1.5 text-base! sm:text-[13.5px]! ${isDate || field.key === "pesel" ? "max-w-56" : ""}`}
                       value={details[field.key]}
                       onChange={event => update(field.key, event.target.value)}
-                      min={field.key === "date" ? "1900-01-01" : undefined}
-                      max={field.key === "date" ? "2100-12-31" : undefined}
-                      maxLength={field.key === "date" ? undefined : CONTRACT_LIMITS[field.key].max}
+                      min={isDate ? "1900-01-01" : undefined}
+                      max={isDate ? "2100-12-31" : undefined}
+                      maxLength={field.key === "date" || field.key === "startDate" ? undefined : CONTRACT_LIMITS[field.key].max}
                       disabled={busy}
                       autoComplete="off"
                       required
@@ -242,7 +246,7 @@ export default function DocumentGenerator() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-3 border-t border-adm-line bg-adm-subtle/60 px-4 py-3">
-              <button type="button" onClick={clear} className="adm-btn adm-btn-quiet" disabled={busy || (!source && !details.date && !details.fullName && !details.address)}>{T.clear}</button>
+              <button type="button" onClick={clear} className="adm-btn adm-btn-quiet" disabled={busy || (!source && !Object.values(details).some(Boolean))}>{T.clear}</button>
               <button type="submit" className="adm-btn adm-btn-primary ml-auto" disabled={busy}>
                 {busy ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" /> : <Download aria-hidden="true" className="size-4" />}
                 {busy ? T.generating : T.generate}

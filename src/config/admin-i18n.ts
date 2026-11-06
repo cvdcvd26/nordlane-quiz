@@ -4,6 +4,7 @@
  * The visitor-facing site stays Polish.
  */
 import { content } from "./content";
+import { brand } from "./brand";
 
 /** Turns the `as const` literal types of content.ts into plain strings so translations can differ. */
 type Widen<T> = T extends string
@@ -51,7 +52,7 @@ const ru: AdminDict = {
   langName: "RU",
   langSwitch: "Язык панели",
   ui: {
-    title: "AlleyBiz /adminka",
+    title: `${brand.name} /adminka`,
     nav: { reviews: "Отзывы", leads: "Лиды", settings: "Настройки", sections: "Разделы", logout: "Выйти" },
     login: {
       title: "Вход в панель",
@@ -117,6 +118,9 @@ const ru: AdminDict = {
       contactName: "Имя",
       contactPhone: "Телефон",
       contactTelegram: "Telegram",
+      contactEmail: "E-mail",
+      contactEmailVerified: "Адрес подтверждён",
+      contactEmailNotLinked: "Почта не привязана",
       answers: "Ответы",
       submission: "Задание",
       submittedAt: (t) => `Отправлено ${t}`,
@@ -367,7 +371,7 @@ const ru: AdminDict = {
     failed: "Не отправлено",
     retry: "Повторить",
     systemLabel: "Автосообщение",
-    adminLabel: "AlleyBiz Quiz",
+    adminLabel: brand.name,
     youLabel: "Вы",
     visitorLabel: "Пользователь",
     offline: "Нет связи. Попробуем снова автоматически.",
@@ -379,7 +383,7 @@ const en: AdminDict = {
   langName: "EN",
   langSwitch: "Panel language",
   ui: {
-    title: "AlleyBiz /adminka",
+    title: `${brand.name} /adminka`,
     nav: { reviews: "Reviews", leads: "Leads", settings: "Settings", sections: "Sections", logout: "Log out" },
     login: {
       title: "Sign in to the panel",
@@ -445,6 +449,9 @@ const en: AdminDict = {
       contactName: "Name",
       contactPhone: "Phone",
       contactTelegram: "Telegram",
+      contactEmail: "Email",
+      contactEmailVerified: "Email verified",
+      contactEmailNotLinked: "No email linked",
       answers: "Answers",
       submission: "Task",
       submittedAt: (t) => `Submitted ${t}`,
@@ -695,7 +702,7 @@ const en: AdminDict = {
     failed: "Not sent",
     retry: "Retry",
     systemLabel: "Automatic message",
-    adminLabel: "AlleyBiz Quiz",
+    adminLabel: brand.name,
     youLabel: "You",
     visitorLabel: "Visitor",
     offline: "No connection. We will retry automatically.",

@@ -1,12 +1,13 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Code2 } from "lucide-react";
+import { brand } from "@/config/brand";
 
 /** Decorative code is revealed once in sequence; the real form never waits for it. */
 export function LoginCodePreview({ comment }: { comment: string }) {
   const lines: { text: string; content: ReactNode }[] = [
     { text: `// ${comment}`, content: <span className="adm-login-code-comment">{"//"} {comment}</span> },
     { text: "const workspace = {", content: <><span className="adm-login-code-keyword">const</span>{" workspace = {"}</> },
-    { text: '  name: "AlleyBiz",', content: <>{"  name: "}<span className="adm-login-code-string">&quot;AlleyBiz&quot;</span>,</> },
+    { text: `  name: "${brand.name}",`, content: <>{"  name: "}<span className="adm-login-code-string">&quot;{brand.name}&quot;</span>,</> },
     { text: "  leads: true,", content: <>{"  leads: "}<span className="adm-login-code-value">true</span>,</> },
     { text: "  conversations: true,", content: <>{"  conversations: "}<span className="adm-login-code-value">true</span>,</> },
     { text: "  reviews: true,", content: <>{"  reviews: "}<span className="adm-login-code-value">true</span>,</> },
@@ -18,7 +19,7 @@ export function LoginCodePreview({ comment }: { comment: string }) {
     <div className="adm-login-editor" aria-hidden="true">
       <div className="adm-login-editor-bar">
         <span className="adm-login-window-dots"><i /><i /><i /></span>
-        <span>alleybiz.workspace</span><Code2 size={16} />
+        <span>{brand.workspace}</span><Code2 size={16} />
       </div>
       <div className="adm-login-code">
         {lines.map((line, index) => {

@@ -1,7 +1,9 @@
 import "server-only";
 import { and, count, eq, gte } from "drizzle-orm";
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import { db, schema } from "@/db";
+import { brand } from "@/config/brand";
 
 const DAY_MS = 86_400_000;
 // Brevo keeps an idempotency key for 30 minutes. Never retry an ambiguous
@@ -65,6 +67,19 @@ let override: CandidateEmailTransport | null = null;
 /** Test hook; transport is the only network boundary. */
 export const setCandidateEmailTransport = (transport: CandidateEmailTransport | null) => { override = transport; };
 
+/** Brevo requires a UUID, while our durable ledger uses descriptive logical IDs. */
+function brevoIdempotencyKey(id: string) {
+  // UUIDv5 in the DNS namespace. The same logical send keeps the same key after
+  // a timeout, a process restart or a retry on a different serverless instance.
+  const bytes = createHash("sha1")
+    .update(Buffer.from("6ba7b8109dad11d180b400c04fd430c8", "hex"))
+    .update(`alleybiz-email:${id}`).digest().subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 async function brevoTransport(p: { email: string; subject: string; text: string; id: string }) {
   let response: Response;
   try {
@@ -72,13 +87,13 @@ async function brevoTransport(p: { email: string; subject: string; text: string;
       method: "POST", cache: "no-store", signal: AbortSignal.timeout(12_000),
       headers: { "api-key": process.env.BREVO_API_KEY!, "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
-        sender: { name: "AlleyBiz", email: process.env.BREVO_SENDER_EMAIL },
+        sender: { name: brand.name, email: process.env.BREVO_SENDER_EMAIL },
         to: [{ email: p.email, contactPixelTrackingConsent: false }],
         subject: p.subject,
         // Plain-text only: no embedded images, tracking pixels, chat excerpts,
         // candidate names, documents or one-click authentication links.
         textContent: p.text,
-        headers: { idempotencyKey: p.id },
+        headers: { idempotencyKey: brevoIdempotencyKey(p.id) },
       }),
     });
   } catch { throw new CandidateEmailError("temporary"); }
@@ -112,7 +127,7 @@ export async function sendCandidateEmail(kind: CandidateEmailKind, email: string
 
 export async function sendCandidateCode(email: string, code: string, challengeId: string) {
   if (!/^\d{6}$/.test(code)) throw new CandidateEmailError("rejected");
-  await sendCandidateEmail("otp", email, "AlleyBiz — Twój kod logowania",
-    `Twój jednorazowy kod do AlleyBiz: ${code}\n\nKod jest ważny przez 10 minut. Wpisz go w otwartej stronie ${candidateSiteUrl()}. Nie udostępniaj go innym osobom.\n\nJeśli nie proszono o ten kod, zignoruj tę wiadomość.`,
+  await sendCandidateEmail("otp", email, `${brand.name} — Twój kod logowania`,
+    `Twój jednorazowy kod do ${brand.name}: ${code}\n\nKod jest ważny przez 10 minut. Wpisz go w otwartej stronie ${candidateSiteUrl()}. Nie udostępniaj go innym osobom.\n\nJeśli nie proszono o ten kod, zignoruj tę wiadomość.`,
     `otp-${challengeId}`);
 }

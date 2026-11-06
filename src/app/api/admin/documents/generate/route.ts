@@ -18,10 +18,10 @@ const generateDocument = route("admin.documents.generate", async (req: Request) 
   try {
     input = JSON.parse(body.toString("utf8"));
   } catch {
-    throw badRequest("Check the date, full name and address.", "contract_invalid");
+    throw badRequest("Check both dates, the full name, address and PESEL.", "contract_invalid");
   }
   const parsed = contractDataSchema.safeParse(input);
-  if (!parsed.success) throw badRequest("Check the date, full name and address.", "contract_invalid");
+  if (!parsed.success) throw badRequest("Check both dates, the full name, address and PESEL.", "contract_invalid");
 
   let pdf: Uint8Array;
   try {

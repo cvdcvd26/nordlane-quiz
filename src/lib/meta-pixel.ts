@@ -2,6 +2,7 @@ import { metaPixelConfig } from "@/config/meta-pixel";
 import { COOKIE_CONSENT_EVENT, readCookieConsent } from "@/lib/cookie-consent";
 import { clearMetaMarketingStorage, hasMetaStageMarker, saveMetaStageMarker } from "@/lib/meta-pixel-storage";
 import { latestQuizStep, QUIZ_STEP_PATHS, type QuizProgress, type QuizStep } from "@/lib/quiz-steps";
+import { quizOrigins, siteDomains } from "@/config/site-domains";
 
 type Pixel = ((...args: unknown[]) => void) & {
   callMethod?: (...args: unknown[]) => void;
@@ -34,8 +35,11 @@ export function isMetaQuizLocation(href: string, referrer = "") {
     if (referrer) {
       const from = new URL(referrer);
       if (from.username || from.password || from.hash || [...from.searchParams.keys()].some((key) => !QUERY_KEYS.has(key))) return false;
-      if (from.origin === url.origin && !QUIZ_STEP_PATHS.some((path) => path === from.pathname) && from.pathname !== "/cookie-policy") return false;
-      if (from.origin !== url.origin && from.pathname !== "/" && !(from.hostname === "itsolution.fun" && from.pathname === "/index.html")) return false;
+      const quizReferrer = quizOrigins.includes(from.origin);
+      // Preserve the original preland referral while both application hosts work.
+      const oldPreland = from.origin === siteDomains.canonical && url.origin === siteDomains.legacy && from.pathname === "/index.html";
+      if (quizReferrer && !QUIZ_STEP_PATHS.some((path) => path === from.pathname) && from.pathname !== "/cookie-policy" && !oldPreland) return false;
+      if (!quizReferrer && from.pathname !== "/" && !(from.origin === siteDomains.preland && from.pathname === "/index.html")) return false;
     }
     return true;
   } catch { return false; }

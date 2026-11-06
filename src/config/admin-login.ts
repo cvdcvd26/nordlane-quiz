@@ -1,3 +1,5 @@
+import { brand } from "./brand";
+
 /** The standalone login screen is intentionally English. */
 export const adminLoginContent = {
     eyebrow: "ADMINISTRATOR WORKSPACE",
@@ -13,6 +15,6 @@ export const adminLoginContent = {
     missingCredentials: "Enter your email and password.",
     showPassword: "Show password",
     hidePassword: "Hide password",
-    restricted: "For AlleyBiz administrators only.",
+    restricted: `For ${brand.name} administrators only.`,
     back: "Back to website",
 } as const;

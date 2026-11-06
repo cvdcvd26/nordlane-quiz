@@ -4,42 +4,33 @@ import { AppError } from "@/server/errors";
 import { storage } from "@/server/storage";
 
 export const CONTRACT_TEMPLATE_KEYS = {
-  content: "system/documents/contract-v1/content.json",
-  signature: "system/documents/contract-v1/company-signature.png",
+  content: "system/documents/contract-itsoluttionspol-v2/content.json",
 } as const;
-export const CONTRACT_TEMPLATE_LIMITS = { content: 256 * 1024, signature: 512 * 1024 } as const;
+export const CONTRACT_TEMPLATE_LIMITS = { content: 256 * 1024 } as const;
 
 const printable = (max: number) => z.string().max(max).refine(value => !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value));
 const blocksSchema = z.array(z.object({
-  type: z.enum(["heading", "clause", "subclause"]),
+  type: z.enum(["heading", "clause", "subclause", "paragraph"]),
   label: printable(32),
   text: printable(4000).refine(value => value.trim().length > 0),
 }).strict()).min(1).max(200);
 
 export type ContractTemplateBlock = z.infer<typeof blocksSchema>[number];
-export type ContractTemplate = { blocks: ContractTemplateBlock[]; signature: Uint8Array };
+export type ContractTemplate = { blocks: ContractTemplateBlock[] };
 
 const unavailable = () => new AppError(503, "document_template_unavailable", "The document template is unavailable. Please try again later.");
 
-/** Also used by the provisioning CLI; it must validate both files before writing either. */
-export function validateContractTemplate(content: Uint8Array, signature: Uint8Array): ContractTemplate {
+export function validateContractTemplate(content: Uint8Array): ContractTemplate {
   try {
-    if (!content.byteLength || content.byteLength > CONTRACT_TEMPLATE_LIMITS.content ||
-        signature.byteLength < 33 || signature.byteLength > CONTRACT_TEMPLATE_LIMITS.signature) throw unavailable();
+    if (!content.byteLength || content.byteLength > CONTRACT_TEMPLATE_LIMITS.content) throw unavailable();
     const blocks = blocksSchema.parse(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(content)));
-    const png = new DataView(signature.buffer, signature.byteOffset, signature.byteLength);
-    const magic = [137, 80, 78, 71, 13, 10, 26, 10];
-    if (!magic.every((byte, index) => signature[index] === byte) || png.getUint32(8) !== 13 ||
-        png.getUint32(12) !== 0x49484452 || !png.getUint32(16) || !png.getUint32(20) ||
-        png.getUint32(16) > 4096 || png.getUint32(20) > 4096) throw unavailable();
-    return { blocks, signature: new Uint8Array(signature) };
+    return { blocks };
   } catch {
-    // Neither the private template content nor storage errors belong in public errors or logs.
     throw unavailable();
   }
 }
 
-type TemplatePhase = "content_read" | "signature_read" | "validation";
+type TemplatePhase = "content_read" | "validation";
 function reportUnavailable(phase: TemplatePhase) {
   // Fixed phase names identify the failing boundary without recording private data or errors.
   console.warn("documents.template.unavailable", { phase });
@@ -84,11 +75,8 @@ async function readPrivateFile(key: string, limit: number, phase: TemplatePhase)
 let cached: Promise<ContractTemplate> | undefined;
 export async function loadContractTemplate(): Promise<ContractTemplate> {
   if (!cached) {
-    cached = Promise.all([
-      readPrivateFile(CONTRACT_TEMPLATE_KEYS.content, CONTRACT_TEMPLATE_LIMITS.content, "content_read"),
-      readPrivateFile(CONTRACT_TEMPLATE_KEYS.signature, CONTRACT_TEMPLATE_LIMITS.signature, "signature_read"),
-    ]).then(([content, signature]) => {
-      try { return validateContractTemplate(content, signature); }
+    cached = readPrivateFile(CONTRACT_TEMPLATE_KEYS.content, CONTRACT_TEMPLATE_LIMITS.content, "content_read").then(content => {
+      try { return validateContractTemplate(content); }
       catch { throw reportUnavailable("validation"); }
     }).catch(() => {
       cached = undefined;
@@ -97,5 +85,5 @@ export async function loadContractTemplate(): Promise<ContractTemplate> {
   }
   const template = await cached;
   // Return isolated copies so callers cannot alter the cached immutable version.
-  return { blocks: template.blocks.map(block => ({ ...block })), signature: new Uint8Array(template.signature) };
+  return { blocks: template.blocks.map(block => ({ ...block })) };
 }

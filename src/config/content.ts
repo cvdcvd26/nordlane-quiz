@@ -2,11 +2,13 @@
  * Visitor copy (Polish) and default admin labels.
  * Content is being supplied by the owner; edit visitor text here.
  */
+import { brand, company } from "./brand";
+
 export const content = {
   locale: "pl-PL",
 
   brand: {
-    name: "AlleyBiz",
+    name: brand.name,
   },
 
   progress: {
@@ -75,16 +77,17 @@ export const content = {
     about: {
       title: "O",
       titleAccent: "firmie",
-      body: "Alleybizcom Sp. z o.o. to lokalna firma z Lublina. Robimy oprogramowanie dla małych i średnich firm w Polsce - i mamy już kilkudziesięciu partnerów, którzy nam zaufali.",
-      vision: "Wierzę, że Lublin ma realny potencjał, żeby stać się jednym z technologicznych miejsc w Europie 🚀",
+      body: `Operatorem serwisu ${brand.name} jest ${company.name} z siedzibą w Gdyni. Firma tworzy oprogramowanie dla agrobiznesu, w tym AgroCRM do obsługi umów, skupu oraz ewidencji pól i partii produktów. Zajmuje się również wdrożeniami i wsparciem. Poniżej znajdziesz dane firmy oraz informacje o zadaniu i współpracy.`,
       eyebrow: "Krok 3 z 3 · O firmie i zadanie",
       verificationTitle: "Wszystko można sprawdzić",
       identifiers: [
-        { label: "NIP", value: "7123509615" },
-        { label: "KRS", value: "0001227235" },
-        { label: "REGON", value: "544149844" },
+        { label: "NIP", value: company.nip },
+        { label: "KRS", value: company.krs },
+        { label: "REGON", value: company.regon },
       ],
-      website: { label: "Strona", title: "alleybiz.com", url: "https://alleybiz.com" },
+      address: { label: "Adres", value: company.address },
+      email: { label: "E-mail", value: company.email },
+      website: { label: "Strona", title: company.websiteLabel, url: company.website },
       responsibilitiesTitle: "Co będziesz robić",
       responsibilitiesSummary: "Zakres zadań i wdrożenie",
       responsibilities: [
@@ -216,7 +219,7 @@ export const content = {
     failed: "Nie wysłano",
     retry: "Ponów",
     systemLabel: "Wiadomość automatyczna",
-    adminLabel: "AlleyBiz Quiz",
+    adminLabel: brand.name,
     youLabel: "Ty",
     visitorLabel: "Użytkownik",
     offline: "Brak połączenia. Spróbujemy ponownie automatycznie.",
@@ -275,7 +278,7 @@ export const content = {
   },
 
   admin: {
-    title: "AlleyBiz /adminka",
+    title: `${brand.name} /adminka`,
     nav: { reviews: "Opinie", leads: "Leady", settings: "Ustawienia", sections: "Sekcje", logout: "Wyloguj" },
     login: {
       title: "Logowanie do panelu",
@@ -342,6 +345,9 @@ export const content = {
       contactName: "Imię",
       contactPhone: "Telefon",
       contactTelegram: "Telegram",
+      contactEmail: "E-mail",
+      contactEmailVerified: "Adres potwierdzony",
+      contactEmailNotLinked: "Nie połączono adresu e-mail",
       answers: "Odpowiedzi",
       submission: "Zadanie",
       submittedAt: (t: string) => `Wysłano ${t}`,
@@ -551,7 +557,7 @@ export const content = {
   },
 
   meta: {
-    title: "AlleyBiz Quiz — zadanie",
+    title: `${brand.name} — zadanie`,
   },
 } as const;
 

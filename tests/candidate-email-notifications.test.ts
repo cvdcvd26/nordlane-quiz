@@ -196,6 +196,71 @@ describe("grouped candidate email outbox", () => {
     expect(sent).toHaveLength(1);
   });
 
+  it("does not retry a notification after its last unread message was deleted", async () => {
+    const first = await hr(0);
+    setCandidateEmailTransport(async () => { throw new CandidateEmailError("temporary"); });
+    expect(await deliverCandidateEmail(first.jobId, at(30))).toBe("rescheduled");
+    await env.db.update(schema.messages).set({ deletedAt: at(30.5) }).where(eq(schema.messages.id, first.message.id));
+    setCandidateEmailTransport(async p => { sent.push(p); return "unexpected"; });
+    expect(await deliverCandidateEmail(first.jobId, at(31))).toBe("done");
+    expect((await job(first.jobId)).status).toBe("cancelled");
+    expect(sent).toHaveLength(0);
+    // The failed transport could have delivered before timing out. A new group
+    // must still respect its conservative three-hour cooldown.
+    const next = await hr(32);
+    expect((await job(next.jobId)).dueAt).toEqual(at(211));
+    expect(await deliverCandidateEmail(next.jobId, at(62))).toBe("busy");
+    expect(sent).toHaveLength(0);
+  });
+
+  it("reading an attempted group preserves the cooldown before a later message arrives", async () => {
+    const first = await hr(0);
+    setCandidateEmailTransport(async () => { throw new CandidateEmailError("temporary"); });
+    await deliverCandidateEmail(first.jobId, at(30));
+    await markCandidateMessagesRead(sessionId, first.message.sequence.toString(), at(31));
+    expect((await job(first.jobId)).status).toBe("cancelled");
+    const next = await hr(32);
+    expect((await job(next.jobId)).dueAt).toEqual(at(211));
+    setCandidateEmailTransport(async p => { sent.push(p); return "next"; });
+    expect(await deliverCandidateEmail(first.jobId, at(32))).toBe("done");
+    expect(await deliverCandidateEmail(next.jobId, at(62))).toBe("busy");
+    expect(await deliverCandidateEmail(next.jobId, at(211))).toBe("sent");
+    expect(sent).toHaveLength(1);
+  });
+
+  it("reading the attempted original never sends a retry for a newer unread message", async () => {
+    const first = await hr(0);
+    setCandidateEmailTransport(async () => { throw new CandidateEmailError("temporary"); });
+    await deliverCandidateEmail(first.jobId, at(30));
+    const newer = await hr(30.5);
+    expect(newer.jobId).toBe(first.jobId);
+    await markCandidateMessagesRead(sessionId, first.message.sequence.toString(), at(30.75));
+    setCandidateEmailTransport(async p => { sent.push(p); return "new-group"; });
+    expect(await deliverCandidateEmail(first.jobId, at(31))).toBe("done");
+    expect((await job(first.jobId)).status).toBe("cancelled");
+    expect(sent).toHaveLength(0);
+    const [later] = (await env.db.select().from(schema.candidateEmailJobs)).filter(row => row.status === "pending");
+    expect(later.id).not.toBe(first.jobId);
+    expect(later.dueAt).toEqual(at(211));
+    expect(scheduled.some(row => row.id === later.id)).toBe(true);
+    expect(await deliverCandidateEmail(later.id, at(211))).toBe("sent");
+    expect(sent).toHaveLength(1);
+  });
+
+  it("a partially read attempted range still waits thirty minutes for its oldest remaining message", async () => {
+    const first = await hr(0);
+    await hr(20);
+    setCandidateEmailTransport(async () => { throw new CandidateEmailError("temporary"); });
+    await deliverCandidateEmail(first.jobId, at(30));
+    await markCandidateMessagesRead(sessionId, first.message.sequence.toString(), at(31));
+    setCandidateEmailTransport(async p => { sent.push(p); return "remaining"; });
+    expect(await deliverCandidateEmail(first.jobId, at(31))).toBe("rescheduled");
+    expect((await job(first.jobId)).dueAt).toEqual(at(50));
+    expect(sent).toHaveLength(0);
+    expect(await deliverCandidateEmail(first.jobId, at(50))).toBe("sent");
+    expect(sent).toHaveLength(1);
+  });
+
   it("a message arriving during transport stays in a later group and inherits the cooldown", async () => {
     const first = await hr(0);
     let release!: () => void;
@@ -244,6 +309,42 @@ describe("grouped candidate email outbox", () => {
     expect(sent).toHaveLength(1);
   });
 
+  it("recovery after provider acceptance does not consume messages received after that email", async () => {
+    const first = await hr(0);
+    // The process stopped after Brevo accepted the email and before the job's
+    // final transaction. A new HR message arrives while that job is stale.
+    await env.db.update(schema.candidateEmailJobs).set({ status: "sending", lockedAt: at(30),
+      throughSequence: first.message.sequence }).where(eq(schema.candidateEmailJobs.id, first.jobId));
+    await env.db.insert(schema.candidateEmailSends).values({ id: `candidate-${first.jobId}`, kind: "chat",
+      status: "accepted", providerId: "already-delivered", createdAt: at(30) });
+    await env.db.update(schema.messages).set({ deletedAt: at(30.5) }).where(eq(schema.messages.id, first.message.id));
+    const second = await hr(31);
+    expect(await deliverCandidateEmail(first.jobId, at(33))).toBe("sent");
+    expect(sent).toHaveLength(0); // Only finalizes the already accepted email.
+    expect((await env.db.select().from(schema.candidateEmailState))[0].lastNotifiedSequence).toBe(first.message.sequence);
+    expect((await job(second.jobId)).status).toBe("pending");
+    expect((await job(second.jobId)).dueAt).toEqual(at(213));
+    expect(await deliverCandidateEmail(second.jobId, at(213))).toBe("sent");
+    expect(sent).toHaveLength(1);
+  });
+
+  it("a retry retains the original range and recreates the later notification after merging", async () => {
+    const first = await hr(0);
+    setCandidateEmailTransport(async () => { throw new CandidateEmailError("temporary"); });
+    expect(await deliverCandidateEmail(first.jobId, at(30))).toBe("rescheduled");
+    const second = await hr(30.5);
+    expect(second.jobId).toBe(first.jobId);
+    setCandidateEmailTransport(async p => { sent.push(p); return "deduplicated-original"; });
+    expect(await deliverCandidateEmail(first.jobId, at(31))).toBe("sent");
+    expect((await env.db.select().from(schema.candidateEmailState))[0].lastNotifiedSequence).toBe(first.message.sequence);
+    const [later] = (await env.db.select().from(schema.candidateEmailJobs)).filter(row => row.status === "pending");
+    expect(later).toBeDefined();
+    expect(later.id).not.toBe(first.jobId);
+    expect(later.dueAt).toEqual(at(211));
+    expect(await deliverCandidateEmail(later.id, at(211))).toBe("sent");
+    expect(sent).toHaveLength(2);
+  });
+
   it("feature off avoids queues, sends and notification records", async () => {
     vi.stubEnv("CANDIDATE_EMAIL_ENABLED", "false");
     expect(candidateEmailConfigured()).toBe(false);
@@ -265,9 +366,26 @@ describe("Brevo boundary", () => {
     expect(payload.attachment).toBeUndefined();
     expect(payload.to).toEqual([{ email: "candidate@example.com", contactPixelTrackingConsent: false }]);
     expect(payload.textContent).toContain("123456");
-    expect(payload.headers.idempotencyKey).toMatch(/^otp-/);
+    expect(payload.headers.idempotencyKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     fetch.mockResolvedValue(new Response(JSON.stringify({ code: "bad_request", message: "secret candidate@example.com" }), { status: 400 }));
     await expect(sendCandidateCode("candidate@example.com", "123456", randomUUID())).rejects.toThrow(/^candidate_email_rejected$/);
+  });
+
+  it("uses a stable UUID for the same logical send and a different UUID for another", async () => {
+    setCandidateEmailTransport(null);
+    const fetch = vi.fn()
+      .mockRejectedValueOnce(new Error("network timeout"))
+      .mockResolvedValue(new Response(JSON.stringify({ messageId: "retry-id" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetch);
+    const challenge = randomUUID();
+    await expect(sendCandidateCode("candidate@example.com", "123456", challenge)).rejects.toMatchObject({ code: "temporary" });
+    await sendCandidateCode("candidate@example.com", "123456", challenge);
+    fetch.mockResolvedValue(new Response(JSON.stringify({ messageId: "new-id" }), { status: 201 }));
+    await sendCandidateCode("candidate@example.com", "654321", randomUUID());
+    const keys = fetch.mock.calls.map(call => JSON.parse(call[1].body).headers.idempotencyKey);
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[2]).not.toBe(keys[0]);
+    expect(keys[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 
   it("reserves quota for OTP and never charges a retry twice", async () => {

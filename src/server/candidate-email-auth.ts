@@ -216,8 +216,10 @@ export async function logoutCandidateEmail(): Promise<void> {
   return operation("logout", async () => {
     const jar = await cookies();
     const token = jar.get(SESSION_COOKIE)?.value;
+    const guestToken = jar.get("nl_visitor")?.value;
     const browser = jar.get(CHALLENGE_COOKIE)?.value;
     if (token && tokenShape.test(token)) await db().delete(schema.candidateDeviceSessions).where(eq(schema.candidateDeviceSessions.tokenHash, hash(token)));
+    if (guestToken && tokenShape.test(guestToken)) await db().delete(schema.visitorDeviceSessions).where(eq(schema.visitorDeviceSessions.tokenHash, hash(guestToken)));
     if (browser && tokenShape.test(browser)) await db().update(schema.candidateEmailChallenges).set({ status: "failed" })
       .where(eq(schema.candidateEmailChallenges.browserHash, hash(browser)));
     jar.set(SESSION_COOKIE, "", cookieOptions(0));

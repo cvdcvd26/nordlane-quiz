@@ -49,7 +49,7 @@ describe("removable temporary admin access", () => {
     expect(response.status).toBe(201);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     const created = await response.json();
-    expect(created.account.email).toMatch(/^test-[a-f0-9]{16}@alleybiz\.local$/);
+    expect(created.account.email).toMatch(/^test-[a-f0-9]{16}@itsolution\.local$/);
     expect(created.password).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect(Object.keys(created.account).sort()).toEqual(["createdAt", "email", "id"]);
     const [stored] = await env.db.select().from(schema.adminUsers).where(eq(schema.adminUsers.id, created.account.id));

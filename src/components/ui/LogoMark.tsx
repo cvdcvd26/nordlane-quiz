@@ -1,6 +1,6 @@
 import Image from "next/image";
 
-/** The letter stays still; only the decorative vapor moves to the right. */
+/** The monogram stays still; only the decorative vapor moves to the right. */
 export function LogoMark({ className = "" }: { className?: string }) {
   return (
     <span aria-hidden="true" className={`logo-mark ${className}`}>
@@ -21,7 +21,7 @@ export function LogoMark({ className = "" }: { className?: string }) {
           </svg>
         </span>
       </span>
-      <Image src="/alleybiz-mark.svg" alt="" width={32} height={32} className="logo-letter" unoptimized />
+      <Image src="/it-solution-mark.svg" alt="" width={32} height={32} className="logo-letter" unoptimized />
     </span>
   );
 }

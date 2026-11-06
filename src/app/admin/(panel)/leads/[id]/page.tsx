@@ -30,6 +30,7 @@ import type { CandidateOutcome } from "@/config/candidate-outcome";
 type Details = {
   lead: { manager: ManagerProfile; outcome: CandidateOutcome | null; id: number; status: LeadStatus; createdAt: string; updatedAt: string; messageCount: number; lastMessageAt: string | null; stage: string; answered: number; needsReply: boolean; replyWaitingSince: string | null };
   contact: { name: string; phone: string; telegram: string | null } | null;
+  verifiedEmail: { address: string; verifiedAt: string } | null;
   answers: { question: string; answer: string; value: string | null; updatedAt: string | null }[];
   submission: {
     id: string;
@@ -448,6 +449,23 @@ function Lead({ id }: { id: string }) {
             ) : (
               <p className="text-[13px] text-adm-ink-3">—</p>
             )}
+            <dl className="mt-3 border-t border-adm-line pt-3 text-[13.5px]">
+              <dt className="mb-1 text-adm-ink-3">{T.contactEmail}</dt>
+              <dd>
+                {d.verifiedEmail ? (
+                  <>
+                    <a href={`mailto:${encodeURIComponent(d.verifiedEmail.address)}`} className="font-semibold text-adm-accent break-all hover:underline">
+                      {d.verifiedEmail.address}
+                    </a>
+                    <span className="mt-1 flex items-center gap-1 text-[12px] text-adm-accent">
+                      <Check size={13} aria-hidden="true" />{T.contactEmailVerified}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-adm-ink-3">{T.contactEmailNotLinked}</span>
+                )}
+              </dd>
+            </dl>
           </Section>
 
           <Section title={T.review} id="review-title">

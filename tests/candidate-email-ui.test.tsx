@@ -116,6 +116,15 @@ describe("candidate email access", () => {
     expect(host.querySelector('[role="alert"]')?.textContent).toBe("Spróbuj ponownie.");
   });
 
+  it("keeps logout available for an existing session while email sending is disabled", async () => {
+    await render({ ...account, enabled: false });
+    expect(host.textContent).toContain("anna@example.com");
+    expect(host.querySelector('input[type="email"]')).toBeNull();
+    await click(button("Wyloguj się"));
+    expect(mocks.api).toHaveBeenCalledWith("/api/candidate/logout", { method: "POST" });
+    expect(changed).toHaveBeenCalledOnce();
+  });
+
   it("discloses codes, welcome and grouped HR emails before the send-code action", async () => {
     await render();
     const privacy = host.querySelector('[id$="-privacy"]')!;

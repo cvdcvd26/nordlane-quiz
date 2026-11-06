@@ -36,11 +36,8 @@ async function main() {
     if (data.length > limit) throw new Error("Invalid private template asset.");
     return data;
   };
-  const [content, signature] = await Promise.all([
-    boundedFile("contract-content.json", CONTRACT_TEMPLATE_LIMITS.content),
-    boundedFile("company-signature.png", CONTRACT_TEMPLATE_LIMITS.signature),
-  ]);
-  validateContractTemplate(content, signature);
+  const content = await boundedFile("contract-content.json", CONTRACT_TEMPLATE_LIMITS.content);
+  validateContractTemplate(content);
   const target = storage();
   const storeImmutable = async (key: string, data: Buffer, contentType: string) => {
     const existing = await target.get(key);
@@ -71,7 +68,6 @@ async function main() {
   };
   // Existing Vercel adapter uses access:"private"; a public Blob store is rejected by the SDK.
   // Identical existing files are skipped so a partial upload can be retried without overwriting this version.
-  await storeImmutable(CONTRACT_TEMPLATE_KEYS.signature, signature, "image/png");
   await storeImmutable(CONTRACT_TEMPLATE_KEYS.content, content, "application/json");
   console.log(process.env.BLOB_READ_WRITE_TOKEN ? "Private document template provisioned." : "Local document template provisioned in ignored storage.");
 }

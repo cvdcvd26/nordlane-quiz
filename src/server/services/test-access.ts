@@ -32,7 +32,7 @@ export async function listTestAccounts(adminId: string) {
 export async function createTestAccount(adminId: string) {
   await assertPermanentAdmin(adminId);
   await rateLimit(`test-access:create:${adminId}`, 5, 60 * 60);
-  const email = `test-${randomBytes(8).toString("hex")}@alleybiz.local`;
+  const email = `test-${randomBytes(8).toString("hex")}@itsolution.local`;
   const password = randomBytes(24).toString("base64url");
   const passwordHash = await hashPassword(password);
 

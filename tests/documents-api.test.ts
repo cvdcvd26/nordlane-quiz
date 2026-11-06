@@ -17,7 +17,7 @@ vi.mock("next/headers", () => ({ cookies: async () => ({
 vi.mock("@/server/documents/pdf", () => ({ generateContractPdf: mocks.render }));
 
 const sessionSecret = "documents-api-test-secret-at-least-thirty-two-characters";
-const valid = { date: "2026-10-22", fullName: "Jan Kowalski", address: "ul. Długa 10, 20-001 Lublin" };
+const valid = { date: "2026-10-22", fullName: "Jan Kowalski", address: "ul. Długa 10, 20-001 Lublin", pesel: "00000000000", startDate: "2026-11-01" };
 const pdfBytes = new TextEncoder().encode("%PDF-1.7\n%%EOF");
 let env: Awaited<ReturnType<typeof setupTestEnv>>;
 let owner: typeof schema.adminUsers.$inferSelect;
@@ -124,11 +124,14 @@ describe("private document-generation API", () => {
     { ...valid, address: "x".repeat(301) }, { ...valid, address: "ul. Długa\nLublin" },
     { ...valid, fullName: "Jan\u0000Kowalski" }, { ...valid, fullName: "Jan\u202eKowalski" },
     { ...valid, date: "2026-02-29" }, { ...valid, isTemporary: false },
+    { ...valid, pesel: "" }, { ...valid, pesel: "1234567890" }, { ...valid, pesel: "1234567890x" },
+    { ...valid, startDate: "" }, { ...valid, startDate: "2026-02-30" },
+    { date: valid.date, fullName: valid.fullName, address: valid.address },
   ])("rejects malformed or unsafe fields without rendering (%j)", async body => {
     await authenticate();
     const response = await POST(request(body));
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ code: "contract_invalid", error: "Check the date, full name and address." });
+    expect(await response.json()).toEqual({ code: "contract_invalid", error: "Check both dates, the full name, address and PESEL." });
     expect(mocks.render).not.toHaveBeenCalled();
   });
 

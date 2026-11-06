@@ -1,10 +1,15 @@
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { createHash, randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { setupTestEnv } from "./helpers";
+import { PNG, setupTestEnv } from "./helpers";
 import { schema } from "@/db";
+import { content } from "@/config/content";
 import { getOrCreateVisitorSessionId, getVisitorSessionId } from "@/server/visitor-session";
 import { saveContact } from "@/server/services/contact";
+import { saveAnswer } from "@/server/services/quiz";
+import { postVisitorMessage } from "@/server/services/chat";
+import { uploadFile } from "@/server/services/uploads";
+import { submitTask } from "@/server/services/submission";
 import {
   getCandidateEmailState, requestCandidateEmail, verifyCandidateEmail, logoutCandidateEmail,
   requireNewCandidateEmail,
@@ -12,6 +17,9 @@ import {
 import { POST as requestRoute } from "@/app/api/candidate/email-request/route";
 import { POST as verifyRoute } from "@/app/api/candidate/email-verify/route";
 import { POST as logoutRoute } from "@/app/api/candidate/logout/route";
+import { GET as sessionRoute } from "@/app/api/session/route";
+import { GET as chatRoute } from "@/app/api/chat/route";
+import { GET as fileRoute } from "@/app/api/files/[id]/route";
 
 const jar = vi.hoisted(() => ({ values: new Map<string, string>(), options: new Map<string, Record<string, unknown>>() }));
 const mail = vi.hoisted(() => ({ sent: [] as { email: string; code: string; id: string }[], fail: false }));
@@ -127,6 +135,48 @@ it("rejects a correct code from another browser without consuming it for its own
   jar.values.set("nl_email_challenge", browser);
   await verifyCandidateEmail({ challengeId: challenge.challengeId, code: challenge.code }, "owner-ip");
   expect(await getVisitorSessionId()).toBe(challenge.sessionId);
+});
+
+it("restores a legacy task, chat and private files after email login without creating another lead", async () => {
+  vi.stubEnv("CANDIDATE_EMAIL_ENABLED", "false");
+  const sessionId = await getOrCreateVisitorSessionId("legacy-task-ip");
+  await saveContact(sessionId, { name: "Anna", phone: "+48600123456", telegram: "" });
+  for (const question of content.quiz.questions) await saveAnswer(sessionId, question.key, question.options[0].value);
+  const file = await uploadFile({
+    sessionId, purpose: "submission", uploadedBy: "visitor",
+    file: { name: "private-task.png", type: "image/png", buffer: PNG },
+  });
+  const task = await submitTask(sessionId, { idempotencyKey: randomUUID(), fileIds: [file.id], review: "Moje prywatne uwagi do zadania." });
+  const chat = await postVisitorMessage(sessionId, { clientMessageId: randomUUID(), body: "Moja prywatna rozmowa.", fileIds: [] });
+  const [lead] = await env.db.select().from(schema.leads);
+
+  vi.stubEnv("CANDIDATE_EMAIL_ENABLED", "true");
+  await register(); // Bind the existing anonymous application, including all its data.
+  jar.values.clear(); await env.db.delete(schema.rateLimits);
+  await register(); // Returning on another browser must restore the same application.
+  const response = await sessionRoute(new Request("https://example.com/api/session"));
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    candidateEmail: { verified: true, email: "anna@example.com" },
+    contact: { name: "Anna" },
+    submission: { id: task.submissionId },
+    files: [{ id: file.id }],
+  });
+  const messages = await chatRoute(new Request("https://example.com/api/chat"));
+  expect(messages.status).toBe(200);
+  expect((await messages.json()).messages).toContainEqual(expect.objectContaining({ id: chat.message.id, body: "Moja prywatna rozmowa." }));
+  const download = await fileRoute(new Request(`https://example.com/api/files/${file.id}`), { params: Promise.resolve({ id: file.id }) });
+  expect(download.status).toBe(200);
+  expect(Buffer.from(await download.arrayBuffer())).toEqual(PNG);
+  expect(await env.db.select().from(schema.leads)).toEqual([lead]);
+
+  jar.values.clear(); await env.db.delete(schema.rateLimits);
+  await register("other@example.com");
+  const otherResponse = await sessionRoute(new Request("https://example.com/api/session"));
+  expect(await otherResponse.json()).toMatchObject({ contact: null, submission: null, files: [] });
+  const denied = await fileRoute(new Request(`https://example.com/api/files/${file.id}`), { params: Promise.resolve({ id: file.id }) });
+  expect(denied.status).toBe(404);
+  expect(await env.db.select().from(schema.leads)).toEqual([lead]);
 });
 
 it("commits failed attempts and blocks even the correct code after five failures", async () => {

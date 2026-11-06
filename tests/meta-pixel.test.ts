@@ -229,4 +229,15 @@ describe("consented Meta quiz funnel", () => {
     expect(scope).toBe(marketingScope("visitor-a"));
     expect(scope).not.toBe(marketingScope("visitor-b"));
   });
+
+  it("supports only the old and new production quiz origins and public preland referrals", () => {
+    expect(tracker.isMetaQuizLocation("https://itsolution.fun/step-3-task", "https://land.itsolution.fun/index.html")).toBe(true);
+    expect(tracker.isMetaQuizLocation("https://alleybiz.vercel.app/", "https://itsolution.fun/index.html")).toBe(true);
+    expect(tracker.isMetaQuizLocation("https://itsolution.fun/", "https://alleybiz.vercel.app/step-2")).toBe(true);
+    for (const url of ["https://land.itsolution.fun/", "https://www.itsolution.fun/", "https://preview.vercel.app/", "https://itsolution.fun/session-transfer/complete"]) {
+      expect(tracker.isMetaQuizLocation(url)).toBe(false);
+    }
+    expect(tracker.isMetaQuizLocation("https://itsolution.fun/", "https://alleybiz.vercel.app/admin/leads/4")).toBe(false);
+    expect(tracker.isMetaQuizLocation("https://itsolution.fun/", "https://land.itsolution.fun/?email=private")).toBe(false);
+  });
 });

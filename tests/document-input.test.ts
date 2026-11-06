@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { documentDateToIso, parseDocumentInput } from "@/lib/document-input";
 
 describe("document detail list", () => {
-  const data = { date: "2026-10-22", fullName: "Jan Kowalski", address: "ul. Długa 10, 00-001 Warszawa" };
+  const data = { date: "2026-10-22", fullName: "Jan Kowalski", address: "ul. Długa 10, 00-001 Warszawa", pesel: "", startDate: "" };
 
   it("reads labelled Polish, Russian and English lists in any order", () => {
     for (const text of [
@@ -24,7 +24,19 @@ describe("document detail list", () => {
 
   it("normalises unicode and spaces without removing Polish letters", () => {
     const result = parseDocumentInput("Дата: 22.10.2026\nИмя:  Łucja   Żuk \nАдрес: ul. Długa   10, Warszawa");
-    expect(result).toEqual({ ok: true, data: { date: "2026-10-22", fullName: "Łucja Żuk", address: "ul. Długa 10, Warszawa" } });
+    expect(result).toEqual({ ok: true, data: { date: "2026-10-22", fullName: "Łucja Żuk", address: "ul. Długa 10, Warszawa", pesel: "", startDate: "" } });
+  });
+
+  it("reads all five fields in Polish, Russian, English or their fixed order without inventing missing values", () => {
+    const full = { ...data, pesel: "00000000000", startDate: "2026-11-01" };
+    for (const text of [
+      "Data umowy: 22.10.2026\nImię i nazwisko: Jan Kowalski\nAdres: ul. Długa 10, 00-001 Warszawa\nPESEL: 00000000000\nData rozpoczęcia: 1.11.2026",
+      "Дата начала: 01.11.2026\nПесель: 00000000000\nИмя: Jan Kowalski\nАдрес: ul. Długa 10, 00-001 Warszawa\nДата договора: 22.10.2026",
+      "PESEL: 00000000000\nStart date: 2026-11-01\nAgreement date: 2026-10-22\nFull name: Jan Kowalski\nAddress: ul. Długa 10, 00-001 Warszawa",
+      "22.10.2026\nJan Kowalski\nul. Długa 10, 00-001 Warszawa\n00000000000\n01.11.2026",
+    ]) expect(parseDocumentInput(text)).toEqual({ ok: true, data: full });
+    expect(parseDocumentInput("22.10.2026\nJan Kowalski\nWarszawa\nnot a PESEL\n01.11.2026")).toEqual({ ok: false, reason: "invalid" });
+    expect(parseDocumentInput("22.10.2026\nJan Kowalski\nWarszawa\n00000000000\n31.02.2026")).toEqual({ ok: false, reason: "invalid" });
   });
 
   it("rejects repeated or unknown fields instead of silently overwriting them", () => {

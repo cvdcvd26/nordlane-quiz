@@ -22,19 +22,19 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("private immutable contract template", () => {
-  it("loads only the two fixed private keys, caches success and isolates cached data from callers", async () => {
+  it("loads only the content key, never the old signature, caches success and isolates cached blocks", async () => {
     const { loadContractTemplate, CONTRACT_TEMPLATE_KEYS } = await import("@/server/documents/template");
     const [first, second] = await Promise.all([loadContractTemplate(), loadContractTemplate()]);
     expect(first.blocks).toEqual(content);
-    expect(first.signature).toEqual(new Uint8Array(PNG));
-    expect(mocks.get).toHaveBeenCalledTimes(2);
+    expect(first).not.toHaveProperty("signature");
+    expect(mocks.get).toHaveBeenCalledTimes(1);
     expect(mocks.get).toHaveBeenCalledWith(CONTRACT_TEMPLATE_KEYS.content);
-    expect(mocks.get).toHaveBeenCalledWith(CONTRACT_TEMPLATE_KEYS.signature);
+    expect(mocks.get).not.toHaveBeenCalledWith("system/documents/contract-v1/company-signature.png");
+    expect(CONTRACT_TEMPLATE_KEYS.content).toBe("system/documents/contract-itsoluttionspol-v2/content.json");
     first.blocks[0].text = "Changed by a caller";
-    first.signature[0] = 0;
     expect(second.blocks).toEqual(content);
-    expect((await loadContractTemplate()).signature[0]).toBe(137);
-    expect(mocks.get).toHaveBeenCalledTimes(2);
+    expect((await loadContractTemplate()).blocks).toEqual(content);
+    expect(mocks.get).toHaveBeenCalledTimes(1);
   });
 
   it("reports missing assets safely and retries rather than caching a failure", async () => {
@@ -43,7 +43,7 @@ describe("private immutable contract template", () => {
     await expect(loadContractTemplate()).rejects.toMatchObject({ status: 503, code: "document_template_unavailable" });
     validStorage();
     await expect(loadContractTemplate()).resolves.toMatchObject({ blocks: content });
-    expect(mocks.get).toHaveBeenCalledTimes(4);
+    expect(mocks.get).toHaveBeenCalledTimes(2);
   });
 
   it("logs only fixed diagnostic phases and never exposes private storage failures or credentials", async () => {
@@ -61,7 +61,6 @@ describe("private immutable contract template", () => {
       expect(errorLog).not.toHaveBeenCalled();
       expect(warnLog.mock.calls).toEqual([
         ["documents.template.unavailable", { phase: "content_read" }],
-        ["documents.template.unavailable", { phase: "signature_read" }],
       ]);
       expect(infoLog).not.toHaveBeenCalled();
     } finally {
@@ -83,16 +82,12 @@ describe("private immutable contract template", () => {
     await expect(loadContractTemplate()).rejects.toMatchObject({ status: 503, code: "document_template_unavailable" });
   });
 
-  it("rejects malformed JSON, invalid UTF-8, and invalid PNG signatures or dimensions", async () => {
+  it("rejects malformed JSON and invalid UTF-8 without requiring any signature resource", async () => {
     const { validateContractTemplate } = await import("@/server/documents/template");
     for (const invalid of [new TextEncoder().encode("{private invalid JSON"), new Uint8Array([0xff])]) {
-      expect(() => validateContractTemplate(invalid, PNG)).toThrowError("The document template is unavailable. Please try again later.");
+      expect(() => validateContractTemplate(invalid)).toThrowError("The document template is unavailable. Please try again later.");
     }
-    const wrongMagic = new Uint8Array(PNG); wrongMagic[0] = 0;
-    const oversizedImage = new Uint8Array(PNG); new DataView(oversizedImage.buffer).setUint32(16, 4097);
-    for (const invalid of [new Uint8Array(), wrongMagic, oversizedImage]) {
-      expect(() => validateContractTemplate(bytes(content), invalid)).toThrowError("The document template is unavailable. Please try again later.");
-    }
+    expect(validateContractTemplate(bytes([...content, { type: "paragraph", label: "", text: "Nowy akapit wprowadzenia." }])).blocks).toHaveLength(3);
   });
 
   it.each([0, 1, 8, Number.NaN])("accepts valid bounded streams when HTTP metadata size is missing or compressed (%s)", async size => {

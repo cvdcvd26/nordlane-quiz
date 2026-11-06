@@ -37,7 +37,6 @@ export function StepTaskOverview() {
           </PixelHeading>
           <div className="measure reveal mt-5 space-y-4 text-lg leading-relaxed text-ink-soft" style={delay(2)}>
             <p>{t.about.body}</p>
-            <p>{t.about.vision}</p>
           </div>
         </div>
       </div>
@@ -52,9 +51,11 @@ export function StepTaskOverview() {
             </div>
           ))}
         </dl>
-        <p className="mt-5 border-t border-line pt-4 text-sm text-ink-soft">
-          {t.about.website.label}: <a href={t.about.website.url} target="_blank" rel="noopener noreferrer" className="font-semibold text-cyan underline underline-offset-4">{t.about.website.title} <span aria-hidden>↗</span></a>
-        </p>
+        <div className="mt-5 space-y-2 border-t border-line pt-4 text-sm text-ink-soft">
+          <p>{t.about.address.label}: {t.about.address.value}</p>
+          <p>{t.about.website.label}: <a href={t.about.website.url} target="_blank" rel="noopener noreferrer" className="font-semibold text-cyan underline underline-offset-4 break-all">{t.about.website.title} <span aria-hidden>↗</span></a></p>
+          <p>{t.about.email.label}: <a href={`mailto:${t.about.email.value}`} className="font-semibold text-cyan underline underline-offset-4 break-all">{t.about.email.value}</a></p>
+        </div>
       </Reveal>
 
       <Reveal className="mt-6 space-y-3">

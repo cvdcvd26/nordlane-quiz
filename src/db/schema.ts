@@ -63,6 +63,34 @@ export const visitorSessions = pgTable("visitor_sessions", {
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Independent guest credentials after a domain move; email binding revokes them
+ * by rotating the parent token hash, without moving any application records. */
+export const visitorDeviceSessions = pgTable("visitor_device_sessions", {
+  id: id(),
+  sessionId: uuid("session_id").notNull().references(() => visitorSessions.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  parentTokenHash: text("parent_token_hash").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: createdAt(),
+}, t => [index("visitor_device_sessions_expiry_idx").on(t.expiresAt)]);
+
+/** Short-lived browser-bound grants. Raw cookies and transfer codes are never stored. */
+export const domainSessionTransfers = pgTable("domain_session_transfers", {
+  id: id(),
+  browserHash: text("browser_hash").notNull(),
+  destination: text("destination").notNull(),
+  sourceSessionId: uuid("source_session_id").references(() => visitorSessions.id, { onDelete: "cascade" }),
+  sourceKind: text("source_kind"),
+  sourceTokenHash: text("source_token_hash"),
+  grantHash: text("grant_hash").unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  createdAt: createdAt(),
+}, t => [
+  index("domain_session_transfers_expiry_idx").on(t.expiresAt),
+  check("domain_session_transfers_kind_ck", sql`${t.sourceKind} in ('guest', 'candidate')`),
+]);
+
 /* ---------- Verified candidate email access ---------- */
 /** A permanent identity points at the existing application; no answers/files are moved. */
 export const candidateAccounts = pgTable("candidate_accounts", {

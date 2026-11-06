@@ -42,7 +42,9 @@ export function CandidateEmailAccess({ state, existingApplication = false, onAcc
     return () => clearInterval(timer);
   }, [resendAt]);
 
-  if (!state.enabled) return null;
+  // Sending may be disabled while an existing device session remains valid.
+  // Keep its account/logout controls available, especially on shared devices.
+  if (!state.enabled && !state.verified) return null;
 
   const requestCode = async () => {
     if (inFlight.current || (challengeId && Date.now() < resendAt)) return;

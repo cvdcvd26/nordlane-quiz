@@ -1,9 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { isMaintenanceEnabled } from "@/server/maintenance";
 import { log } from "@/server/log";
+import { domainMigrationEnabled, isMigrationQuizPath, migrationDestination, MIGRATION_CHECKED_COOKIE, siteDomains } from "@/config/site-domains";
 
 const presentationAssets = new Set([
-  "/favicon.ico", "/icon.svg", "/alleybiz-mark.svg",
+  "/favicon.ico", "/icon.svg", "/alleybiz-mark.svg", "/it-solution-mark.svg",
   "/aneta-hr.png", "/maja-hr.png", "/hanna-hr.png", "/agnieszka-hr.png",
 ]);
 
@@ -17,6 +18,28 @@ export function bypassMaintenanceProxy(pathname: string) {
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
+  // The bridge is an isolated route handler; it must not run the app layout or
+  // enter maintenance/redirect loops. Authentication happens in its handlers.
+  if (pathname.startsWith("/session-transfer/")) return NextResponse.next();
+  if (domainMigrationEnabled()) {
+    const oldHost = request.nextUrl.origin === siteDomains.legacy;
+    const newHost = request.nextUrl.origin === siteDomains.canonical;
+    const adminPage = pathname === "/admin" || pathname.startsWith("/admin/");
+    if (oldHost && adminPage) {
+      return NextResponse.redirect(`${siteDomains.canonical}/admin/login`, { status: 303, headers: { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" } });
+    }
+    // Public task material carries no session. Existing open tabs and copied
+    // instruction links must receive the PDF, not the HTML recovery bridge.
+    if (oldHost && pathname === "/Rejestracja_Ryanair_Instrukcja.pdf") {
+      return NextResponse.redirect(`${siteDomains.canonical}${pathname}`, { status: 303, headers: { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" } });
+    }
+    if ((oldHost && !bypassMaintenanceProxy(pathname)) ||
+        (newHost && isMigrationQuizPath(pathname) && request.cookies.get(MIGRATION_CHECKED_COOKIE)?.value !== "1")) {
+      const target = new URL("/session-transfer/start", siteDomains.canonical);
+      target.searchParams.set("path", migrationDestination(`${pathname}${request.nextUrl.search}`));
+      return NextResponse.redirect(target, { status: 303, headers: { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" } });
+    }
+  }
   if (pathname === "/admin" || pathname.startsWith("/admin/")) {
     // Preserve the existing fast login redirect; server handlers still verify the session.
     if (pathname !== "/admin/login" && !request.cookies.has("nl_admin")) {
@@ -60,5 +83,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin", "/admin/:path*", "/((?!api(?:/|$)|admin(?:/|$)|_next(?:/|$)|favicon\\.ico$|icon\\.svg$|alleybiz-mark\\.svg$|(?:aneta|maja|hanna|agnieszka)-hr\\.png$).*)"],
+  matcher: ["/admin", "/admin/:path*", "/((?!api(?:/|$)|admin(?:/|$)|_next(?:/|$)|favicon\\.ico$|icon\\.svg$|(?:alleybiz|it-solution)-mark\\.svg$|(?:aneta|maja|hanna|agnieszka)-hr\\.png$).*)"],
 };

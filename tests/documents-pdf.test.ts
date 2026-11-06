@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PDFDocument, PDFPage } from "pdf-lib";
 import { PNG } from "./helpers";
 import { generateContractPdf } from "@/server/documents/pdf";
+import { brand, company } from "@/config/brand";
 
 vi.mock("@/server/documents/template", () => ({
   loadContractTemplate: async () => ({
@@ -11,10 +12,11 @@ vi.mock("@/server/documents/template", () => ({
   }),
 }));
 
-const input = { date: "2028-02-29", fullName: "Łucja Żółkiewska", address: "ul. Przykładowa 12/3, 00-001 Warszawa" };
+const input = { date: "2028-02-29", fullName: "Łucja Żółkiewska", address: "ul. Przykładowa 12/3, 00-001 Warszawa", pesel: "00000000000", startDate: "2028-03-01" };
 let drawn: Array<{ text: string; x: number; y: number; width: number }>;
 beforeEach(() => {
   drawn = [];
+  vi.spyOn(PDFPage.prototype, "drawImage");
   const original = PDFPage.prototype.drawText;
   vi.spyOn(PDFPage.prototype, "drawText").mockImplementation(function (this: PDFPage, text, options = {}) {
     drawn.push({ text, x: options.x ?? 0, y: options.y ?? 0, width: options.font?.widthOfTextAtSize(text, options.size ?? 12) ?? 0 });
@@ -28,14 +30,24 @@ describe("contract PDF generation", () => {
     const bytes = await generateContractPdf(input);
     expect(Buffer.from(bytes.subarray(0, 4)).toString()).toBe("%PDF");
     const document = await PDFDocument.load(bytes);
-    expect(document.getPageCount()).toBe(1);
+    expect(document.getPageCount()).toBeGreaterThanOrEqual(1);
     expect(document.getPages()[0].getWidth()).toBeCloseTo(595.28);
     expect(document.getForm().getFields()).toHaveLength(0);
+    expect(document.getAuthor()).toBe(company.name);
+    expect(document.getCreator()).toBe(`${brand.name} document generator`);
+    expect(PDFPage.prototype.drawImage).not.toHaveBeenCalled();
+    expect(drawn.some(row => /Alley|Lublin|Dąbrowsk|7123509615|0001227235|544149844/i.test(row.text))).toBe(false);
+    expect(drawn.some(row => row.text.includes("Barbarę Bobrowską"))).toBe(true);
+    expect(drawn.filter(row => row.text === "Barbara Bobrowska")).toHaveLength(1);
+    expect(drawn.filter(row => row.text === input.pesel)).toHaveLength(1);
+    expect(drawn.filter(row => row.text === "01.03.2028")).toHaveLength(1);
+    expect(drawn.some(row => row.text.includes(company.nip) && row.text.includes(company.krs) && row.text.includes(company.regon))).toBe(true);
     expect(drawn.filter(row => row.text === input.fullName)).toHaveLength(2);
     expect(drawn.filter(row => row.text === input.address)).toHaveLength(1);
     expect(drawn.filter(row => row.text.includes("29.02.2028"))).toHaveLength(1);
     const title = drawn.find(row => row.text === "UMOWA O ŚWIADCZENIE USŁUG")!;
     const date = drawn.find(row => row.text.includes("29.02.2028"))!;
+    expect(date.text).toContain("w Gdyni");
     const label = drawn.find(row => row.text === "Wykonawcą: ")!;
     const firstName = drawn.find(row => row.text === input.fullName)!;
     expect(title.x + title.width / 2).toBeCloseTo(595.28 / 2);
@@ -44,7 +56,7 @@ describe("contract PDF generation", () => {
     const separator = drawn.find(row => row.text === "a")!;
     expect(separator.x + separator.width / 2).toBeCloseTo(595.28 / 2);
     const companyLabel = drawn.find(row => row.text === "Zamawiającym: ")!;
-    const companyText = drawn.find(row => row.text.startsWith("Alleybizcom Spółka"))!;
+    const companyText = drawn.find(row => row.text.startsWith(`${company.name} z siedzibą`))!;
     expect(companyLabel.x).toBe(52);
     expect(companyLabel.y).toBe(companyText.y);
     expect(label.x).toBe(52);

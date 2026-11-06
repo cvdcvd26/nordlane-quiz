@@ -1,4 +1,5 @@
 import { analyticsConfig } from "@/config/analytics";
+import { quizOrigins } from "@/config/site-domains";
 
 export type VisitorAttributionInput = {
   utmSource: string | null; utmMedium: string | null; utmCampaign: string | null;
@@ -15,7 +16,8 @@ export function collectVisitorAttribution(href: string, referrer: string): Visit
   let referrerHost: string | null = null;
   try {
     const source = new URL(referrer);
-    if (["http:", "https:"].includes(source.protocol) && source.hostname !== url.hostname) referrerHost = source.hostname;
+    const withinApplication = quizOrigins.includes(source.origin) && quizOrigins.includes(url.origin);
+    if (["http:", "https:"].includes(source.protocol) && source.hostname !== url.hostname && !withinApplication) referrerHost = source.hostname;
   } catch { /* Direct visits have no referring URL. */ }
   return {
     utmSource: tag("utm_source"), utmMedium: tag("utm_medium"), utmCampaign: tag("utm_campaign"),
