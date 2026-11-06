@@ -29,14 +29,19 @@ vi.mock("next/server", async importOriginal => ({
   ...await importOriginal<typeof import("next/server")>(),
   after: (callback: () => Promise<void>) => { afterResponse.callbacks.push(callback); },
 }));
-vi.mock("next/headers", () => ({ cookies: async () => ({
-  get: (name: string) => jar.values.has(name) ? { value: jar.values.get(name)! } : undefined,
-  set: (name: string, value: string, options: Record<string, unknown>) => {
-    if (options.maxAge === 0) jar.values.delete(name); else jar.values.set(name, value);
-    jar.options.set(name, options);
-  },
-  delete: (name: string) => jar.values.delete(name),
-}) }));
+vi.mock("next/headers", () => ({ cookies: async () => {
+  // Each request keeps its own browser cookie store, including parallel devices.
+  const values = jar.values;
+  const storedOptions = jar.options;
+  return {
+    get: (name: string) => values.has(name) ? { value: values.get(name)! } : undefined,
+    set: (name: string, value: string, options: Record<string, unknown>) => {
+      if (options.maxAge === 0) values.delete(name); else values.set(name, value);
+      storedOptions.set(name, options);
+    },
+    delete: (name: string) => values.delete(name),
+  };
+} }));
 vi.mock("@/server/brevo", async importOriginal => {
   const actual = await importOriginal<typeof import("@/server/brevo")>();
   return { ...actual, sendCandidateCode: async (email: string, code: string, id: string) => {
@@ -92,7 +97,7 @@ it("keeps the existing application and replaces anonymous access with a hashed i
   expect(storedChallenge.codeHash).not.toBe(result.code);
   expect(storedChallenge.codeHash).not.toBe(createHash("sha256").update(result.code).digest("hex"));
   expect(storedChallenge.browserHash).not.toBe(jar.values.get("nl_email_challenge"));
-  expect(await verifyCandidateEmail({ challengeId: result.challengeId, code: result.code }, "verify-ip")).toEqual({ verified: true, welcomeJobId: null });
+  expect(await verifyCandidateEmail({ challengeId: result.challengeId, code: result.code }, "verify-ip")).toEqual({ verified: true, welcomeJobId: null, contactCreated: false });
   expect(await getVisitorSessionId()).toBe(sessionId);
   expect(jar.values.has("nl_visitor")).toBe(false);
   expect(jar.values.has("nl_email_challenge")).toBe(false);
@@ -109,17 +114,23 @@ it("keeps the existing application and replaces anonymous access with a hashed i
 it("restores the same application on a second device without moving or overwriting either session's data", async () => {
   const first = await register();
   await saveContact(first.sessionId, { name: "Original", phone: "+48600123456", telegram: "" });
+  const existingContact = await env.db.select().from(schema.visitorContacts);
+  const existingLead = await env.db.select().from(schema.leads);
   const firstDevice = jar.values.get("nl_candidate")!;
   jar.values.clear(); await env.db.delete(schema.rateLimits);
   const second = await request();
   expect(second.sessionId).not.toBe(first.sessionId);
-  await verifyCandidateEmail({ challengeId: second.challengeId, code: second.code }, "other-ip");
+  expect(await verifyCandidateEmail({ challengeId: second.challengeId, code: second.code,
+    contact: { name: "Replacement must be ignored", phone: "+48600987654", telegram: "other_person" },
+  }, "other-ip")).toMatchObject({ verified: true, contactCreated: false });
   const secondDevice = jar.values.get("nl_candidate")!;
   expect(secondDevice).not.toBe(firstDevice);
   expect(await getVisitorSessionId()).toBe(first.sessionId);
   expect(await env.db.select().from(schema.candidateAccounts)).toHaveLength(1);
   expect(await env.db.select().from(schema.candidateDeviceSessions)).toHaveLength(2);
   expect((await env.db.select().from(schema.visitorContacts))[0]).toMatchObject({ name: "Original", sessionId: first.sessionId });
+  expect(await env.db.select().from(schema.visitorContacts)).toEqual(existingContact);
+  expect(await env.db.select().from(schema.leads)).toEqual(existingLead);
   expect(notifications.welcome).toHaveBeenCalledTimes(1);
   jar.values.set("nl_candidate", firstDevice);
   expect(await getVisitorSessionId()).toBe(first.sessionId);
@@ -148,12 +159,17 @@ it("restores a legacy task, chat and private files after email login without cre
   });
   const task = await submitTask(sessionId, { idempotencyKey: randomUUID(), fileIds: [file.id], review: "Moje prywatne uwagi do zadania." });
   const chat = await postVisitorMessage(sessionId, { clientMessageId: randomUUID(), body: "Moja prywatna rozmowa.", fileIds: [] });
+  await env.db.update(schema.leads).set({ status: "signal_working" }).where(eq(schema.leads.sessionId, sessionId));
   const [lead] = await env.db.select().from(schema.leads);
+  const answers = await env.db.select().from(schema.quizAnswers);
 
   vi.stubEnv("CANDIDATE_EMAIL_ENABLED", "true");
   await register(); // Bind the existing anonymous application, including all its data.
   jar.values.clear(); await env.db.delete(schema.rateLimits);
-  await register(); // Returning on another browser must restore the same application.
+  const returning = await request();
+  await verifyCandidateEmail({ challengeId: returning.challengeId, code: returning.code,
+    contact: { name: "New draft", phone: "+48600987654", telegram: "" },
+  }, "returning-ip"); // Returning on another browser must restore the same application.
   const response = await sessionRoute(new Request("https://example.com/api/session"));
   expect(response.status).toBe(200);
   expect(await response.json()).toMatchObject({
@@ -169,6 +185,7 @@ it("restores a legacy task, chat and private files after email login without cre
   expect(download.status).toBe(200);
   expect(Buffer.from(await download.arrayBuffer())).toEqual(PNG);
   expect(await env.db.select().from(schema.leads)).toEqual([lead]);
+  expect(await env.db.select().from(schema.quizAnswers)).toEqual(answers);
 
   jar.values.clear(); await env.db.delete(schema.rateLimits);
   await register("other@example.com");
@@ -177,6 +194,129 @@ it("restores a legacy task, chat and private files after email login without cre
   const denied = await fileRoute(new Request(`https://example.com/api/files/${file.id}`), { params: Promise.resolve({ id: file.id }) });
   expect(denied.status).toBe(404);
   expect(await env.db.select().from(schema.leads)).toEqual([lead]);
+});
+
+it("creates normalized contact and a lead with the verified identity in one successful registration", async () => {
+  const challenge = await request();
+  expect(await env.db.select().from(schema.visitorContacts)).toHaveLength(0);
+  expect(await env.db.select().from(schema.leads)).toHaveLength(0);
+  const response = await verifyRoute(new Request("https://example.com/api/candidate/email-verify", {
+    method: "POST", headers: { origin: "https://example.com", host: "example.com", "content-type": "application/json" },
+    body: JSON.stringify({ challengeId: challenge.challengeId, code: challenge.code,
+      contact: { name: "  Anna Testowa  ", phone: "+48 600 123 456", telegram: "https://t.me/anna_test" },
+    }),
+  }));
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ verified: true, contactCreated: true });
+  expect(await getVisitorSessionId()).toBe(challenge.sessionId);
+  expect(await env.db.select().from(schema.candidateAccounts)).toEqual([expect.objectContaining({
+    email: "anna@example.com", sessionId: challenge.sessionId,
+  })]);
+  expect(await env.db.select().from(schema.visitorContacts)).toEqual([expect.objectContaining({
+    sessionId: challenge.sessionId, name: "Anna Testowa", phone: "+48600123456", telegram: "@anna_test",
+  })]);
+  expect(await env.db.select().from(schema.leads)).toEqual([expect.objectContaining({
+    sessionId: challenge.sessionId, status: "new", messageCount: 0,
+  })]);
+  expect(await env.db.select().from(schema.quizAnswers)).toHaveLength(0);
+  expect(await env.db.select().from(schema.messages)).toHaveLength(0);
+});
+
+it("does not save a contact or lead for an invalid code, and can use the same draft with the correct code", async () => {
+  const challenge = await request();
+  const contact = { name: "Anna Testowa", phone: "+48600123456" };
+  const wrong = challenge.code === "000000" ? "111111" : "000000";
+  await expect(verifyCandidateEmail({ challengeId: challenge.challengeId, code: wrong, contact }, "invalid-contact-ip"))
+    .rejects.toMatchObject({ code: "email_code_invalid" });
+  expect(await env.db.select().from(schema.visitorContacts)).toHaveLength(0);
+  expect(await env.db.select().from(schema.leads)).toHaveLength(0);
+  expect(await env.db.select().from(schema.candidateAccounts)).toHaveLength(0);
+  expect(await env.db.select().from(schema.candidateDeviceSessions)).toHaveLength(0);
+  expect((await env.db.select().from(schema.candidateEmailChallenges))[0]).toMatchObject({ status: "ready", attempts: 1 });
+  await verifyCandidateEmail({ challengeId: challenge.challengeId, code: challenge.code, contact }, "invalid-contact-ip");
+  expect(await env.db.select().from(schema.visitorContacts)).toEqual([expect.objectContaining({ ...contact, telegram: null })]);
+  expect(await env.db.select().from(schema.leads)).toHaveLength(1);
+});
+
+it("uses the same server contact validation without consuming a correct code for an invalid draft", async () => {
+  const challenge = await request();
+  await expect(verifyCandidateEmail({ challengeId: challenge.challengeId, code: challenge.code,
+    contact: { name: " ", phone: "not-a-phone", telegram: "!" },
+  }, "bad-draft-ip")).rejects.toMatchObject({ name: "ZodError" });
+  expect((await env.db.select().from(schema.candidateEmailChallenges))[0]).toMatchObject({ status: "ready", attempts: 0 });
+  expect(await env.db.select().from(schema.candidateAccounts)).toHaveLength(0);
+  expect(await env.db.select().from(schema.visitorContacts)).toHaveLength(0);
+  expect(await env.db.select().from(schema.leads)).toHaveLength(0);
+});
+
+it("rolls back identity, contact and code consumption when creating the lead fails", async () => {
+  const challenge = await request();
+  const input = { challengeId: challenge.challengeId, code: challenge.code,
+    contact: { name: "Anna Testowa", phone: "+48600123456" },
+  };
+  await env.client.exec(`CREATE FUNCTION fail_registration_lead() RETURNS trigger AS $$
+    BEGIN RAISE EXCEPTION 'test lead insertion failure'; END;
+    $$ LANGUAGE plpgsql;
+    CREATE TRIGGER fail_registration_lead BEFORE INSERT ON leads FOR EACH ROW EXECUTE FUNCTION fail_registration_lead();`);
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    await expect(verifyCandidateEmail(input, "atomic-ip")).rejects.toMatchObject({ code: "email_unavailable" });
+    expect(await env.db.select().from(schema.candidateAccounts)).toHaveLength(0);
+    expect(await env.db.select().from(schema.visitorContacts)).toHaveLength(0);
+    expect(await env.db.select().from(schema.leads)).toHaveLength(0);
+    expect(await env.db.select().from(schema.candidateDeviceSessions)).toHaveLength(0);
+    expect((await env.db.select().from(schema.candidateEmailChallenges))[0]).toMatchObject({ status: "ready", attempts: 0 });
+    expect(jar.values.has("nl_candidate")).toBe(false);
+  } finally {
+    await env.client.exec("DROP TRIGGER fail_registration_lead ON leads; DROP FUNCTION fail_registration_lead();");
+    warning.mockRestore();
+  }
+  await verifyCandidateEmail(input, "atomic-ip");
+  expect(await env.db.select().from(schema.visitorContacts)).toHaveLength(1);
+  expect(await env.db.select().from(schema.leads)).toHaveLength(1);
+});
+
+it.each([false, true])("initializes one canonical contact for concurrent browsers using the same email (existing account: %s)", async (existingAccount) => {
+  let canonicalSessionId: string | undefined;
+  if (existingAccount) {
+    canonicalSessionId = (await register()).sessionId;
+    jar.values = new Map(); jar.options = new Map();
+    await env.db.delete(schema.rateLimits);
+  }
+  const first = await request();
+  const firstBrowser = { values: jar.values, options: jar.options };
+  jar.values = new Map(); jar.options = new Map();
+  await env.db.delete(schema.rateLimits);
+  const second = await request();
+  const secondBrowser = { values: jar.values, options: jar.options };
+  const firstContact = { name: "First draft", phone: "+48600123456", telegram: null };
+  const secondContact = { name: "Second draft", phone: "+48600987654", telegram: null };
+  jar.values = firstBrowser.values; jar.options = firstBrowser.options;
+  const firstVerification = verifyCandidateEmail({ challengeId: first.challengeId, code: first.code, contact: firstContact }, "first-device-ip");
+  jar.values = secondBrowser.values; jar.options = secondBrowser.options;
+  const secondVerification = verifyCandidateEmail({ challengeId: second.challengeId, code: second.code, contact: secondContact }, "second-device-ip");
+  const verificationResults = await Promise.all([firstVerification, secondVerification]);
+  expect(verificationResults).toEqual(expect.arrayContaining([
+    { verified: true, welcomeJobId: null, contactCreated: true },
+    { verified: true, welcomeJobId: null, contactCreated: false },
+  ]));
+  const accounts = await env.db.select().from(schema.candidateAccounts);
+  expect(accounts).toHaveLength(1);
+  const canonical = accounts[0].sessionId;
+  if (canonicalSessionId) expect(canonical).toBe(canonicalSessionId);
+  const contacts = await env.db.select().from(schema.visitorContacts);
+  expect(contacts).toHaveLength(1);
+  expect(contacts[0].sessionId).toBe(canonical);
+  expect([firstContact, secondContact]).toContainEqual({ name: contacts[0].name, phone: contacts[0].phone, telegram: contacts[0].telegram });
+  expect(await env.db.select().from(schema.leads)).toEqual([expect.objectContaining({ sessionId: canonical, status: "new" })]);
+  const devices = await env.db.select().from(schema.candidateDeviceSessions);
+  expect(devices).toHaveLength(existingAccount ? 3 : 2);
+  expect(devices.every(device => device.accountId === accounts[0].id)).toBe(true);
+  for (const browser of [firstBrowser, secondBrowser]) {
+    jar.values = browser.values; jar.options = browser.options;
+    expect(await getVisitorSessionId()).toBe(canonical);
+  }
+  expect(notifications.welcome).toHaveBeenCalledTimes(1);
 });
 
 it("commits failed attempts and blocks even the correct code after five failures", async () => {
@@ -204,12 +344,16 @@ it("expires a code after ten minutes and never accepts it again", async () => {
 
 it("consumes a code exactly once under concurrent verification", async () => {
   const challenge = await request();
-  const input = { challengeId: challenge.challengeId, code: challenge.code };
+  const input = { challengeId: challenge.challengeId, code: challenge.code,
+    contact: { name: "Anna Testowa", phone: "+48600123456" },
+  };
   const results = await Promise.allSettled([verifyCandidateEmail(input, "race-ip"), verifyCandidateEmail(input, "race-ip")]);
   expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
   expect(results.filter(result => result.status === "rejected")).toHaveLength(1);
   expect(await env.db.select().from(schema.candidateAccounts)).toHaveLength(1);
   expect(await env.db.select().from(schema.candidateDeviceSessions)).toHaveLength(1);
+  expect(await env.db.select().from(schema.visitorContacts)).toHaveLength(1);
+  expect(await env.db.select().from(schema.leads)).toHaveLength(1);
   expect(notifications.welcome).toHaveBeenCalledTimes(1);
 });
 
@@ -318,7 +462,7 @@ it("returns login cookies before welcome enqueue, hides job IDs and tolerates di
       body: JSON.stringify({ challengeId: challenge.challengeId, code: challenge.code }),
     }));
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ verified: true });
+    expect(await response.json()).toEqual({ verified: true, contactCreated: false });
     expect(await getVisitorSessionId()).toBe(challenge.sessionId);
     expect(notifications.enqueue).not.toHaveBeenCalled();
     expect(afterResponse.callbacks).toHaveLength(1);

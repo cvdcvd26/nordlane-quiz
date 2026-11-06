@@ -7,7 +7,7 @@ import { chatConfig, reviewConfig } from "@/config/settings";
 import type { CandidateOutcome } from "@/config/candidate-outcome";
 import { api, ApiError, newId, type ChatMessage, type PublicFile } from "@/lib/api";
 import { QUIZ_HISTORY_STEP, QUIZ_STEP_PATHS, resolveQuizStep, latestQuizStep, type QuizProgress } from "@/lib/quiz-steps";
-import { observeCandidateIdentity } from "@/lib/candidate-identity";
+import { consumeFreshRegistration, observeCandidateIdentity, rememberFreshRegistration } from "@/lib/candidate-identity";
 import { Lane, type Step } from "./Lane";
 import { Backdrop } from "../visual/Backdrop";
 import { HalloweenSeason } from "../visual/HalloweenSeason";
@@ -70,6 +70,7 @@ export function QuizApp() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [step, setStep] = useState<Step>(0);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [accountBusy, setAccountBusy] = useState(false);
   const [restoredThrough, setRestoredThrough] = useState(-1);
   const restoredProgressCaptured = useRef(false);
   const accountButton = useRef<HTMLButtonElement>(null);
@@ -161,7 +162,9 @@ export function QuizApp() {
           progress.current = { contactSaved: Boolean(s.contact), questionsComplete: allAnswered(s.answers), submitted: Boolean(s.submission) };
           if (!restoredProgressCaptured.current) {
             restoredProgressCaptured.current = true;
-            if (s.candidateEmail?.verified || s.restoredSession) setRestoredThrough(latestQuizStep(progress.current));
+            const latestStep = latestQuizStep(progress.current);
+            const freshRegistration = consumeFreshRegistration(Boolean(s.candidateEmail?.verified && s.contact && latestStep === 1));
+            if (!freshRegistration && (s.candidateEmail?.verified || s.restoredSession)) setRestoredThrough(latestStep);
           }
           const requested = resolveQuizStep(window.location.pathname, progress.current, window.history.state?.[QUIZ_HISTORY_STEP]);
           goTo(requested, "replace", false);
@@ -345,7 +348,17 @@ export function QuizApp() {
   const emailAccess = accountAvailable && state?.candidateEmail ? <CandidateEmailAccess
     state={state.candidateEmail}
     existingApplication={Boolean(state.contact)}
-    onAccessChanged={() => window.location.replace("/")}
+    registration={emailRequired ? { contact, onChange: onContactChange } : undefined}
+    loginMode={accountOpen}
+    onLoginModeChange={setAccountOpen}
+    onBusyChange={setAccountBusy}
+    onAccessChanged={result => {
+      // Drop the old step-0 history marker so a restored account resumes its saved step.
+      window.history.replaceState(null, "", "/");
+      if (result?.contactCreated && emailRequired) rememberFreshRegistration();
+      // Always discard in-memory drafts, polls and uploads when identity changes.
+      window.location.replace("/");
+    }}
   /> : null;
 
   const openAccount = () => {
@@ -371,7 +384,7 @@ export function QuizApp() {
             <span className="display relative z-10 text-[1.05rem] font-bold" aria-hidden="true">{brand.wordmark}</span>
             <span className="sr-only">{brand.name}</span>
           </p>
-          {accountAvailable && <button ref={accountButton} type="button" onClick={openAccount} className="min-h-10 rounded-full border border-paint/30 bg-paint/5 px-3 text-xs font-semibold text-cyan transition-colors hover:bg-paint/10 sm:px-4 sm:text-sm" aria-controls="candidate-email-access" aria-expanded={step === 0 || accountOpen}>Moje zgłoszenie</button>}
+          {accountAvailable && <button ref={accountButton} type="button" onClick={openAccount} disabled={accountBusy} className="min-h-10 rounded-full border border-paint/30 bg-paint/5 px-3 text-xs font-semibold text-cyan transition-colors hover:bg-paint/10 disabled:opacity-50 sm:px-4 sm:text-sm" aria-controls="candidate-email-access" aria-expanded={accountOpen}>{state?.candidateEmail?.verified ? "Moje zgłoszenie" : "Zaloguj się"}</button>}
         </div>
         {/* Mobile progress */}
         <div className="mx-auto max-w-6xl px-4 pb-4 sm:px-6 md:hidden">
@@ -414,10 +427,13 @@ export function QuizApp() {
               saving={contactSaving}
               error={contactError}
               onContinue={() => void saveContact()}
-              emailAccess={emailAccess}
-              emailRequired={emailRequired}
+              emailAccess={emailRequired || accountOpen ? emailAccess : null}
+              showContactForm={!emailRequired && !accountOpen}
+              verifiedEmail={state.candidateEmail?.verified ? state.candidateEmail.email : null}
             />
           )}
+
+          {state && !outcome && step === 0 && accountOpen && !emailRequired && <button type="button" className="mt-3 min-h-10 text-sm font-semibold text-ink-soft" onClick={() => { setAccountOpen(false); accountButton.current?.focus(); }}>Wróć do formularza</button>}
 
           {state && (step > 0 || outcome) && accountOpen && emailAccess && <div className="mb-8">
             {emailAccess}

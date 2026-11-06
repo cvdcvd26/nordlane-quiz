@@ -11,7 +11,10 @@ import type { StepTaskSubmission } from "@/components/visitor/StepTask";
 
 const mocks = vi.hoisted(() => ({ api: vi.fn(), chat: vi.fn(), pixel: vi.fn(), telemetry: vi.fn() }));
 vi.mock("@/lib/api", async original => ({ ...await original<typeof import("@/lib/api")>(), api: mocks.api }));
-vi.mock("@/lib/candidate-identity", () => ({ observeCandidateIdentity: () => ({ isCurrent: () => true, dispose: () => {} }) }));
+vi.mock("@/lib/candidate-identity", async original => ({
+  ...await original<typeof import("@/lib/candidate-identity")>(),
+  observeCandidateIdentity: () => ({ isCurrent: () => true, dispose: () => {} }),
+}));
 vi.mock("@/components/ui/LogoMark", () => ({ LogoMark: () => null }));
 vi.mock("@/components/visual/Backdrop", () => ({ Backdrop: () => null }));
 vi.mock("@/components/visual/HalloweenSeason", () => ({ HalloweenSeason: () => null }));

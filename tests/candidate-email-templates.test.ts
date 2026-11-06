@@ -88,7 +88,7 @@ describe("transactional email presentation", () => {
   });
 
   it("keeps the verified-account and unread-message instructions specific to their existing scenarios", () => {
-    expect(templates[1].text).toContain("Moje zgłoszenie");
+    expect(templates[1].text).toContain("Zaloguj się");
     expect(templates[1].text).toContain("jednorazowym kodem");
     expect(templates[1].text).toContain("W zapisanej sesji zgłoszenie otworzy się automatycznie");
     expect(templates[2].text).toContain("nie dołączamy treści rozmowy ani dokumentów");

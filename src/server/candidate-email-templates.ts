@@ -79,20 +79,20 @@ export function buildCandidateEmailTemplate(input: EmailInput): CandidateEmailTe
   if (input.kind === "welcome") {
     const subject = `${brand.name} — Twoje konto jest gotowe`;
     const introduction = "Twój adres e-mail został potwierdzony. Możesz kontynuować zgłoszenie i wracać do niego również na innym urządzeniu.";
-    const instructions = "Aby wrócić, otwórz stronę, wybierz „Moje zgłoszenie” i wpisz ten sam adres e-mail. Na nowym urządzeniu potwierdź wejście jednorazowym kodem otrzymanym pocztą. W zapisanej sesji zgłoszenie otworzy się automatycznie.";
+    const instructions = "Aby wrócić, otwórz stronę, wybierz „Zaloguj się” i wpisz ten sam adres e-mail. Na nowym urządzeniu potwierdź wejście jednorazowym kodem otrzymanym pocztą. W zapisanej sesji zgłoszenie otworzy się automatycznie.";
     const reassurance = "Nie potrzebujesz hasła. Zachowaj tę wiadomość — przycisk zawsze prowadzi do serwisu.";
     return {
       subject,
       text: `Witaj w ${brand.name}!\n\n${introduction}\n\nPrzejdź do serwisu:\n${site}\n\n${instructions}\n\n${reassurance}\n\nZespół ${brand.name}\n\n${legal}`,
       html: shell(subject, "Twój adres e-mail jest potwierdzony. Możesz kontynuować swoje zgłoszenie.", "Twoje konto jest gotowe", "Witaj w", `${brand.name}.`, `${paragraph(introduction)}${action(site, "Przejdź do serwisu")}
 <p style="margin:0 0 2px;color:#142b21;font-size:16px;line-height:24px;font-weight:700;">Wracasz do zgłoszenia?</p>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">${step("01", "Wybierz „Moje zgłoszenie”", "Otwórz serwis i wpisz ten sam adres e-mail.")}${step("02", "Potwierdź wejście kodem", "Na nowym urządzeniu otrzymasz jednorazowy kod. W zapisanej sesji zgłoszenie otworzy się automatycznie.", true)}</table>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">${step("01", "Wybierz „Zaloguj się”", "Otwórz serwis i wpisz ten sam adres e-mail.")}${step("02", "Potwierdź wejście kodem", "Na nowym urządzeniu otrzymasz jednorazowy kod. W zapisanej sesji zgłoszenie otworzy się automatycznie.", true)}</table>
 ${callout("Bez hasła. Zawsze pod ręką.", reassurance)}`),
     };
   }
   const subject = `${brand.name} — nowa wiadomość od HR`;
   const introduction = "W Twoim zgłoszeniu czeka nieprzeczytana wiadomość od zespołu HR. Otwórz czat, aby ją przeczytać i w razie potrzeby odpowiedzieć.";
-  const instructions = "Jeśli pojawi się ekran logowania, wybierz „Moje zgłoszenie” i wpisz ten sam adres e-mail. Dostęp potwierdzisz jednorazowym kodem.";
+  const instructions = "Jeśli pojawi się ekran logowania, wybierz „Zaloguj się” i wpisz ten sam adres e-mail. Dostęp potwierdzisz jednorazowym kodem.";
   const privacy = "Ze względu na prywatność nie dołączamy treści rozmowy ani dokumentów do e-maili.";
   return {
     subject,

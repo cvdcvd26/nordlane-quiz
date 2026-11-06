@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { announceCandidateIdentityChange, candidateIdentityIsCurrent, CANDIDATE_IDENTITY_KEY, observeCandidateIdentity } from "@/lib/candidate-identity";
+import { announceCandidateIdentityChange, candidateIdentityIsCurrent, CANDIDATE_IDENTITY_KEY, consumeFreshRegistration, observeCandidateIdentity, rememberFreshRegistration } from "@/lib/candidate-identity";
 import { api, uploadWithProgress } from "@/lib/api";
 
 const A = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa";
@@ -38,6 +38,38 @@ function draft() {
 }
 
 describe("candidate identity across tabs", () => {
+  it("preserves a fresh registration across one reload without private contact data", () => {
+    announceCandidateIdentityChange();
+    rememberFreshRegistration();
+    expect(consumeFreshRegistration(true)).toBe(true);
+    expect(consumeFreshRegistration(true)).toBe(false);
+  });
+
+  it("does not use a registration marker for a restored, unverified or advanced application", () => {
+    announceCandidateIdentityChange(); rememberFreshRegistration();
+    expect(consumeFreshRegistration(false)).toBe(false);
+    expect(consumeFreshRegistration(true)).toBe(false);
+  });
+
+  it("does not apply a registration conversion to another identity", () => {
+    announceCandidateIdentityChange(); rememberFreshRegistration();
+    localStorage.setItem(CANDIDATE_IDENTITY_KEY, B);
+    expect(consumeFreshRegistration(true)).toBe(false);
+  });
+
+  it.each([60_000, -1])("discards stale or future registration markers (offset %s)", offset => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(100_000);
+    announceCandidateIdentityChange(); rememberFreshRegistration();
+    now.mockReturnValue(100_000 + offset);
+    expect(consumeFreshRegistration(true)).toBe(false);
+  });
+
+  it("clears a pending registration marker on the next account change", () => {
+    announceCandidateIdentityChange(); rememberFreshRegistration();
+    announceCandidateIdentityChange();
+    expect(consumeFreshRegistration(true)).toBe(false);
+  });
+
   it("does not reload or write a shared marker for the existing anonymous flow", () => {
     const monitor = observe();
     expect(monitor.isCurrent()).toBe(true);

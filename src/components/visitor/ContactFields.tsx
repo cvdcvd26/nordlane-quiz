@@ -26,9 +26,11 @@ type Props = {
   value: ContactDraft;
   errors: ContactErrors;
   onChange: (next: ContactDraft, field: keyof ContactDraft) => void;
+  emailField?: React.ReactNode;
+  showTitle?: boolean;
 };
 
-export function ContactFields({ value, errors, onChange }: Props) {
+export function ContactFields({ value, errors, onChange, emailField, showTitle = true }: Props) {
   const t = content.quiz.contact;
 
   const onPhoneInput = (el: HTMLInputElement) => {
@@ -68,7 +70,7 @@ export function ContactFields({ value, errors, onChange }: Props) {
 
   return (
     <fieldset className="grid gap-x-5 gap-y-1 sm:grid-cols-2">
-      <legend className="mb-5 text-lg font-bold">{t.title}</legend>
+      <legend className={showTitle ? "mb-5 text-lg font-bold" : "sr-only"}>{t.title}</legend>
       {field(
         "name",
         t.name.label,
@@ -108,7 +110,8 @@ export function ContactFields({ value, errors, onChange }: Props) {
           {...aria("phone")}
         />,
       )}
-      <div className="sm:col-span-2">
+      {emailField}
+      <div className={emailField ? undefined : "sm:col-span-2"}>
         {field(
           "telegram",
           t.telegram.label,

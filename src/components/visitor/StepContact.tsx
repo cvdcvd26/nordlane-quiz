@@ -15,12 +15,14 @@ type Props = {
   onContinue: () => void;
   emailAccess?: ReactNode;
   emailRequired?: boolean;
+  showContactForm?: boolean;
+  verifiedEmail?: string | null;
 };
 
 const delay = (i: number) => ({ "--i": i }) as React.CSSProperties;
 
 /** Step 1: hero + contact details. */
-export function StepContact({ contact, errors, onChange, saving, error, onContinue, emailAccess, emailRequired = false }: Props) {
+export function StepContact({ contact, errors, onChange, saving, error, onContinue, emailAccess, emailRequired = false, showContactForm = true, verifiedEmail }: Props) {
   const q = content.quiz;
   return (
     <section aria-labelledby="contact-title">
@@ -45,7 +47,7 @@ export function StepContact({ contact, errors, onChange, saving, error, onContin
 
       {emailAccess && <div className="mt-8">{emailAccess}</div>}
 
-      <form
+      {showContactForm && <form
         noValidate
         className="glass reveal mt-10 rounded-(--radius-tile) p-5 sm:p-7"
         style={delay(4)}
@@ -54,6 +56,7 @@ export function StepContact({ contact, errors, onChange, saving, error, onContin
           onContinue();
         }}
       >
+        {verifiedEmail && <p className="mb-5 flex flex-wrap items-center gap-2 text-sm text-ink-soft"><span className="break-all font-semibold text-ink">{verifiedEmail}</span><span className="rounded-full bg-paint/10 px-2.5 py-1 text-xs font-semibold text-cyan">Potwierdzony e-mail</span></p>}
         <fieldset disabled={emailRequired || saving}>
           <ContactFields value={contact} errors={errors} onChange={onChange} />
         </fieldset>
@@ -70,7 +73,7 @@ export function StepContact({ contact, errors, onChange, saving, error, onContin
             {error}
           </span>
         </div>
-      </form>
+      </form>}
     </section>
   );
 }

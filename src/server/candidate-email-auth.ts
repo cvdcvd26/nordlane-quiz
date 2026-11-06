@@ -9,6 +9,9 @@ import { rateLimit } from "./rate-limit";
 import { lockVisitor } from "./session-lock";
 import { candidateEmailConfigured, sendCandidateCode } from "./brevo";
 import { recordWelcomeEmail } from "./services/candidate-email-notifications";
+import { contactSchema } from "./services/contact";
+import { ensureLead } from "./services/leads";
+import { assertVisitorApplicationOpen } from "./services/candidate-outcome";
 
 const SESSION_COOKIE = "nl_candidate";
 const CHALLENGE_COOKIE = "nl_email_challenge";
@@ -28,6 +31,7 @@ const emailInput = z.object({
 const verifyInput = z.object({
   challengeId: z.uuid("Poproś o nowy kod i spróbuj ponownie."),
   code: z.string().trim().regex(/^\d{6}$/, "Wpisz sześciocyfrowy kod z wiadomości e-mail."),
+  contact: contactSchema.optional(),
 }).strict();
 
 export type CandidateEmailState = {
@@ -134,12 +138,12 @@ export async function requestCandidateEmail(sessionId: string, input: unknown, i
   });
 }
 
-type VerifyResult = { error: "invalid" | "expired" | "conflict" } | { token: string; welcomeJobId: string | null };
+type VerifyResult = { error: "invalid" | "expired" | "conflict" } | { token: string; welcomeJobId: string | null; contactCreated: boolean };
 
-export async function verifyCandidateEmail(input: unknown, ip: string): Promise<{ verified: true; welcomeJobId: string | null }> {
+export async function verifyCandidateEmail(input: unknown, ip: string): Promise<{ verified: true; welcomeJobId: string | null; contactCreated: boolean }> {
   return operation("verify", async () => {
     assertEnabled();
-    const { challengeId, code } = verifyInput.parse(input);
+    const { challengeId, code, contact } = verifyInput.parse(input);
     const jar = await cookies();
     const browser = jar.get(CHALLENGE_COOKIE)?.value;
     await rateLimit(`candidate-verify:ip:${hash(ip)}`, 60, 15 * 60);
@@ -172,10 +176,13 @@ export async function verifyCandidateEmail(input: unknown, ip: string): Promise<
         .where(eq(schema.candidateEmailChallenges.id, challengeId));
 
       // All application data retains its original session ID. Never match on phone/name.
-      await lockVisitor(tx, challenge.sessionId);
       let [account] = await tx.select().from(schema.candidateAccounts).where(eq(schema.candidateAccounts.email, challenge.email)).limit(1);
+      let lockedSessionId: string | null = null;
       let welcomeJobId: string | null = null;
+      let contactCreated = false;
       if (!account) {
+        await lockVisitor(tx, challenge.sessionId);
+        lockedSessionId = challenge.sessionId;
         const [bound] = await tx.select({ id: schema.candidateAccounts.id }).from(schema.candidateAccounts)
           .where(eq(schema.candidateAccounts.sessionId, challenge.sessionId)).limit(1);
         if (bound) return { error: "conflict" };
@@ -193,11 +200,24 @@ export async function verifyCandidateEmail(input: unknown, ip: string): Promise<
           if (!account) return { error: "conflict" };
         }
       }
+      if (contact) {
+        // An existing email restores its canonical application, not the requesting
+        // browser's guest session. Serialize initialization with other contact writes.
+        if (lockedSessionId !== account.sessionId) await lockVisitor(tx, account.sessionId);
+        const [existingContact] = await tx.select({ id: schema.visitorContacts.id }).from(schema.visitorContacts)
+          .where(eq(schema.visitorContacts.sessionId, account.sessionId)).limit(1);
+        if (!existingContact) {
+          await assertVisitorApplicationOpen(tx, account.sessionId);
+          await tx.insert(schema.visitorContacts).values({ sessionId: account.sessionId, ...contact });
+          await ensureLead(tx, account.sessionId);
+          contactCreated = true;
+        }
+      }
       const token = randomBytes(32).toString("base64url");
       await tx.insert(schema.candidateDeviceSessions).values({
         accountId: account.id, tokenHash: hash(token), expiresAt: new Date(now.getTime() + SESSION_TTL_SECONDS * 1000),
       });
-      return { token, welcomeJobId };
+      return { token, welcomeJobId, contactCreated };
     });
     if ("error" in result) {
       if (result.error === "expired") throw new AppError(400, "email_code_expired", "Kod wygasł. Poproś o nowy kod.");
@@ -208,7 +228,7 @@ export async function verifyCandidateEmail(input: unknown, ip: string): Promise<
     jar.set("nl_visitor", "", cookieOptions(0));
     jar.set(CHALLENGE_COOKIE, "", cookieOptions(0, CHALLENGE_PATH));
     // The route dispatches the already-durable welcome after sending login cookies.
-    return { verified: true, welcomeJobId: result.welcomeJobId };
+    return { verified: true, welcomeJobId: result.welcomeJobId, contactCreated: result.contactCreated };
   });
 }
 

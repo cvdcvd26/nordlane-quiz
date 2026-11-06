@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,6 +9,7 @@ vi.mock("@/components/visual/PixelHeading", () => ({ PixelHeading: ({ children }
 vi.mock("@/components/testimonials/TestimonialStrip", () => ({ TestimonialStrip: () => null }));
 
 import { CandidateEmailAccess, clearCandidateDrafts, type CandidateEmailState } from "@/components/visitor/CandidateEmailAccess";
+import type { ContactDraft } from "@/components/visitor/ContactFields";
 import { StepContact } from "@/components/visitor/StepContact";
 
 let host: HTMLDivElement;
@@ -19,7 +20,21 @@ const account: CandidateEmailState = { enabled: true, email: "anna@example.com",
 const button = (label: string) => [...host.querySelectorAll<HTMLButtonElement>("button")].find(node => node.textContent === label)!;
 const email = () => host.querySelector<HTMLInputElement>('input[type="email"]')!;
 const code = () => host.querySelector<HTMLInputElement>('input[autocomplete="one-time-code"]')!;
+const contactField = (field: keyof ContactDraft) => host.querySelector<HTMLInputElement>(`#contact-${field}`)!;
+const validContact: ContactDraft = { name: "Anna", phone: "+48 600 123 456", telegram: "@anna_test" };
 const render = (state = guest) => act(async () => root.render(<CandidateEmailAccess state={state} onAccessChanged={changed} />));
+function RegistrationFlow({ initialContact = validContact }: { initialContact?: ContactDraft }) {
+  const [contact, setContact] = useState(initialContact);
+  const [loginMode, setLoginMode] = useState(false);
+  const [busy, setBusy] = useState(false);
+  return <>
+    <button type="button" disabled={busy} onClick={() => setLoginMode(true)}>Header login</button>
+    <StepContact contact={contact} errors={{}} onChange={setContact} saving={false} error={null} onContinue={vi.fn()}
+      showContactForm={false} emailAccess={<CandidateEmailAccess state={guest} onAccessChanged={changed}
+        registration={{ contact, onChange: setContact }} loginMode={loginMode} onLoginModeChange={setLoginMode} onBusyChange={setBusy} />} />
+  </>;
+}
+const renderRegistration = (initialContact?: ContactDraft) => act(async () => root.render(<RegistrationFlow initialContact={initialContact} />));
 const click = (element: HTMLElement) => act(async () => { element.click(); });
 async function type(element: HTMLInputElement, value: string) {
   await act(async () => {
@@ -36,7 +51,7 @@ beforeEach(() => {
   sessionStorage.clear();
   localStorage.clear();
   changed = vi.fn(); mocks.api.mockReset();
-  mocks.api.mockImplementation(async (url: string) => url.endsWith("email-request") ? { challengeId: "challenge-1", expiresIn: 600, resendAfter: 60 } : { verified: true });
+  mocks.api.mockImplementation(async (url: string) => url.endsWith("email-request") ? { challengeId: "challenge-1", expiresIn: 600, resendAfter: 60 } : { verified: true, contactCreated: false });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => {
@@ -62,7 +77,7 @@ describe("candidate email access", () => {
     });
     await render(); await type(email(), "anna@example.com"); await click(button("Wyślij kod"));
     expect(mocks.api).toHaveBeenCalledWith("/api/candidate/email-request", { method: "POST", json: { email: "anna@example.com" } });
-    expect(email().disabled).toBe(true); expect(host.textContent).toContain("anna@example.com");
+    expect(email()).toBeNull(); expect(host.textContent).toContain("anna@example.com");
     await type(code(), "123456"); await click(button("Potwierdź i przejdź dalej"));
     expect(mocks.api).toHaveBeenCalledWith("/api/candidate/email-verify", { method: "POST", json: { challengeId: "challenge-1", code: "123456" } });
     expect(changed).toHaveBeenCalledOnce();
@@ -97,8 +112,8 @@ describe("candidate email access", () => {
   it("explains transactional reminders without a preference switch and clears drafts on logout", async () => {
     await render(account);
     expect(host.querySelector('input[type="checkbox"]')).toBeNull();
-    expect(host.textContent).toContain("30 minutach");
-    expect(host.textContent).toContain("raz na 3 godziny");
+    expect(host.textContent).toContain("nowych, nieprzeczytanych wiadomościach od HR");
+    expect(host.textContent).toContain("Nie potrzebujesz hasła");
     expect(mocks.api).not.toHaveBeenCalled();
     sessionStorage.setItem("nl_revision_draft_x", "Private draft");
     await click(button("Wyloguj się"));
@@ -125,24 +140,167 @@ describe("candidate email access", () => {
     expect(changed).toHaveBeenCalledOnce();
   });
 
-  it("discloses codes, welcome and grouped HR emails before the send-code action", async () => {
+  it("discloses codes, welcome and private HR notifications before the send-code action", async () => {
     await render();
     const privacy = host.querySelector('[id$="-privacy"]')!;
     expect(privacy.textContent).toContain("wiadomości powitalnej");
     expect(privacy.textContent).toContain("nie marketing");
-    expect(privacy.textContent).toContain("30 minutach");
+    expect(privacy.textContent).toContain("powiadomień o rozmowie z HR");
+    expect(privacy.textContent).toContain("Nie wysyłamy treści rozmów ani dokumentów e-mailem");
     expect(privacy.compareDocumentPosition(button("Wyślij kod")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("blocks new contact collection until verification without nesting forms", async () => {
-    const onContinue = vi.fn();
-    await act(async () => root.render(<StepContact contact={{ name: "", phone: "", telegram: "" }} errors={{}} onChange={vi.fn()} saving={false} error={null} onContinue={onContinue}
-      emailRequired emailAccess={<CandidateEmailAccess state={guest} onAccessChanged={changed} />} />));
+  it("validates all registration details locally before requesting a code", async () => {
+    await renderRegistration({ name: "", phone: "", telegram: "!" });
+    await type(email(), "invalid");
+    await click(button("Dalej — potwierdź e-mail"));
+    expect(mocks.api).not.toHaveBeenCalled();
+    for (const field of ["name", "phone", "telegram"] as const) expect(contactField(field).getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement).toBe(contactField("name"));
+    await type(contactField("name"), "Anna");
+    await type(contactField("phone"), "600123456");
+    await click(button("Dalej — potwierdź e-mail"));
+    expect(document.activeElement).toBe(contactField("telegram"));
+    expect(mocks.api).not.toHaveBeenCalled();
+    await type(contactField("telegram"), "@anna_test");
+    await click(button("Dalej — potwierdź e-mail"));
+    expect(host.textContent).toContain("Wpisz poprawny adres e-mail.");
+    expect(document.activeElement).toBe(email());
+    expect(mocks.api).not.toHaveBeenCalled();
+    await type(email(), "anna@example.com");
+    await click(button("Dalej — potwierdź e-mail"));
+    expect(mocks.api).toHaveBeenCalledExactlyOnceWith("/api/candidate/email-request", { method: "POST", json: { email: "anna@example.com" } });
+  });
+
+  it("replaces the single contact form with only a code form and submits its contact snapshot on verification", async () => {
+    await renderRegistration();
     expect(host.querySelector("form form")).toBeNull();
-    expect(button("Dalej →").disabled).toBe(true);
-    expect(host.querySelector<HTMLInputElement>("#contact-name")?.closest("fieldset[disabled]")).not.toBeNull();
-    await click(button("Dalej →")); expect(onContinue).not.toHaveBeenCalled();
-    expect(email().disabled).toBe(false);
+    expect(host.querySelectorAll("form")).toHaveLength(1);
+    expect(host.querySelectorAll("input")).toHaveLength(4);
+    expect(contactField("name").value).toBe("Anna");
+    await type(email(), "anna@example.com");
+    await click(button("Dalej — potwierdź e-mail"));
+    expect(host.querySelectorAll("form")).toHaveLength(1);
+    expect(host.querySelectorAll("input")).toHaveLength(1);
+    expect(contactField("name")).toBeNull(); expect(email()).toBeNull();
+    expect(document.activeElement).toBe(code());
+    expect(host.textContent).toContain("folder „Spam”");
+    mocks.api.mockResolvedValueOnce({ verified: true, contactCreated: true });
+    await type(code(), "123456"); await click(button("Potwierdź i przejdź dalej"));
+    expect(mocks.api).toHaveBeenLastCalledWith("/api/candidate/email-verify", { method: "POST", json: { challengeId: "challenge-1", code: "123456", contact: validContact } });
+    expect(changed).toHaveBeenCalledOnce();
+    expect(changed).toHaveBeenCalledWith({ contactCreated: true });
+    expect(mocks.api.mock.calls.every(([url]) => String(url).startsWith("/api/candidate/email-"))).toBe(true);
+  });
+
+  it("keeps contact and email when going back, enforces the cooldown, and verifies only the updated draft", async () => {
+    await renderRegistration(); await type(email(), "anna@example.com"); await click(button("Dalej — potwierdź e-mail"));
+    await type(code(), "111111"); await click(button("Zmień dane"));
+    for (const field of ["name", "phone", "telegram"] as const) expect(contactField(field).value).toBe(validContact[field]);
+    expect(email().value).toBe("anna@example.com"); expect(code()).toBeNull();
+    expect(button("Wyślij kod za 60 s").disabled).toBe(true);
+    await click(button("Wyślij kod za 60 s")); expect(mocks.api).toHaveBeenCalledOnce();
+    await type(contactField("name"), "Anna Nowak"); await type(email(), "nowak@example.com");
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+    mocks.api.mockResolvedValueOnce({ challengeId: "challenge-2", expiresIn: 600, resendAfter: 60 });
+    await click(button("Dalej — potwierdź e-mail"));
+    expect(code().value).toBe(""); expect(host.textContent).toContain("nowak@example.com");
+    await type(code(), "222222"); await click(button("Potwierdź i przejdź dalej"));
+    expect(mocks.api).toHaveBeenLastCalledWith("/api/candidate/email-verify", { method: "POST", json: { challengeId: "challenge-2", code: "222222", contact: { ...validContact, name: "Anna Nowak" } } });
+  });
+
+  it("shows email-only login and never sends a registration contact to an existing-account verification", async () => {
+    await renderRegistration(); await type(email(), "anna@example.com");
+    await click(button("Masz już konto? Zaloguj się"));
+    expect(contactField("name")).toBeNull(); expect(host.querySelectorAll("input")).toHaveLength(1);
+    expect(email().value).toBe("anna@example.com");
+    await click(button("Nowe zgłoszenie"));
+    expect(contactField("name").value).toBe("Anna"); expect(email().value).toBe("anna@example.com");
+    await click(button("Masz już konto? Zaloguj się")); await click(button("Wyślij kod"));
+    await type(code(), "123456"); await click(button("Potwierdź i przejdź dalej"));
+    expect(mocks.api).toHaveBeenLastCalledWith("/api/candidate/email-verify", { method: "POST", json: { challengeId: "challenge-1", code: "123456" } });
+    expect(changed).toHaveBeenCalledOnce();
+    expect(changed).toHaveBeenCalledWith({ contactCreated: false });
+  });
+
+  it("hides the old registration challenge when the header switches to login and cannot reuse its contact", async () => {
+    await renderRegistration(); await type(email(), "anna@example.com"); await click(button("Dalej — potwierdź e-mail"));
+    await type(code(), "111111"); await click(button("Header login"));
+    expect(code()).toBeNull(); expect(contactField("name")).toBeNull();
+    expect(email().value).toBe("anna@example.com");
+    expect(button("Wyślij kod za 60 s").disabled).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+    mocks.api.mockResolvedValueOnce({ challengeId: "login-challenge", expiresIn: 600, resendAfter: 60 });
+    await click(button("Wyślij kod"));
+    expect(code().value).toBe("");
+    await type(code(), "222222"); await click(button("Potwierdź i przejdź dalej"));
+    expect(mocks.api).toHaveBeenLastCalledWith("/api/candidate/email-verify", { method: "POST", json: { challengeId: "login-challenge", code: "222222" } });
+  });
+
+  it("preserves registration details and the code after a server verification failure", async () => {
+    await renderRegistration(); await type(email(), "anna@example.com"); await click(button("Dalej — potwierdź e-mail"));
+    mocks.api.mockRejectedValueOnce(new Error("Kod jest nieprawidłowy lub wygasł."));
+    await type(code(), "111111"); await click(button("Potwierdź i przejdź dalej"));
+    expect(changed).not.toHaveBeenCalled(); expect(code().value).toBe("111111");
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("Kod jest nieprawidłowy");
+    await click(button("Zmień dane"));
+    for (const field of ["name", "phone", "telegram"] as const) expect(contactField(field).value).toBe(validContact[field]);
+    expect(email().value).toBe("anna@example.com");
+    expect(host.textContent).not.toContain("Kod jest nieprawidłowy");
+  });
+
+  it("blocks header mode changes until sending completes so the newly sent code remains visible", async () => {
+    let finish!: (result: unknown) => void;
+    mocks.api.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    await renderRegistration(); await type(email(), "anna@example.com"); await click(button("Dalej — potwierdź e-mail"));
+    expect(button("Header login").disabled).toBe(true);
+    await click(button("Header login"));
+    expect(contactField("name")).not.toBeNull();
+    await act(async () => finish({ challengeId: "challenge-1", expiresIn: 600, resendAfter: 60 }));
+    expect(code()).not.toBeNull(); expect(email()).toBeNull();
+    expect(button("Header login").disabled).toBe(false);
+    expect(host.textContent).toContain("anna@example.com");
+  });
+
+  it("re-enables header navigation after send failure and hides errors from the previous mode", async () => {
+    await renderRegistration({ name: "", phone: "", telegram: "" });
+    await click(button("Dalej — potwierdź e-mail"));
+    expect(host.textContent).toContain("Sprawdź zaznaczone pola.");
+    await click(button("Header login"));
+    expect(host.textContent).not.toContain("Sprawdź zaznaczone pola.");
+    await type(email(), "anna@example.com");
+    mocks.api.mockRejectedValueOnce(new Error("Nie udało się wysłać kodu."));
+    await click(button("Wyślij kod"));
+    expect(button("Header login").disabled).toBe(false);
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("Nie udało się wysłać kodu.");
+    await click(button("Nowe zgłoszenie"));
+    expect(host.textContent).not.toContain("Nie udało się wysłać kodu.");
+  });
+
+  it("requires six digits and prevents duplicate verification while a correct code is in flight", async () => {
+    await renderRegistration(); await type(email(), "anna@example.com"); await click(button("Dalej — potwierdź e-mail"));
+    await type(code(), "12a3"); await click(button("Potwierdź i przejdź dalej"));
+    expect(code().value).toBe("123"); expect(mocks.api).toHaveBeenCalledOnce();
+    expect(host.textContent).toContain("Wpisz 6-cyfrowy kod");
+    let finish!: (result: unknown) => void;
+    mocks.api.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    await type(code(), "123456");
+    await act(async () => { button("Potwierdź i przejdź dalej").click(); button("Potwierdź i przejdź dalej").click(); });
+    expect(mocks.api).toHaveBeenCalledTimes(2);
+    expect(code().disabled).toBe(true); expect(button("Zmień dane").disabled).toBe(true);
+    expect(button("Header login").disabled).toBe(true);
+    await act(async () => finish({ verified: true, contactCreated: true }));
+    expect(changed).toHaveBeenCalledOnce();
+    expect(changed).toHaveBeenCalledWith({ contactCreated: true });
+    expect(button("Header login").disabled).toBe(false);
+  });
+
+  it("keeps the ordinary contact flow available when email access is disabled", async () => {
+    const onContinue = vi.fn();
+    await act(async () => root.render(<StepContact contact={validContact} errors={{}} onChange={vi.fn()} saving={false} error={null} onContinue={onContinue} />));
+    expect(host.querySelectorAll("form")).toHaveLength(1); expect(email()).toBeNull();
+    expect(contactField("name").closest("fieldset[disabled]")).toBeNull();
+    await click(button("Dalej →")); expect(onContinue).toHaveBeenCalledOnce();
   });
 
   it("does not fail if browser storage is unavailable during account changes", () => {

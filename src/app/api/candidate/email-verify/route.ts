@@ -5,12 +5,13 @@ import { enqueueCandidateEmail } from "@/server/services/candidate-email-notific
 
 export const POST = route("candidate.email.verify", async (req: Request) => {
   assertSameOrigin(req);
-  const { welcomeJobId } = await verifyCandidateEmail(await readJson(req, 2048), clientIp(req));
+  // Optional contact details commit with successful verification; returning users keep their existing application.
+  const { welcomeJobId, contactCreated } = await verifyCandidateEmail(await readJson(req, 2048), clientIp(req));
   if (welcomeJobId) after(async () => {
     // The outbox has committed. Queue latency/failure must not delay login cookies.
     await enqueueCandidateEmail(welcomeJobId).catch(() => {
       console.warn("candidate.email.welcome_enqueue_failed");
     });
   });
-  return json({ verified: true });
+  return json({ verified: true, contactCreated });
 });

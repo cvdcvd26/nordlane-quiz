@@ -4,13 +4,14 @@
 export const CANDIDATE_IDENTITY_KEY = "ab_candidate_identity_generation";
 const TAB_IDENTITY_KEY = "ab_candidate_identity_seen";
 const CHANNEL = "alleybiz-candidate-identity";
+const REGISTRATION_KEY = "ab_candidate_registration_completed";
 let currentCheck: (() => boolean) | null = null;
 let adoptLocalGeneration: ((generation: string) => void) | null = null;
 
 export function clearCandidateDrafts() {
   try {
     Object.keys(sessionStorage).filter(key =>
-      key === "nl_review_draft" || key === "nl_submit_key" || key.startsWith("nl_revision_draft_"))
+      key === "nl_review_draft" || key === "nl_submit_key" || key === REGISTRATION_KEY || key.startsWith("nl_revision_draft_"))
       .forEach(key => sessionStorage.removeItem(key));
   } catch { /* A full reload also discards all in-memory drafts. */ }
 }
@@ -36,6 +37,27 @@ export function announceCandidateIdentityChange() {
     channel.postMessage(generation);
     channel.close();
   } catch { /* The storage event/focus check covers browsers without BroadcastChannel. */ }
+}
+
+/** Preserve a newly completed contact step across the identity-clearing reload.
+ * Contains no contact data and is consumed once; it never grants account access.
+ */
+export function rememberFreshRegistration() {
+  try {
+    const generation = readGeneration();
+    if (generation) sessionStorage.setItem(REGISTRATION_KEY, JSON.stringify({ generation, at: Date.now() }));
+  } catch { /* Registration still succeeds when browser storage is unavailable. */ }
+}
+
+export function consumeFreshRegistration(eligible: boolean) {
+  try {
+    const raw = sessionStorage.getItem(REGISTRATION_KEY);
+    sessionStorage.removeItem(REGISTRATION_KEY);
+    if (!eligible || !raw) return false;
+    const marker = JSON.parse(raw) as { generation?: unknown; at?: unknown };
+    return typeof marker.at === "number" && marker.at <= Date.now() && Date.now() - marker.at < 60_000
+      && typeof marker.generation === "string" && marker.generation === readGeneration();
+  } catch { return false; }
 }
 
 /** Guard polling, saves and uploads as well as background tabs resuming later. */
