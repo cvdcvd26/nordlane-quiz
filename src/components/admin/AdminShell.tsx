@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { BellRing, ChartNoAxesCombined, FileText, LogOut, MessageSquareText, Settings, Target, Users } from "lucide-react";
 import { leadResultsCopy } from "@/config/lead-results-copy";
+import { brand } from "@/config/brand";
 import { OwnerAdminContext } from "./owner-access";
 import { documentAdminContent } from "@/config/document-admin";
 import { adminAccountUpdatedEvent } from "@/config/admin-account";
@@ -107,9 +108,9 @@ export function AdminShell({ children, canManageDocuments = false }: { children:
     <div className="adm lg:grid lg:grid-cols-[232px_1fr]" data-admin-theme={theme}>
       {/* Sidebar (desktop) */}
       <aside className="sticky top-0 hidden h-dvh flex-col border-r border-adm-line bg-adm-surface px-3 py-4 lg:flex">
-        <Link href="/admin" className="flex items-center gap-2.5 px-2.5">
+        <Link href="/admin" className="flex items-center gap-2.5 px-2.5" aria-label={t.ui.title}>
           <BrandMark />
-          <span className="text-[14px] leading-tight font-bold whitespace-nowrap">{t.ui.title}</span>
+          <span className="text-[14px] leading-tight font-bold whitespace-nowrap">{brand.wordmark} /adminka</span>
         </Link>
         <nav className="mt-6 flex flex-col gap-0.5" aria-label={t.ui.nav.sections}>
           {navLinks(false)}
@@ -129,9 +130,9 @@ export function AdminShell({ children, canManageDocuments = false }: { children:
       {/* Top bar (mobile / tablet) */}
       <header className="sticky top-0 z-30 border-b border-adm-line bg-adm-surface lg:hidden">
         <div className="flex min-h-12 flex-wrap items-center gap-x-2 gap-y-2 px-4 py-2">
-          <Link href="/admin" className="flex items-center gap-2">
+          <Link href="/admin" className="flex items-center gap-2" aria-label={t.ui.title}>
             <BrandMark className="size-6" />
-            <span className="text-[14px] font-bold whitespace-nowrap">{t.ui.title}</span>
+            <span className="text-[14px] font-bold whitespace-nowrap">{brand.wordmark} /adminka</span>
           </Link>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {tools}

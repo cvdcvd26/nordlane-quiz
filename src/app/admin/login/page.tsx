@@ -71,7 +71,7 @@ export default function AdminLogin() {
       <header className="adm-login-header">
         <Link href="/" className="adm-login-brand" aria-label={brand.name}>
           <BrandMark className="adm-login-brand-mark" />
-          <span>{brand.name} <span className="adm-login-brand-suffix">/admin</span></span>
+          <span>{brand.wordmark} <span className="adm-login-brand-suffix">/admin</span></span>
         </Link>
         <span className="adm-login-header-label">ADMIN / SIGN IN</span>
       </header>

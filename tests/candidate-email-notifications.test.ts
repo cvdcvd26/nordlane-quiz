@@ -61,7 +61,7 @@ describe("grouped candidate email outbox", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0].text).not.toContain("Confidential");
     expect(sent[0].html).not.toContain("Confidential");
-    expect(sent[0].html).toContain("Przejdź do rozmowy");
+    expect(sent[0].html).toContain("Otwórz czat z HR");
     expect(sent[0].text).toContain("https://example.com");
     expect(await deliverCandidateEmail(first.jobId, at(31))).toBe("done");
     expect(sent).toHaveLength(1);

@@ -36,7 +36,7 @@ export default function CookiePolicyPage() {
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2.5" aria-label={`${brand.name} — strona główna`}>
             <LogoMark className="grid size-10 shrink-0 place-items-center rounded-xl border border-paint/30 bg-surface" />
-            <span className="display relative z-10 text-lg font-bold">{brand.name}</span>
+            <span className="display relative z-10 text-lg font-bold">{brand.wordmark}</span>
           </Link>
           <Link href="/" className="text-sm text-ink-soft underline underline-offset-4 hover:text-paint">Wróć do zgłoszenia</Link>
         </div>

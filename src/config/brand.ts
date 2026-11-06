@@ -1,6 +1,8 @@
 /** Public brand and operator details supplied by the site owner. */
 export const brand = {
   name: "IT Solution",
+  /** Label beside the green IT monogram; the full brand name remains unchanged. */
+  wordmark: "Solution",
   workspace: "itsolution.workspace",
 } as const;
 

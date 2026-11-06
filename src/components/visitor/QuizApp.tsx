@@ -2,6 +2,7 @@
 import { LogoMark } from "@/components/ui/LogoMark";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { content, QUESTION_KEYS } from "@/config/content";
+import { brand } from "@/config/brand";
 import { chatConfig, reviewConfig } from "@/config/settings";
 import type { CandidateOutcome } from "@/config/candidate-outcome";
 import { api, ApiError, newId, type ChatMessage, type PublicFile } from "@/lib/api";
@@ -367,7 +368,8 @@ export function QuizApp() {
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-10">
           <p className="flex items-center gap-2.5">
             <LogoMark className="grid size-10 shrink-0 place-items-center rounded-xl border border-paint/30 bg-gradient-to-br from-[#133a2b] to-surface-2 shadow-[0_0_20px_#2ee6a014]" />
-            <span className="display relative z-10 text-[1.05rem] font-bold">{content.brand.name}</span>
+            <span className="display relative z-10 text-[1.05rem] font-bold" aria-hidden="true">{brand.wordmark}</span>
+            <span className="sr-only">{brand.name}</span>
           </p>
           {accountAvailable && <button ref={accountButton} type="button" onClick={openAccount} className="min-h-10 rounded-full border border-paint/30 bg-paint/5 px-3 text-xs font-semibold text-cyan transition-colors hover:bg-paint/10 sm:px-4 sm:text-sm" aria-controls="candidate-email-access" aria-expanded={step === 0 || accountOpen}>Moje zgłoszenie</button>}
         </div>

@@ -37,12 +37,41 @@ describe("transactional email presentation", () => {
     expect(document.querySelector("[src],[srcset],[background],[onclick],[onerror],[onload]")).toBeNull();
     expect(template.html).not.toMatch(/url\s*\(|@import|javascript:|data:/i);
     const links = [...document.querySelectorAll("a")];
-    expect(links.length).toBeGreaterThan(0);
+    expect(links.length).toBeLessThanOrEqual(1);
     for (const link of links) {
       expect(link.getAttribute("href")).toBe(site);
       expect(link.textContent.trim()).not.toBe("");
     }
     window.happyDOM.abort();
+  });
+
+  it.each(templates)("keeps the site URL out of visible HTML while preserving the plain-text fallback: $subject", template => {
+    const window = new Window();
+    window.document.write(template.html);
+    const visibleText = window.document.body.textContent;
+    expect(visibleText).not.toContain(site);
+    expect(visibleText).not.toContain(new URL(site).hostname);
+    expect(visibleText).toContain(company.name);
+    expect(visibleText).toContain(company.address);
+    expect(template.text).toContain(site);
+    window.happyDOM.abort();
+  });
+
+  it("provides a single meaningful CTA for welcome and chat, without suggesting a button verifies an OTP", () => {
+    const window = new Window();
+    window.document.write(templates[0].html);
+    expect(window.document.querySelector("a,button")).toBeNull();
+    expect(window.document.body.textContent).toContain("Wpisz poniższy kod w otwartym formularzu");
+    window.happyDOM.abort();
+    for (const [template, label] of [[templates[1], "Przejdź do serwisu"], [templates[2], "Otwórz czat z HR"]] as const) {
+      const preview = new Window();
+      preview.document.write(template.html);
+      const links = preview.document.querySelectorAll("a");
+      expect(links).toHaveLength(1);
+      expect(links[0].textContent).toContain(label);
+      expect(links[0].getAttribute("href")).toBe(site);
+      preview.happyDOM.abort();
+    }
   });
 
   it("keeps all six OTP digits together as selectable text, outside subject and preheader", () => {
@@ -62,9 +91,10 @@ describe("transactional email presentation", () => {
     expect(templates[1].text).toContain("Moje zgłoszenie");
     expect(templates[1].text).toContain("jednorazowym kodem");
     expect(templates[1].text).toContain("W zapisanej sesji zgłoszenie otworzy się automatycznie");
-    expect(templates[2].text).toContain("raz na 3 godziny");
-    expect(templates[2].text).toContain("tylko gdy pojawią się nowe nieprzeczytane wiadomości");
     expect(templates[2].text).toContain("nie dołączamy treści rozmowy ani dokumentów");
+    for (const content of [templates[2].text, templates[2].html]) {
+      expect(content).not.toMatch(/3 godziny|30 minut|Kilka wiadomości|łączymy w jedno|nie częściej/i);
+    }
   });
 
   it("escapes markup-significant characters without losing Polish letters", () => {

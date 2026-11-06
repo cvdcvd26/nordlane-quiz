@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { maintenanceContent as M } from "@/config/maintenance";
+import { brand } from "@/config/brand";
 import { LogoMark } from "@/components/ui/LogoMark";
 import "./maintenance.css";
 
@@ -48,7 +49,8 @@ export function MaintenanceScreen({ onRetry, checking = false, notice = "" }: Ma
       <header className="ab-maintenance-header">
         <div className="ab-maintenance-brand">
           <LogoMark className="ab-maintenance-brand-mark" />
-          <span>{M.brand}</span>
+          <span aria-hidden="true">{brand.wordmark}</span>
+          <span className="sr-only">{M.brand}</span>
         </div>
       </header>
 
