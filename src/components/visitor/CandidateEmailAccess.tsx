@@ -129,7 +129,7 @@ export function CandidateEmailAccess({ state, existingApplication = false, onAcc
     editDetails(); setContactErrors({}); onLoginModeChange?.(login);
   };
   const emailField = <div className={registering ? "pb-6" : undefined}>
-    <label htmlFor={`${id}-email`} className="block text-sm font-medium text-ink-soft">Adres e-mail <span className="text-danger" aria-hidden>*</span></label>
+    <label htmlFor={`${id}-email`} className="block text-sm font-medium text-ink-soft">Adres e-mail (wymagany) <span className="text-danger" aria-hidden>*</span></label>
     <input id={`${id}-email`} type="email" autoComplete="email" autoCapitalize="none" spellCheck={false} maxLength={254} required value={email} disabled={Boolean(busy)} onChange={event => { setEmail(event.target.value); setError(null); }} className="field mt-1.5 block" placeholder="twoj@email.pl" aria-describedby={`${id}-privacy`} />
   </div>;
 

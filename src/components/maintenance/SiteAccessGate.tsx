@@ -3,14 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { maintenanceEvent, maintenancePollIntervalMs } from "@/config/maintenance";
 import { MaintenanceScreen } from "./MaintenanceScreen";
-import { MaintenanceLoader } from "./MaintenanceLoader";
 
-/** Closes already-open visitor tabs while API and Proxy checks enforce the server boundary. */
+/** Proxy checks initial access; this gate closes already-open visitor tabs while APIs remain protected. */
 export function SiteAccessGate({ children, initialMaintenance = false }: { children: React.ReactNode; initialMaintenance?: boolean }) {
-  const [enabled, setEnabled] = useState<boolean | null>(initialMaintenance ? true : null);
+  const [enabled, setEnabled] = useState(initialMaintenance);
   const [checking, setChecking] = useState(false);
   const [notice, setNotice] = useState("");
-  const lastKnown = useRef<boolean | null>(initialMaintenance ? true : null);
+  const lastKnown = useRef(initialMaintenance);
   const revision = useRef(0);
   const pending = useRef<AbortController | null>(null);
 
@@ -42,7 +41,7 @@ export function SiteAccessGate({ children, initialMaintenance = false }: { child
       setNotice(manual && data.enabled ? "Prace nadal trwają. Dziękujemy za cierpliwość." : "");
     } catch {
       // A failed check must never reopen a site known to be closed.
-      if ((manual || lastKnown.current === null) && (!controller.signal.aborted || timedOut) && currentRevision === revision.current) {
+      if (manual && (!controller.signal.aborted || timedOut) && currentRevision === revision.current) {
         setNotice("Nie udało się sprawdzić dostępności. Spróbuj ponownie.");
       }
     } finally {
@@ -86,8 +85,6 @@ export function SiteAccessGate({ children, initialMaintenance = false }: { child
       document.removeEventListener("visibilitychange", refresh);
     };
   }, [check]);
-
-  if (enabled === null) return <MaintenanceLoader onRetry={retry} error={notice} checking={checking} />;
 
   return enabled
     ? <MaintenanceScreen onRetry={retry} checking={checking} notice={notice} />

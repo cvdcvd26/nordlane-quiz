@@ -4,6 +4,9 @@
  */
 import { brand, company } from "./brand";
 
+const applicationSteps = ["Kontakt", "Pytania", "Zadanie", "Gotowe"];
+const stageLabel = (step: number) => `Etap ${step} z ${applicationSteps.length}`;
+
 export const content = {
   locale: "pl-PL",
 
@@ -15,19 +18,19 @@ export const content = {
     label: "Postęp",
     rejected: "Zgłoszenie rozpatrzone — nie zakwalifikowano",
     stepOf: (step: number, total: number, label: string) => `Etap ${step} z ${total}: ${label}`,
-    steps: ["Kontakt", "Pytania", "Zadanie", "Gotowe"],
+    steps: applicationSteps,
   },
 
   quiz: {
-    eyebrow: "Krok 1 z 3",
-    questionsEyebrow: "Krok 2 z 3",
+    eyebrow: stageLabel(1),
+    questionsEyebrow: stageLabel(2),
     title: "IT Manager",
     titleAccent: "bez doświadczenia",
     recruitment: { lead: "Szukamy", highlight: "3 osób", ending: "do pracy w IT!" },
     description: "Nie wymagamy dyplomu ani wcześniejszego doświadczenia — zapewniamy pełne wdrożenie oraz jasno określone zadania już od pierwszego dnia.",
     invitation: {
       title: "Interesuje Cię ta oferta pracy?",
-      body: "Wypełnij krótki formularz, odpowiadając na zaledwie 3 pytania poniżej!",
+      body: "Wypełnij poniżej dane kontaktowe, aby rozpocząć zgłoszenie.",
     },
     questions: [
       {
@@ -72,13 +75,13 @@ export const content = {
   },
 
   task: {
-    eyebrow: "Krok 3 z 3",
+    eyebrow: stageLabel(3),
     back: "Wstecz",
     about: {
       title: "O",
       titleAccent: "firmie",
       body: `Operatorem serwisu ${brand.name} jest ${company.name} z siedzibą w Gdyni. Firma tworzy oprogramowanie dla agrobiznesu, w tym AgroCRM do obsługi umów, skupu oraz ewidencji pól i partii produktów. Zajmuje się również wdrożeniami i wsparciem. Poniżej znajdziesz dane firmy oraz informacje o zadaniu i współpracy.`,
-      eyebrow: "Krok 3 z 3 · O firmie i zadanie",
+      eyebrow: `${stageLabel(3)} · O firmie i zadanie`,
       verificationTitle: "Wszystko można sprawdzić",
       identifiers: [
         { label: "NIP", value: company.nip },
