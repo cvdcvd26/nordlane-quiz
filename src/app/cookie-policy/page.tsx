@@ -82,7 +82,7 @@ export default function CookiePolicyPage() {
         <section className="mt-9 space-y-3" aria-labelledby="email-access">
           <h2 id="email-access" className="text-xl font-semibold">Logowanie i powiadomienia e-mail</h2>
           <p className="leading-relaxed text-ink-soft">Gdy logowanie e-mailem jest dostępne, adres wykorzystujemy do potwierdzenia dostępu jednorazowym kodem oraz powiadomień dotyczących zgłoszenia. Wiadomości wysyłamy za pośrednictwem Brevo, któremu przekazujemy adres odbiorcy i treść technicznego e-maila. Nie dołączamy treści rozmowy, odpowiedzi na zadanie ani plików.</p>
-          <p className="leading-relaxed text-ink-soft">Aby nie wysyłać zbędnych powiadomień, zapisujemy, do którego miejsca odczytano rozmowę. Powiadomienia o nowych wiadomościach od HR są częścią obsługi zgłoszenia. Łączymy je i wysyłamy po 30 minutach bez odczytu, nie częściej niż raz na 3 godziny. Nie są to wiadomości reklamowe.</p>
+          <p className="leading-relaxed text-ink-soft">Aby nie wysyłać zbędnych powiadomień, zapisujemy, do którego miejsca odczytano rozmowę. Powiadomienia o nowych wiadomościach od HR są częścią obsługi zgłoszenia. Łączymy je i wysyłamy po 30 minutach bez odczytu, nie częściej niż raz na 30 minut. Kolejne powiadomienie wymaga nowych, nieodczytanych wiadomości — nie ponawiamy przypomnień o tych samych wiadomościach. Nie są to wiadomości reklamowe.</p>
         </section>
 
         <section className="mt-9 space-y-3" aria-labelledby="cookies-choice">

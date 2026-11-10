@@ -9,7 +9,9 @@ import { badRequest } from "@/server/errors";
 import { buildCandidateEmailTemplate } from "@/server/candidate-email-templates";
 
 export const CHAT_EMAIL_WAIT_MS = 30 * 60_000;
-export const CHAT_EMAIL_COOLDOWN_MS = 3 * 60 * 60_000;
+// New unread HR replies can notify again after half an hour. The sequence
+// cursor still prevents reminders for messages covered by an earlier email.
+export const CHAT_EMAIL_COOLDOWN_MS = 30 * 60_000;
 const CLAIM_MS = 2 * 60_000;
 const j = schema.candidateEmailJobs;
 const s = schema.candidateEmailState;
@@ -82,8 +84,8 @@ async function ensureRemainingChatEmail(tx: Transaction, accountId: string, sess
   return id;
 }
 
-/** Called with the visitor lock inside the same transaction as a new HR message. */
-export async function recordAdminMessageEmail(tx: Transaction, sessionId: string, messageId: string, now = new Date()) {
+/** Called with the visitor lock inside the same transaction as a new or retried HR message. */
+export async function recordAdminMessageEmail(tx: Transaction, sessionId: string, messageId: string, now = new Date(), messageEvent: "new" | "retry" = "new") {
   if (!candidateEmailConfigured()) return null;
   const account = await accountFor(tx, sessionId);
   if (!account || await chatClosed(tx, sessionId)) return null;
@@ -94,9 +96,29 @@ export async function recordAdminMessageEmail(tx: Transaction, sessionId: string
   if (!message) return null;
   const state = await stateFor(tx, sessionId);
   if (message.sequence <= state.lastReadSequence || message.sequence <= state.lastNotifiedSequence) return null;
-  const [pending] = await tx.select({ id: j.id }).from(j)
+  const [pending] = await tx.select().from(j)
     .where(and(eq(j.accountId, account.id), eq(j.kind, "chat"), eq(j.status, "pending")));
-  if (pending) return pending.id; // Existing first-message deadline never slides.
+  if (pending) {
+    // An unattempted group may still carry the former three-hour deadline.
+    // Bring it forward for a new reply, but never postpone the first message
+    // or override a retry/quota delay or an already attempted message range.
+    if (messageEvent === "new" && pending.attempts === 0 && pending.throughSequence === null) {
+      const [attempted] = await tx.select({ id: schema.candidateEmailSends.id }).from(schema.candidateEmailSends)
+        .where(eq(schema.candidateEmailSends.id, `candidate-${pending.id}`));
+      if (!attempted) {
+        const range = await unreadRange(tx, sessionId,
+          state.lastReadSequence > state.lastNotifiedSequence ? state.lastReadSequence : state.lastNotifiedSequence);
+        if (range) {
+          const dueAt = new Date(Math.max(range.first.createdAt.getTime() + CHAT_EMAIL_WAIT_MS,
+            state.lastNotifiedAt ? state.lastNotifiedAt.getTime() + CHAT_EMAIL_COOLDOWN_MS : 0, now.getTime()));
+          if (dueAt < pending.dueAt) {
+            await tx.update(j).set({ dueAt, queuedAt: null }).where(eq(j.id, pending.id));
+          }
+        }
+      }
+    }
+    return pending.id;
+  }
   const dueAt = new Date(Math.max(message.createdAt.getTime() + CHAT_EMAIL_WAIT_MS,
     state.lastNotifiedAt ? state.lastNotifiedAt.getTime() + CHAT_EMAIL_COOLDOWN_MS : 0, now.getTime()));
   const id = randomUUID();

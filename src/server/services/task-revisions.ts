@@ -71,7 +71,7 @@ async function requestTaskRevisionImpl(leadId: number, adminId: string, input: u
     const [existing] = await tx.select().from(schema.taskRevisions).where(eq(schema.taskRevisions.id, parsed.id));
     if (existing) {
       if (existing.leadId !== leadId) throw conflict(revisionErrors.duplicate, "revision_duplicate");
-      if (existing.requestMessageId) emailJobId = await recordAdminMessageEmail(tx, lead.sessionId, existing.requestMessageId);
+      if (existing.requestMessageId) emailJobId = await recordAdminMessageEmail(tx, lead.sessionId, existing.requestMessageId, new Date(), "retry");
       return publicRevision(existing);
     }
     await assertVisitorChatOpen(tx, lead.sessionId);

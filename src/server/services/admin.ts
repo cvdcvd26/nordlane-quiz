@@ -306,7 +306,7 @@ export async function postAdminMessage(leadId: number, input: unknown) {
       if (existing?.deletedAt || (existing?.changeRevision ?? 0) > 0) return;
       if (!existing || existing.sender !== "admin" || existing.body !== text || !isDeepStrictEqual(existing.bodyRich, formatted))
         throw conflict("This message ID was already used for different content.", "message_changed");
-      return recordAdminMessageEmail(tx, lead.sessionId, existing.id, now);
+      return recordAdminMessageEmail(tx, lead.sessionId, existing.id, now, "retry");
     }
     await attachFiles(tx, { fileIds, sessionId: lead.sessionId, messageId: inserted.id, uploadedBy: "admin" });
     await touchConversation(tx, conv.id, now);

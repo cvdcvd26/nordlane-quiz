@@ -7,6 +7,7 @@ import { candidateEmailConfigured, CandidateEmailError, sendCandidateEmail, send
 import { setCandidateEmailQueue } from "@/server/candidate-email-queue";
 import { deliverCandidateEmail, enqueueCandidateEmail, markCandidateMessagesRead, recordAdminMessageEmail,
   recordWelcomeEmail, recoverCandidateEmails } from "@/server/services/candidate-email-notifications";
+import { postAdminMessage } from "@/server/services/admin";
 import { lockVisitor } from "@/server/session-lock";
 
 type Env = Awaited<ReturnType<typeof setupTestEnv>>;
@@ -67,18 +68,165 @@ describe("grouped candidate email outbox", () => {
     expect(sent).toHaveLength(1);
   });
 
-  it("waits three hours after the previous email, only for new unnotified messages", async () => {
+  it("waits thirty minutes for a new HR message without the previous three-hour delay", async () => {
     const first = await hr(0);
     await deliverCandidateEmail(first.jobId, at(30));
     const second = await hr(45);
-    expect((await job(second.jobId)).dueAt).toEqual(at(210));
-    await deliverCandidateEmail(second.jobId, at(180));
+    expect((await job(second.jobId)).dueAt).toEqual(at(75));
+    expect(await deliverCandidateEmail(second.jobId, at(74))).toBe("busy");
     expect(sent).toHaveLength(1);
-    await deliverCandidateEmail(second.jobId, at(210));
+    expect(await deliverCandidateEmail(second.jobId, at(75))).toBe("sent");
     expect(sent).toHaveLength(2);
     expect(await env.db.transaction(tx => recordAdminMessageEmail(tx, sessionId, first.message.id, at(400)))).toBeNull();
     await deliverCandidateEmail(second.jobId, at(500));
     expect(sent).toHaveLength(2);
+  });
+
+  it("notifies at minute 90 after the candidate reads and replies at minute 60, then HR replies again", async () => {
+    const first = await hr(0);
+    expect(await deliverCandidateEmail(first.jobId, at(30))).toBe("sent");
+    await markCandidateMessagesRead(sessionId, first.message.sequence.toString(), at(60));
+    await env.db.transaction(async tx => {
+      await lockVisitor(tx, sessionId);
+      const [reply] = await tx.insert(schema.messages).values({ conversationId, sender: "visitor", body: "Dziękuję",
+        clientMessageId: randomUUID(), createdAt: at(60) }).returning();
+      expect(await recordAdminMessageEmail(tx, sessionId, reply.id, at(60))).toBeNull();
+    });
+    const next = await hr(60);
+    expect(next.jobId).not.toBe(first.jobId);
+    expect((await job(next.jobId)).dueAt).toEqual(at(90));
+    expect(await deliverCandidateEmail(next.jobId, at(89))).toBe("busy");
+    expect(sent).toHaveLength(1);
+    expect(await deliverCandidateEmail(next.jobId, at(90))).toBe("sent");
+    expect(sent).toHaveLength(2);
+  });
+
+  it("cancels the next notification when the candidate reads the new HR reply before minute 90", async () => {
+    const first = await hr(0);
+    await deliverCandidateEmail(first.jobId, at(30));
+    await markCandidateMessagesRead(sessionId, first.message.sequence.toString(), at(60));
+    const next = await hr(60);
+    expect((await job(next.jobId)).dueAt).toEqual(at(90));
+    await markCandidateMessagesRead(sessionId, next.message.sequence.toString(), at(89));
+    expect((await job(next.jobId)).status).toBe("cancelled");
+    expect(await deliverCandidateEmail(next.jobId, at(90))).toBe("done");
+    expect(sent).toHaveLength(1);
+  });
+
+  it("gives a new HR reply just after an email its own full thirty-minute wait", async () => {
+    const first = await hr(0);
+    await deliverCandidateEmail(first.jobId, at(30));
+    const next = await hr(30.5);
+    expect((await job(next.jobId)).dueAt).toEqual(at(60.5));
+    expect(await deliverCandidateEmail(next.jobId, at(60))).toBe("busy");
+    expect(sent).toHaveLength(1);
+    expect(await deliverCandidateEmail(next.jobId, at(60.5))).toBe("sent");
+    expect(sent).toHaveLength(2);
+  });
+
+  it("does not periodically remind about the same unread HR message", async () => {
+    const first = await hr(0);
+    await deliverCandidateEmail(first.jobId, at(30));
+    for (const minute of [60, 90, 180, 500]) {
+      expect(await deliverCandidateEmail(first.jobId, at(minute))).toBe("done");
+      expect(await env.db.transaction(tx => recordAdminMessageEmail(tx, sessionId, first.message.id, at(minute)))).toBeNull();
+    }
+    expect(sent).toHaveLength(1);
+    const jobs = await env.db.select().from(schema.candidateEmailJobs);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].status).toBe("sent");
+  });
+
+  it("moves a queued legacy deadline forward on a new HR reply without changing the logical email or duplicating delivery", async () => {
+    const first = await hr(0);
+    await deliverCandidateEmail(first.jobId, at(30));
+    const legacy = await hr(45);
+    await env.db.update(schema.candidateEmailJobs).set({ dueAt: at(210) }).where(eq(schema.candidateEmailJobs.id, legacy.jobId));
+    await enqueueCandidateEmail(legacy.jobId);
+    const before = await job(legacy.jobId);
+    expect(before.queuedAt).not.toBeNull();
+    expect(scheduled).toEqual([{ id: legacy.jobId, at: at(210) }]);
+
+    // Another HR reply in the same minute joins the existing unread group.
+    expect((await hr(45)).jobId).toBe(legacy.jobId);
+    expect(await job(legacy.jobId)).toMatchObject({
+      id: before.id, dedupeKey: before.dedupeKey, dueAt: at(75), queuedAt: null,
+      attempts: 0, throughSequence: null,
+    });
+    await enqueueCandidateEmail(legacy.jobId);
+    expect(scheduled).toEqual([{ id: legacy.jobId, at: at(210) }, { id: legacy.jobId, at: at(75) }]);
+    expect((await hr(50)).jobId).toBe(legacy.jobId);
+    await enqueueCandidateEmail(legacy.jobId);
+    expect((await job(legacy.jobId)).dueAt).toEqual(at(75));
+    expect(scheduled).toHaveLength(2);
+    expect(await deliverCandidateEmail(legacy.jobId, at(74))).toBe("busy");
+    expect(await deliverCandidateEmail(legacy.jobId, at(75))).toBe("sent");
+    expect(await deliverCandidateEmail(legacy.jobId, at(210))).toBe("done");
+    expect(sent).toHaveLength(2);
+  });
+
+  it("leaves an already queued legacy deadline unchanged until another HR reply arrives", async () => {
+    const first = await hr(0);
+    await deliverCandidateEmail(first.jobId, at(30));
+    const legacy = await hr(45);
+    await env.db.update(schema.candidateEmailJobs).set({ dueAt: at(210) }).where(eq(schema.candidateEmailJobs.id, legacy.jobId));
+    await enqueueCandidateEmail(legacy.jobId);
+    expect(await deliverCandidateEmail(legacy.jobId, at(75))).toBe("busy");
+    expect((await job(legacy.jobId)).dueAt).toEqual(at(210));
+    expect(scheduled).toEqual([{ id: legacy.jobId, at: at(210) }]);
+    expect(sent).toHaveLength(1);
+  });
+
+  it("does not accelerate a legacy notification when an HR send is retried with the same clientMessageId", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const [lead] = await env.db.insert(schema.leads).values({ sessionId }).returning();
+      const first = await hr(0);
+      await deliverCandidateEmail(first.jobId, at(30));
+      const legacy = await hr(45);
+      await env.db.update(schema.candidateEmailJobs).set({ dueAt: at(210) }).where(eq(schema.candidateEmailJobs.id, legacy.jobId));
+      vi.setSystemTime(at(45));
+      await enqueueCandidateEmail(legacy.jobId);
+      const before = await job(legacy.jobId);
+
+      vi.setSystemTime(at(46));
+      await postAdminMessage(lead.id, {
+        clientMessageId: legacy.message.clientMessageId, body: legacy.message.body,
+      });
+      expect(await job(legacy.jobId)).toEqual(before);
+      expect(await env.db.select().from(schema.candidateEmailJobs)).toHaveLength(2);
+      expect(await env.db.select().from(schema.messages)).toHaveLength(2);
+      expect(scheduled).toEqual([{ id: legacy.jobId, at: at(210) }]);
+
+      vi.setSystemTime(at(50));
+      await postAdminMessage(lead.id, { clientMessageId: randomUUID(), body: "A genuinely new HR reply" });
+      expect(await job(legacy.jobId)).toMatchObject({
+        id: before.id, dedupeKey: before.dedupeKey, dueAt: at(75), queuedAt: at(50),
+        attempts: 0, throughSequence: null,
+      });
+      expect(await env.db.select().from(schema.candidateEmailJobs)).toHaveLength(2);
+      expect(await env.db.select().from(schema.messages)).toHaveLength(3);
+      expect(scheduled).toEqual([{ id: legacy.jobId, at: at(210) }, { id: legacy.jobId, at: at(75) }]);
+      expect(await deliverCandidateEmail(legacy.jobId, at(75))).toBe("sent");
+      expect(await deliverCandidateEmail(legacy.jobId, at(210))).toBe("done");
+      expect(sent).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not shorten a quota retry even though no provider send has been reserved", async () => {
+    const first = await hr(0);
+    vi.stubEnv("BREVO_DAILY_LIMIT", "1"); vi.stubEnv("BREVO_OTP_RESERVE", "1");
+    expect(await deliverCandidateEmail(first.jobId, at(30))).toBe("rescheduled");
+    const before = await job(first.jobId);
+    expect(before).toMatchObject({ dueAt: at(90), attempts: 1, lastError: "quota", throughSequence: first.message.sequence });
+    expect(await env.db.select().from(schema.candidateEmailSends)).toHaveLength(0);
+    expect((await hr(45)).jobId).toBe(first.jobId);
+    expect(await job(first.jobId)).toEqual(before);
+    await enqueueCandidateEmail(first.jobId);
+    expect(scheduled).toEqual([{ id: first.jobId, at: at(90) }]);
+    expect(sent).toHaveLength(0);
   });
 
   it("reading the chat cancels pending mail; a new conversation starts a fresh 30-minute wait", async () => {
@@ -168,7 +316,7 @@ describe("grouped candidate email outbox", () => {
     expect(await env.db.transaction(tx => recordWelcomeEmail(tx, sessionId))).toBe(id);
     await deliverCandidateEmail(id!, new Date());
     expect(sent).toHaveLength(1);
-    expect(sent[0].text).toContain("Moje zgłoszenie");
+    expect(sent[0].text).toContain("Zaloguj się");
     expect(sent[0].text).toContain("jednorazowym kodem");
     expect(sent[0].text).toContain("https://example.com");
     expect(await env.db.transaction(tx => recordWelcomeEmail(tx, sessionId))).toBeNull();
@@ -208,10 +356,10 @@ describe("grouped candidate email outbox", () => {
     expect((await job(first.jobId)).status).toBe("cancelled");
     expect(sent).toHaveLength(0);
     // The failed transport could have delivered before timing out. A new group
-    // must still respect its conservative three-hour cooldown.
+    // must still respect the notification cooldown and a new message's wait.
     const next = await hr(32);
-    expect((await job(next.jobId)).dueAt).toEqual(at(211));
-    expect(await deliverCandidateEmail(next.jobId, at(62))).toBe("busy");
+    expect((await job(next.jobId)).dueAt).toEqual(at(62));
+    expect(await deliverCandidateEmail(next.jobId, at(61))).toBe("busy");
     expect(sent).toHaveLength(0);
   });
 
@@ -222,11 +370,11 @@ describe("grouped candidate email outbox", () => {
     await markCandidateMessagesRead(sessionId, first.message.sequence.toString(), at(31));
     expect((await job(first.jobId)).status).toBe("cancelled");
     const next = await hr(32);
-    expect((await job(next.jobId)).dueAt).toEqual(at(211));
+    expect((await job(next.jobId)).dueAt).toEqual(at(62));
     setCandidateEmailTransport(async p => { sent.push(p); return "next"; });
     expect(await deliverCandidateEmail(first.jobId, at(32))).toBe("done");
-    expect(await deliverCandidateEmail(next.jobId, at(62))).toBe("busy");
-    expect(await deliverCandidateEmail(next.jobId, at(211))).toBe("sent");
+    expect(await deliverCandidateEmail(next.jobId, at(61))).toBe("busy");
+    expect(await deliverCandidateEmail(next.jobId, at(62))).toBe("sent");
     expect(sent).toHaveLength(1);
   });
 
@@ -243,9 +391,9 @@ describe("grouped candidate email outbox", () => {
     expect(sent).toHaveLength(0);
     const [later] = (await env.db.select().from(schema.candidateEmailJobs)).filter(row => row.status === "pending");
     expect(later.id).not.toBe(first.jobId);
-    expect(later.dueAt).toEqual(at(211));
+    expect(later.dueAt).toEqual(at(61));
     expect(scheduled.some(row => row.id === later.id)).toBe(true);
-    expect(await deliverCandidateEmail(later.id, at(211))).toBe("sent");
+    expect(await deliverCandidateEmail(later.id, at(61))).toBe("sent");
     expect(sent).toHaveLength(1);
   });
 
@@ -276,11 +424,11 @@ describe("grouped candidate email outbox", () => {
     expect(second.jobId).not.toBe(first.jobId);
     release();
     expect(await sending).toBe("sent");
-    expect((await job(second.jobId)).dueAt).toEqual(at(210));
+    expect((await job(second.jobId)).dueAt).toEqual(at(61));
     const [state] = await env.db.select().from(schema.candidateEmailState);
     expect(state.lastNotifiedSequence).toBe(first.message.sequence);
     setCandidateEmailTransport(async p => { sent.push(p); return "second"; });
-    expect(await deliverCandidateEmail(second.jobId, at(210))).toBe("sent");
+    expect(await deliverCandidateEmail(second.jobId, at(61))).toBe("sent");
     expect(sent).toHaveLength(2);
   });
 
@@ -291,7 +439,7 @@ describe("grouped candidate email outbox", () => {
     await deliverCandidateEmail(first.jobId, at(56));
     expect((await job(first.jobId)).status).toBe("uncertain");
     const second = await hr(57);
-    expect((await job(second.jobId)).dueAt).toEqual(at(236));
+    expect((await job(second.jobId)).dueAt).toEqual(at(87));
     expect(await env.db.transaction(tx => recordAdminMessageEmail(tx, sessionId, first.message.id, at(58)))).toBeNull();
   });
 
@@ -325,8 +473,8 @@ describe("grouped candidate email outbox", () => {
     expect(sent).toHaveLength(0); // Only finalizes the already accepted email.
     expect((await env.db.select().from(schema.candidateEmailState))[0].lastNotifiedSequence).toBe(first.message.sequence);
     expect((await job(second.jobId)).status).toBe("pending");
-    expect((await job(second.jobId)).dueAt).toEqual(at(213));
-    expect(await deliverCandidateEmail(second.jobId, at(213))).toBe("sent");
+    expect((await job(second.jobId)).dueAt).toEqual(at(63));
+    expect(await deliverCandidateEmail(second.jobId, at(63))).toBe("sent");
     expect(sent).toHaveLength(1);
   });
 
@@ -336,14 +484,17 @@ describe("grouped candidate email outbox", () => {
     expect(await deliverCandidateEmail(first.jobId, at(30))).toBe("rescheduled");
     const second = await hr(30.5);
     expect(second.jobId).toBe(first.jobId);
+    expect(await job(first.jobId)).toMatchObject({
+      dueAt: at(31), attempts: 1, throughSequence: first.message.sequence, lastError: "temporary",
+    });
     setCandidateEmailTransport(async p => { sent.push(p); return "deduplicated-original"; });
     expect(await deliverCandidateEmail(first.jobId, at(31))).toBe("sent");
     expect((await env.db.select().from(schema.candidateEmailState))[0].lastNotifiedSequence).toBe(first.message.sequence);
     const [later] = (await env.db.select().from(schema.candidateEmailJobs)).filter(row => row.status === "pending");
     expect(later).toBeDefined();
     expect(later.id).not.toBe(first.jobId);
-    expect(later.dueAt).toEqual(at(211));
-    expect(await deliverCandidateEmail(later.id, at(211))).toBe("sent");
+    expect(later.dueAt).toEqual(at(61));
+    expect(await deliverCandidateEmail(later.id, at(61))).toBe("sent");
     expect(sent).toHaveLength(2);
   });
 
