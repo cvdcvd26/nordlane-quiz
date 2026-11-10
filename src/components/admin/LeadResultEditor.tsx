@@ -8,6 +8,7 @@ import { leadResultReasons, leadResultsConfig, type LeadResultDetail, type LeadR
 import { leadResultsCopy } from "@/config/lead-results-copy";
 import { useAdminDraftGuard } from "@/lib/admin-draft-guard";
 import { api, ApiError } from "@/lib/api";
+import { ADMIN_TIME_ZONE } from "@/config/admin-time";
 import { useAdminI18n } from "./i18n";
 import { ErrorState, StatusBadge } from "./ui";
 import "./lead-results.css";
@@ -101,7 +102,7 @@ export default function LeadResultEditor({ leadId, currentStatus, refreshRevisio
         : error instanceof ApiError && [401, 403].includes(error.status) ? "forbidden" : "failed");
     } finally { if (!controller.signal.aborted) setSaving(false); }
   };
-  const formatDate = (value: string) => new Date(value).toLocaleString(t.locale, { timeZone: "Europe/Warsaw", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const formatDate = (value: string) => new Date(value).toLocaleString(t.locale, { timeZone: ADMIN_TIME_ZONE, day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const responsibleLabel = (value: string | null) => value === null ? copy.unassigned : detail?.responsibleAdmins.find(admin => admin.id === value)?.email ?? copy.unknownAccount;
   const historyState = (state: LeadResultState) => <>
     {state.status ? <StatusBadge status={state.status} /> : <>

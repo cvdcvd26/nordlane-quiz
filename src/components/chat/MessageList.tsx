@@ -2,6 +2,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { Clock3 } from "lucide-react";
 import { content } from "@/config/content";
+import { ADMIN_TIME_ZONE } from "@/config/admin-time";
 import { defaultManager, type ManagerProfile } from "@/config/managers";
 import { ManagerAvatar } from "./ManagerAvatar";
 import { MessageText } from "./MessageText";
@@ -42,6 +43,7 @@ export function MessageList({
   readTrackingActive?: boolean;
 }) {
   const adm = appearance === "admin";
+  const timeZone = viewer === "admin" ? ADMIN_TIME_ZONE : undefined;
   const operator = manager ?? defaultManager;
   const end = useRef<HTMLLIElement>(null);
   const count = messages.length;
@@ -100,7 +102,7 @@ export function MessageList({
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                         <p className="text-[13px] font-semibold tracking-[0.01em] text-ink">{operator.name}</p>
                         <time className="ml-auto shrink-0 text-[11px] tabular-nums text-ink-soft" dateTime={m.createdAt}>
-                          {formatTime(m.createdAt, locale)}
+                          {formatTime(m.createdAt, locale, timeZone)}
                         </time>
                       </div>
                       <p className="mt-1 inline-flex max-w-full items-center gap-1.5 rounded-md border border-paint/15 bg-paint/[0.08] px-1.5 py-0.5 text-[10px] font-medium leading-relaxed text-sky">
@@ -122,7 +124,7 @@ export function MessageList({
               <p className="mb-1 flex items-center gap-2 text-xs font-semibold text-adm-ink-2">
                 {text.systemLabel}
                 <time className="ml-auto font-normal text-adm-ink-3" dateTime={m.createdAt}>
-                  {formatTime(m.createdAt, locale)}
+                  {formatTime(m.createdAt, locale, timeZone)}
                 </time>
               </p>
               <p className="whitespace-pre-wrap break-words leading-[1.6] [overflow-wrap:anywhere]"><MessageText body={m.body} bodyRich={m.bodyRich} /></p>
@@ -191,7 +193,7 @@ export function MessageList({
                     )}
                   </>
                 ) : (
-                  <time dateTime={m.createdAt}>{formatTime(m.createdAt, locale)}</time>
+                  <time dateTime={m.createdAt}>{formatTime(m.createdAt, locale, timeZone)}</time>
                 )}
                 {adm && viewer === "admin" && m.sender === "admin" && !m.local && actions?.(m)}
               </div>

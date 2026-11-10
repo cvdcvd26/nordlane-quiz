@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { SignJWT } from "jose";
 import { eq } from "drizzle-orm";
 import { schema } from "@/db";
-import { clampReminderOffset, reminderCreateSchema, reminderUpdateSchema, toWarsawInput, warsawTimeCandidates } from "@/lib/reminders";
+import { clampReminderOffset, formatReminderTime, reminderCreateSchema, reminderUpdateSchema, toReminderInput, reminderTimeCandidates, toWarsawInput, warsawTimeCandidates } from "@/lib/reminders";
 import { createReminder, deleteReminder, listReminders, reminderActivity, updateReminder } from "@/server/services/reminders";
 import { GET as leadGET, POST } from "@/app/api/admin/leads/[id]/reminders/route";
 import { DELETE, PATCH } from "@/app/api/admin/leads/[id]/reminders/[reminderId]/route";
@@ -205,17 +205,59 @@ describe("shared lead reminders", () => {
   });
 });
 
-describe("Warsaw reminder deadlines", () => {
-  it("uses Warsaw wall time regardless of runtime zone and handles winter/summer offsets", () => {
+describe("Kyiv reminder deadlines", () => {
+  it("uses Kyiv wall time for inputs and displayed deadlines with winter/summer offsets", () => {
+    expect(toReminderInput("2030-01-10T12:30:00.000Z")).toBe("2030-01-10T14:30");
+    expect(toReminderInput("2030-07-10T12:30:00.000Z")).toBe("2030-07-10T15:30");
+    expect(reminderTimeCandidates("2030-01-10T14:30")).toEqual(["2030-01-10T12:30:00.000Z"]);
+    expect(reminderTimeCandidates("2030-07-10T15:30")).toEqual(["2030-07-10T12:30:00.000Z"]);
+    expect(formatReminderTime("2030-01-10T12:30:00.000Z", "en-GB")).toContain("14:30");
+    expect(formatReminderTime("2030-07-10T12:30:00.000Z", "en-GB")).toContain("15:30");
+  });
+  it("rejects the spring DST gap and invalid dates and distinguishes both autumn occurrences", () => {
+    expect(reminderTimeCandidates("2026-03-29T03:30")).toEqual([]);
+    expect(reminderTimeCandidates("2026-10-25T03:30")).toEqual(["2026-10-25T00:30:00.000Z", "2026-10-25T01:30:00.000Z"]);
+    expect(toReminderInput("2026-03-29T00:59:00.000Z")).toBe("2026-03-29T02:59");
+    expect(toReminderInput("2026-03-29T01:00:00.000Z")).toBe("2026-03-29T04:00");
+    expect(reminderTimeCandidates("2026-03-29T02:59")).toEqual(["2026-03-29T00:59:00.000Z"]);
+    expect(reminderTimeCandidates("2026-03-29T04:00")).toEqual(["2026-03-29T01:00:00.000Z"]);
+    for (const value of ["2026-02-30T12:00", "2026-13-01T12:00", "2026-01-01T24:00", "bad", "1999-01-01T12:00"]) expect(reminderTimeCandidates(value)).toEqual([]);
+  });
+  it.each([
+    ["2030-01-10T13:30:00+01:00", "2030-01-10T14:30", "2030-01-10T12:30:00.000Z"],
+    ["2030-07-10T14:30:00+02:00", "2030-07-10T15:30", "2030-07-10T12:30:00.000Z"],
+    ["2026-10-25T02:30:00+02:00", "2026-10-25T03:30", "2026-10-25T00:30:00.000Z"],
+    ["2026-10-25T02:30:00+01:00", "2026-10-25T03:30", "2026-10-25T01:30:00.000Z"],
+  ])("preserves an existing deadline %s when displayed and edited in Kyiv time", async (original, input, instant) => {
+    const created = await createReminder(leadId, staff.id, { ...createInput, dueAt: original });
+    const [listed] = (await listReminders({ filter: "all" }, leadId)).reminders;
+    expect(listed.dueAt).toBe(instant);
+    expect(toReminderInput(listed.dueAt)).toBe(input);
+    // Keep the saved occurrence when editing a deadline in the repeated hour.
+    const selected = reminderTimeCandidates(input).find(value => value === listed.dueAt);
+    expect(selected).toBe(instant);
+    const edited = await updateReminder(leadId, created.id, {
+      action: "edit", revision: listed.revision, body: "Updated reminder text", dueAt: selected,
+    });
+    expect(edited.dueAt).toBe(instant);
+    const [stored] = await env.db.select().from(schema.leadReminders).where(eq(schema.leadReminders.id, created.id));
+    expect(stored.dueAt.toISOString()).toBe(instant);
+  });
+  it("bounds the supported API years by Kyiv's calendar rather than UTC or Warsaw", () => {
+    for (const instant of ["1999-12-31T22:00:00.000Z", "2100-12-31T21:59:00.000Z"]) {
+      expect(reminderCreateSchema.safeParse({ ...createInput, dueAt: instant }).success).toBe(true);
+    }
+    for (const instant of ["1999-12-31T21:59:00.000Z", "2100-12-31T22:00:00.000Z"]) {
+      expect(reminderCreateSchema.safeParse({ ...createInput, dueAt: instant }).success).toBe(false);
+    }
+  });
+  it("keeps the shared Warsaw helpers unchanged for analytics calendar boundaries", () => {
     expect(toWarsawInput("2030-01-10T12:30:00.000Z")).toBe("2030-01-10T13:30");
     expect(toWarsawInput("2030-07-10T12:30:00.000Z")).toBe("2030-07-10T14:30");
     expect(warsawTimeCandidates("2030-01-10T13:30")).toEqual(["2030-01-10T12:30:00.000Z"]);
     expect(warsawTimeCandidates("2030-07-10T14:30")).toEqual(["2030-07-10T12:30:00.000Z"]);
-  });
-  it("rejects the spring DST gap and invalid dates and distinguishes both autumn occurrences", () => {
     expect(warsawTimeCandidates("2026-03-29T02:30")).toEqual([]);
     expect(warsawTimeCandidates("2026-10-25T02:30")).toEqual(["2026-10-25T00:30:00.000Z", "2026-10-25T01:30:00.000Z"]);
-    for (const value of ["2026-02-30T12:00", "2026-13-01T12:00", "2026-01-01T24:00", "bad", "1999-01-01T12:00"]) expect(warsawTimeCandidates(value)).toEqual([]);
   });
   it("requires explicit API offsets, bounded nonempty text and revisions, rejecting unapproved assignment fields", () => {
     for (const input of [

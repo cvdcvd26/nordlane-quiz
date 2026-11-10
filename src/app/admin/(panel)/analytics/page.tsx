@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { analyticsCopy, type AnalyticsPeriod, type AnalyticsReport, type AnalyticsSource, type FunnelCounts } from "@/config/analytics";
+import { ADMIN_TIME_ZONE } from "@/config/admin-time";
 import { useAdminI18n } from "@/components/admin/i18n";
 import { EmptyState, ErrorState, PageHeader } from "@/components/admin/ui";
 import { api, ApiError } from "@/lib/api";
@@ -86,7 +87,7 @@ export default function AnalyticsPage() {
       {error ? <div className="mb-4"><ErrorState text={error === "range" ? copy.rangeError : copy.failed} onRetry={requestRefresh} /></div> : null}
       {loading && !report ? <div className="adm-skeleton h-64" role="status" aria-label={copy.loading} /> : null}
       {report ? <div aria-busy={loading}>
-        <p className="mb-3 text-[12px] text-adm-ink-3 tabular-nums">{report.range.from} — {report.range.to} · {copy.zoneLabel} · {copy.updated} {new Date(report.generatedAt).toLocaleString(t.locale, { timeZone: report.range.timezone, hourCycle: "h23" })}</p>
+        <p className="mb-3 text-[12px] text-adm-ink-3 tabular-nums">{report.range.from} — {report.range.to} · {copy.zoneLabel} · {copy.updated} {new Date(report.generatedAt).toLocaleString(t.locale, { timeZone: ADMIN_TIME_ZONE, hourCycle: "h23" })} · {t.timeZoneLabel}</p>
         <p className="mb-4 max-w-5xl text-[13px] leading-relaxed text-adm-ink-2">{copy.cohortHint}</p>
         {report.totals.sessions === 0 ? <div className="adm-panel"><EmptyState text={copy.empty} /></div> : <>
           <dl className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">

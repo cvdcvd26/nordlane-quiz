@@ -95,20 +95,20 @@ export function formatBytes(n: number) {
 }
 
 const displayTimeZone = "Europe/Warsaw";
-const calendarDate = new Intl.DateTimeFormat("en-CA", {
-  timeZone: displayTimeZone,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
+const calendarDates = new Map<string, Intl.DateTimeFormat>();
 
-/** Visitor and admin timestamps share Poland's calendar and automatic DST changes. */
-export function formatTime(iso: string, locale: string = content.locale) {
+/** Visitors use Poland's clock; admins pass their own zone, including for day boundaries. */
+export function formatTime(iso: string, locale: string = content.locale, timeZone: string = displayTimeZone) {
+  let calendarDate = calendarDates.get(timeZone);
+  if (!calendarDate) {
+    calendarDate = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+    calendarDates.set(timeZone, calendarDate);
+  }
   const d = new Date(iso);
   const today = new Date();
   const sameDay = calendarDate.format(d) === calendarDate.format(today);
   return d.toLocaleString(locale, {
-    timeZone: displayTimeZone,
+    timeZone,
     hourCycle: "h23",
     ...(sameDay ? {} : { day: "numeric", month: "short" }),
     hour: "2-digit",

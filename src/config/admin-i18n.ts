@@ -21,6 +21,7 @@ export type AdminDict = {
   locale: string;
   langName: string;
   langSwitch: string;
+  timeZoneLabel: string;
   ui: Widen<typeof content.admin>;
   errors: Widen<typeof content.errors>;
   chat: Widen<typeof content.chat>;
@@ -34,6 +35,7 @@ const pl: AdminDict = {
   locale: "pl-PL",
   langName: "PL",
   langSwitch: "Język panelu",
+  timeZoneLabel: "Czas w Kijowie",
   ui: content.admin,
   errors: content.errors,
   chat: content.chat,
@@ -51,6 +53,7 @@ const ru: AdminDict = {
   locale: "ru-RU",
   langName: "RU",
   langSwitch: "Язык панели",
+  timeZoneLabel: "Время по Киеву",
   ui: {
     title: `${brand.name} /adminka`,
     nav: { reviews: "Отзывы", leads: "Лиды", settings: "Настройки", sections: "Разделы", logout: "Выйти" },
@@ -382,6 +385,7 @@ const en: AdminDict = {
   locale: "en-GB",
   langName: "EN",
   langSwitch: "Panel language",
+  timeZoneLabel: "Kyiv time",
   ui: {
     title: `${brand.name} /adminka`,
     nav: { reviews: "Reviews", leads: "Leads", settings: "Settings", sections: "Sections", logout: "Log out" },

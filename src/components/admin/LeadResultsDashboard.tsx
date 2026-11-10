@@ -8,6 +8,7 @@ import { ACTIVE_LEAD_STATUSES, LEAD_STATUSES, type LeadStatus } from "@/config/c
 import { type LeadResultsReport, type LeadResultsSource } from "@/config/lead-results";
 import { leadResultsCopy } from "@/config/lead-results-copy";
 import { api, ApiError } from "@/lib/api";
+import { ADMIN_TIME_ZONE } from "@/config/admin-time";
 import { useAdminI18n } from "./i18n";
 import { ErrorState, PageHeader, STATUS_TONE, StatusBadge } from "./ui";
 import LeadResultEditor from "./LeadResultEditor";
@@ -194,7 +195,7 @@ export default function LeadResultsDashboard() {
     {report ? <div className="lres-report">
       <div className="lres-report-meta">
         <p><span className="lres-live-dot" aria-hidden />{dateLabel(report.range.from)} — {dateLabel(report.range.to)} <span className="font-normal">{report.range.from.slice(0, 4) !== report.range.to.slice(0, 4) ? `${report.range.from.slice(0, 4)} / ${report.range.to.slice(0, 4)}` : report.range.to.slice(0, 4)} · Europe/Warsaw</span></p>
-        <p className="font-normal">{copy.updated} <time dateTime={report.generatedAt}>{new Date(report.generatedAt).toLocaleString(t.locale, { timeZone: "Europe/Warsaw", hourCycle: "h23", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</time></p>
+        <p className="font-normal">{copy.updated} <time dateTime={report.generatedAt}>{new Date(report.generatedAt).toLocaleString(t.locale, { timeZone: ADMIN_TIME_ZONE, hourCycle: "h23", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</time> · {t.timeZoneLabel}</p>
       </div>
       <div className="lres-summary-grid">
         <section className="lres-success" aria-labelledby={`${id}-success`}>
@@ -256,7 +257,7 @@ export default function LeadResultsDashboard() {
               <td className="min-w-40 max-w-60"><StatusBadge status={lead.status} /></td>
               <td className="max-w-44 break-all text-adm-ink-2">{lead.responsible?.email ?? copy.unassigned}</td>
               <td className="max-w-40 break-words text-adm-ink-3">{sourceName(lead.source)}{lead.source.campaign ? <p className="mt-1 text-[10.5px]">{lead.source.campaign}</p> : null}</td>
-              <td className="whitespace-nowrap text-adm-ink-3"><time dateTime={lead.createdAt}>{new Date(lead.createdAt).toLocaleDateString(t.locale, { day: "numeric", month: "short", year: "numeric", timeZone: "Europe/Warsaw" })}</time></td>
+              <td className="whitespace-nowrap text-adm-ink-3"><time dateTime={lead.createdAt}>{new Date(lead.createdAt).toLocaleDateString(t.locale, { day: "numeric", month: "short", year: "numeric", timeZone: ADMIN_TIME_ZONE })}</time></td>
               <td><button type="button" className="adm-btn adm-btn-sm" data-lead-result-edit={lead.id} onClick={() => setEditor({ id: String(lead.id), name: lead.name || copy.unnamed })} aria-label={`${copy.edit}: ${lead.name || `#${lead.id}`}`}>{copy.edit}</button></td>
             </tr>)}</tbody>
           </table></div>

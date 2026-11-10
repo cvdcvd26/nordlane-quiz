@@ -5,7 +5,7 @@ import { Bell, Check, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { reminderCopy, type ReminderCopy } from "@/config/admin-reminders";
 import { api, ApiError } from "@/lib/api";
 import { useAdminDraftGuard } from "@/lib/admin-draft-guard";
-import { clampReminderOffset, formatReminderTime, REMINDER_BODY_LIMIT, REMINDER_PAGE_SIZE, reminderCreateSchema, toWarsawInput, warsawTimeCandidates, type LeadReminder, type ReminderFilter, type ReminderList } from "@/lib/reminders";
+import { clampReminderOffset, formatReminderTime, REMINDER_BODY_LIMIT, REMINDER_PAGE_SIZE, reminderCreateSchema, toReminderInput, reminderTimeCandidates, type LeadReminder, type ReminderFilter, type ReminderList } from "@/lib/reminders";
 import { ACTIVITY_EVENT } from "./ActivityNotifier";
 import { useAdminI18n } from "./i18n";
 import { toast } from "./toast";
@@ -20,14 +20,14 @@ function ReminderForm({ reminder, busy, error, T, onSave, onCancel, draftScope }
 }) {
   const id = useId();
   const [initial] = useState(() => ({
-    body: reminder?.body ?? "", date: toWarsawInput(reminder?.dueAt ?? new Date(Date.now() + 3600000)), occurrence: reminder?.dueAt ?? "",
+    body: reminder?.body ?? "", date: toReminderInput(reminder?.dueAt ?? new Date(Date.now() + 3600000)), occurrence: reminder?.dueAt ?? "",
   }));
   const [body, setBody] = useState(initial.body);
   const [date, setDate] = useState(initial.date);
   const [occurrence, setOccurrence] = useState(initial.occurrence);
   useAdminDraftGuard(draftScope, body !== initial.body || date !== initial.date || occurrence !== initial.occurrence);
   const [validation, setValidation] = useState<string | null>(null);
-  const candidates = warsawTimeCandidates(date);
+  const candidates = reminderTimeCandidates(date);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (busy) return;

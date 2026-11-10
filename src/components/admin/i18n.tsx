@@ -3,6 +3,7 @@ import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { adminDicts, ADMIN_LANGS, isAdminLang, translateServerMessage, type AdminLang } from "@/config/admin-i18n";
 import { uploadConfig } from "@/config/settings";
 import { ApiError, formatTime } from "@/lib/api";
+import { ADMIN_TIME_ZONE } from "@/config/admin-time";
 
 const KEY = "nl-admin-lang";
 const listeners = new Set<() => void>();
@@ -51,7 +52,7 @@ export function useAdminI18n() {
     return {
       lang,
       t,
-      time: (iso: string) => formatTime(iso, t.locale),
+      time: (iso: string) => formatTime(iso, t.locale, ADMIN_TIME_ZONE),
       /** Error text in the panel language. */
       err: (e: unknown) => {
         if (e instanceof ApiError) {

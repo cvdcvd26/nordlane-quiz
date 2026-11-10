@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { BellRing, ChartNoAxesCombined, FileText, LogOut, MessageSquareText, Settings, Target, Users } from "lucide-react";
 import { leadResultsCopy } from "@/config/lead-results-copy";
 import { brand } from "@/config/brand";
+import { ADMIN_TIME_ZONE } from "@/config/admin-time";
 import { OwnerAdminContext } from "./owner-access";
 import { documentAdminContent } from "@/config/document-admin";
 import { adminAccountUpdatedEvent } from "@/config/admin-account";
@@ -117,6 +118,7 @@ export function AdminShell({ children, canManageDocuments = false }: { children:
         </nav>
         <div className="mt-auto space-y-3 border-t border-adm-line px-1 pt-4">
           <div className="flex items-center gap-2">{tools}</div>
+          <p className="text-[12px] text-adm-ink-3" title={ADMIN_TIME_ZONE}>{t.timeZoneLabel}</p>
           <p className="truncate text-[12.5px] text-adm-ink-3" title={email ?? ""}>
             {email}
           </p>
@@ -144,6 +146,7 @@ export function AdminShell({ children, canManageDocuments = false }: { children:
         <nav className="flex gap-1 overflow-x-auto px-3 pb-2" aria-label={t.ui.nav.sections}>
           {navLinks(true)}
         </nav>
+        <p className="px-4 pb-2 text-[12px] text-adm-ink-3" title={ADMIN_TIME_ZONE}>{t.timeZoneLabel}</p>
       </header>
 
       <main className="min-w-0 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">

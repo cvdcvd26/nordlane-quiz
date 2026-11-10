@@ -5,6 +5,7 @@ import { ArrowUpRight, Check, ChevronLeft, ChevronRight, PartyPopper, RefreshCw,
 import type { LeadResultsSource, LeadResultsSuccessList } from "@/config/lead-results";
 import { leadResultsCopy } from "@/config/lead-results-copy";
 import { api, ApiError } from "@/lib/api";
+import { ADMIN_TIME_ZONE } from "@/config/admin-time";
 import { useAdminI18n } from "./i18n";
 import { ErrorState } from "./ui";
 
@@ -29,7 +30,7 @@ export default function LeadSuccessDialog({ selection, onClose }: { selection: L
   const [error, setError] = useState<"load" | "forbidden" | null>(null);
   const numbers = useMemo(() => new Intl.NumberFormat(t.locale), [t.locale]);
   const dates = useMemo(() => new Intl.DateTimeFormat(t.locale, { day: "numeric", month: "short", year: "numeric", timeZone: "Europe/Warsaw" }), [t.locale]);
-  const timestamps = useMemo(() => new Intl.DateTimeFormat(t.locale, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "Europe/Warsaw" }), [t.locale]);
+  const timestamps = useMemo(() => new Intl.DateTimeFormat(t.locale, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: ADMIN_TIME_ZONE }), [t.locale]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -107,7 +108,7 @@ export default function LeadSuccessDialog({ selection, onClose }: { selection: L
         <a className="adm-btn adm-btn-sm lres-success-row-open" href={`/admin/leads/${lead.id}`} target="_blank" rel="noopener noreferrer" aria-label={`${copy.viewLead}: ${lead.name || `#${lead.id}`} — ${copy.openNewTab}`} title={copy.openNewTab}><span>{copy.viewLead}</span><ArrowUpRight aria-hidden className="size-3.5" /></a>
       </li>)}</ul> : null}
     </div>
-    {result ? <div className="lres-pagination lres-success-dialog-pagination"><p><span>{copy.page} {result.leads.page} {copy.of} {Math.max(1, result.leads.pages)}</span><span>{copy.updated} {timestamps.format(new Date(result.generatedAt))}</span></p><div className="flex gap-2"><button className="adm-btn adm-btn-sm" type="button" disabled={loading || result.leads.page <= 1} onClick={() => requestPage(result.leads.page - 1)}><ChevronLeft aria-hidden className="size-3.5" />{copy.previous}</button><button className="adm-btn adm-btn-sm" type="button" disabled={loading || result.leads.page >= result.leads.pages} onClick={() => requestPage(result.leads.page + 1)}>{copy.next}<ChevronRight aria-hidden className="size-3.5" /></button></div></div> : null}
+    {result ? <div className="lres-pagination lres-success-dialog-pagination"><p><span>{copy.page} {result.leads.page} {copy.of} {Math.max(1, result.leads.pages)}</span><span>{copy.updated} {timestamps.format(new Date(result.generatedAt))} · {t.timeZoneLabel}</span></p><div className="flex gap-2"><button className="adm-btn adm-btn-sm" type="button" disabled={loading || result.leads.page <= 1} onClick={() => requestPage(result.leads.page - 1)}><ChevronLeft aria-hidden className="size-3.5" />{copy.previous}</button><button className="adm-btn adm-btn-sm" type="button" disabled={loading || result.leads.page >= result.leads.pages} onClick={() => requestPage(result.leads.page + 1)}>{copy.next}<ChevronRight aria-hidden className="size-3.5" /></button></div></div> : null}
     <button className="adm-btn adm-btn-quiet lres-success-dialog-refresh" type="button" disabled={loading || error === "forbidden"} onClick={() => requestPage(page)}><RefreshCw aria-hidden className={`size-3 ${loading ? "animate-spin" : ""}`} />{copy.refresh}</button>
   </dialog>;
 }

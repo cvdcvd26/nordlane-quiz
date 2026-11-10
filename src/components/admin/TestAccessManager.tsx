@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { KeyRound, Trash2 } from "lucide-react";
 import { ApiError, api } from "@/lib/api";
+import { ADMIN_TIME_ZONE } from "@/config/admin-time";
 import { useAdminI18n } from "./i18n";
 import { toast } from "./toast";
 import { ErrorState } from "./ui";
@@ -128,7 +129,7 @@ export default function TestAccessManager() {
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="min-w-0">
                           <p className="break-all text-[13.5px] font-medium">{account.email}</p>
-                          <p className="adm-help mt-0.5">{S.createdAt}: <time dateTime={account.createdAt}>{new Date(account.createdAt).toLocaleString(t.locale, { timeZone: "Europe/Warsaw", dateStyle: "medium", timeStyle: "short" })}</time></p>
+                          <p className="adm-help mt-0.5">{S.createdAt}: <time dateTime={account.createdAt}>{new Date(account.createdAt).toLocaleString(t.locale, { timeZone: ADMIN_TIME_ZONE, dateStyle: "medium", timeStyle: "short" })}</time></p>
                         </div>
                         <button type="button" className="adm-btn adm-btn-danger adm-btn-sm" disabled={busy !== null} aria-label={`${S.delete}: ${account.email}`} onClick={() => { setConfirm(account.id); setActionError(null); }}>
                           <Trash2 aria-hidden className="size-3.5" />
